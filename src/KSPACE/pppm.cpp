@@ -73,7 +73,8 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
   sf_precoeff4(nullptr), sf_precoeff5(nullptr), sf_precoeff6(nullptr),
   acons(nullptr), fft1(nullptr), fft2(nullptr), remap(nullptr), gc(nullptr),
   gc_buf1(nullptr), gc_buf2(nullptr), density_A_brick(nullptr), density_B_brick(nullptr), density_A_fft(nullptr),
-  density_B_fft(nullptr), part2grid(nullptr), boxlo(nullptr)
+  density_B_fft(nullptr), part2grid(nullptr), boxlo(nullptr),
+  rho_table(nullptr), drho_table(nullptr)
 {
   peratom_allocate_flag = 0;
   group_allocate_flag = 0;
@@ -361,6 +362,16 @@ void PPPM::init()
   compute_gf_denom();
   if (differentiation_flag == 1) compute_sf_precoeff();
   compute_rho_coeff();
+
+  if (n_rhotable_points) {
+    memory->destroy(rho_table);
+    memory->create(rho_table, n_rhotable_points, order, "pppm:rho_table");
+    if (differentiation_flag == 1) {
+      memory->destroy(drho_table);
+      memory->create(drho_table, n_rhotable_points, order, "pppm:drho_table");
+    }
+  precompute_rhotable(); // avoid INTEL override
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -2798,20 +2809,31 @@ void PPPM::procs2grid2d(int nprocs, int nx, int ny, int *px, int *py)
 void PPPM::compute_rho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
                          const FFT_SCALAR &dz)
 {
-  int k,l;
-  FFT_SCALAR r1,r2,r3;
-
-  for (k = (1-order)/2; k <= order/2; k++) {
-    r1 = r2 = r3 = ZEROF;
-
-    for (l = order-1; l >= 0; l--) {
-      r1 = rho_coeff[l][k] + r1*dx;
-      r2 = rho_coeff[l][k] + r2*dy;
-      r3 = rho_coeff[l][k] + r3*dz;
+  if (n_rhotable_points) {
+    int idx = static_cast<int>(dx * halfrho_scale + halfrho_scale_plus);
+    int idy = static_cast<int>(dy * halfrho_scale + halfrho_scale_plus);
+    int idz = static_cast<int>(dz * halfrho_scale + halfrho_scale_plus);
+    for (int k = 0; k < order; k++) {
+      rho1d[0][k] = rho_table[idx][k];
+      rho1d[1][k] = rho_table[idy][k];
+      rho1d[2][k] = rho_table[idz][k];
     }
-    rho1d[0][k] = r1;
-    rho1d[1][k] = r2;
-    rho1d[2][k] = r3;
+  } else {
+    int k,l;
+    FFT_SCALAR r1,r2,r3;
+  
+    for (k = (1-order)/2; k <= order/2; k++) {
+      r1 = r2 = r3 = ZEROF;
+  
+      for (l = order-1; l >= 0; l--) {
+        r1 = rho_coeff[l][k] + r1*dx;
+        r2 = rho_coeff[l][k] + r2*dy;
+        r3 = rho_coeff[l][k] + r3*dz;
+      }
+      rho1d[0][k] = r1;
+      rho1d[1][k] = r2;
+      rho1d[2][k] = r3;
+    }
   }
 }
 
@@ -2823,20 +2845,31 @@ void PPPM::compute_rho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
 void PPPM::compute_drho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
                           const FFT_SCALAR &dz)
 {
-  int k,l;
-  FFT_SCALAR r1,r2,r3;
-
-  for (k = (1-order)/2; k <= order/2; k++) {
-    r1 = r2 = r3 = ZEROF;
-
-    for (l = order-2; l >= 0; l--) {
-      r1 = drho_coeff[l][k] + r1*dx;
-      r2 = drho_coeff[l][k] + r2*dy;
-      r3 = drho_coeff[l][k] + r3*dz;
+  if (n_rhotable_points) {
+    int idx = static_cast<int>(dx * halfrho_scale + halfrho_scale_plus);
+    int idy = static_cast<int>(dy * halfrho_scale + halfrho_scale_plus);
+    int idz = static_cast<int>(dz * halfrho_scale + halfrho_scale_plus);
+    for (int k = 0; k < order; k++) {
+      drho1d[0][k] = drho_table[idx][k];
+      drho1d[1][k] = drho_table[idy][k];
+      drho1d[2][k] = drho_table[idz][k];
     }
-    drho1d[0][k] = r1;
-    drho1d[1][k] = r2;
-    drho1d[2][k] = r3;
+  } else {
+    int k,l;
+    FFT_SCALAR r1,r2,r3;
+  
+    for (k = (1-order)/2; k <= order/2; k++) {
+      r1 = r2 = r3 = ZEROF;
+  
+      for (l = order-2; l >= 0; l--) {
+        r1 = drho_coeff[l][k] + r1*dx;
+        r2 = drho_coeff[l][k] + r2*dy;
+        r3 = drho_coeff[l][k] + r3*dz;
+      }
+      drho1d[0][k] = r1;
+      drho1d[1][k] = r2;
+      drho1d[2][k] = r3;
+    }
   }
 }
 
@@ -3493,4 +3526,35 @@ void PPPM::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
 
   const double ffact = qscale * (-4.0*MY_PI/volume);
   f2group[2] += ffact * (qsum_A*dipole_B - qsum_B*dipole_A);
+}
+
+/* ----------------------------------------------------------------------
+   precompute rho tables
+------------------------------------------------------------------------- */
+
+void PPPM::precompute_rhotable()
+{
+
+  halfrho_scale = (n_rhotable_points - 1.)/2.;
+  halfrho_scale_plus = halfrho_scale + 0.5;
+
+  for (int i = 0; i < n_rhotable_points; i++) {
+    FFT_SCALAR dx = -1. + 1./halfrho_scale * (FFT_SCALAR)i;
+    for (int k=nlower; k<=nupper; k++) {
+      FFT_SCALAR r1 = 0.;
+      for (int l=order-1; l>=0; l--) {
+        r1 = rho_coeff[l][k] + r1*dx;
+      }
+      rho_table[i][k-nlower] = r1;
+    }
+    if (differentiation_flag == 1) {
+      for (int k=nlower; k<=nupper;k++) {
+        FFT_SCALAR r1 = 0.;
+        for (int l=order-2; l>=0; l--) {
+          r1 = drho_coeff[l][k] + r1*dx;
+        }
+        drho_table[i][k-nlower] = r1;
+      }
+    }
+  }
 }

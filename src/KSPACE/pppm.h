@@ -183,6 +183,14 @@ class PPPM : public KSpace {
   virtual void poisson_groups(int);
   virtual void slabcorr_groups(int, int, int);
 
+  // precompute rho table
+
+  void precompute_rhotable();
+  FFT_SCALAR ** rho_table;
+  FFT_SCALAR ** drho_table;
+  double halfrho_scale;
+  double halfrho_scale_plus;
+
   /* ----------------------------------------------------------------------
    denominator for Hockney-Eastwood Green's function
      of x,y,z = sin(kx*deltax/2), etc

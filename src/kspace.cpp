@@ -61,6 +61,12 @@ KSpace::KSpace(LAMMPS *lmp) : Pointers(lmp)
   collective_flag = 0;
 #endif
 
+#if defined(DEFAULTRHOTABLE_ON)
+  n_rhotable_points = 5000; // turn on default rhotable with D DEFAULTRHOTABLE=ON
+#else
+  n_rhotable_points = 0; // turn off rhotable by default
+#endif
+
   kewaldflag = 0;
 
   order_6 = 5;
@@ -624,6 +630,11 @@ void KSpace::modify_params(int narg, char **arg)
     } else if (strcmp(arg[iarg],"disp/auto") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal kspace_modify command");
       auto_disp_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"rhotable") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal kspace_modify command");
+      n_rhotable_points = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      if (n_rhotable_points < 0) error->all(FLERR,"Rho table number of points cannot be negative");
       iarg += 2;
     } else {
       int n = modify_param(narg-iarg,&arg[iarg]);

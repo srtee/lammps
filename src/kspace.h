@@ -87,6 +87,8 @@ class KSpace : protected Pointers {
                              // CENTROID_AVAIL = different and implemented
                              // CENTROID_NOTAVAIL = different, not yet implemented
 
+  int n_rhotable_points;     // number of points to use in precomputed rho table
+
   // KOKKOS host/device flag and data masks
 
   ExecutionSpace execution_space;
