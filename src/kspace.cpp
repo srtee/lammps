@@ -41,7 +41,7 @@ KSpace::KSpace(LAMMPS *lmp) : Pointers(lmp)
 
   triclinic_support = 1;
   ewaldflag = pppmflag = msmflag = dispersionflag = tip4pflag =
-    dipoleflag = spinflag = 0;
+    dipoleflag = spinflag = electrodeflag = 0;
   compute_flag = 1;
   group_group_enable = 0;
   stagger_flag = 0;

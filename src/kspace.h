@@ -46,6 +46,7 @@ class KSpace : protected Pointers {
   int tip4pflag;         // 1 if a TIP4P solver
   int dipoleflag;        // 1 if a dipole solver
   int spinflag;          // 1 if a spin solver
+  int electrodeflag;     // 1 if a ELECTRODE solver
   int differentiation_flag;
   int neighrequest_flag;    // used to avoid obsolete construction
                             // of neighbor lists
@@ -138,6 +139,11 @@ class KSpace : protected Pointers {
 
   virtual int modify_param(int, char **) { return 0; }
   virtual double memory_usage() { return 0.0; }
+  
+  // ELECTRODE methods
+
+  virtual void potential_group_group(double *, int, int, bool){};
+  virtual void matrix_group_group(bigint *, double **, bool){}; 
 
   /* ----------------------------------------------------------------------
    compute gamma for MSM and pair styles
