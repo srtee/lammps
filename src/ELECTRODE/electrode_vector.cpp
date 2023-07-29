@@ -19,7 +19,6 @@
 
 #include "atom.h"
 #include "comm.h"
-#include "electrode_kspace.h"
 #include "electrode_math.h"
 #include "error.h"
 #include "force.h"
@@ -77,10 +76,11 @@ void ElectrodeVector::setup(class Pair *fix_pair, class NeighList *fix_neighlist
   cutsq = pair->cutsq;
   list = fix_neighlist;
   this->timer_flag = timer_flag;
-
-  electrode_kspace = dynamic_cast<ElectrodeKSpace *>(force->kspace);
-  if (electrode_kspace == nullptr) error->all(FLERR, "KSpace does not implement ElectrodeKSpace");
-  g_ewald = force->kspace->g_ewald;
+  
+  electrode_kspace = force->kspace;
+  if (!(electrode_kspace)) error->all(FLERR, "ELECTRODE requires KSpace");
+  if (!(electrode_kspace->electrodeflag)) error->all(FLERR, "KSpace does not implement ElectrodeKSpace");
+  g_ewald = electrode_kspace->g_ewald;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -106,12 +106,12 @@ void ElectrodeVector::compute_vector(double *vector)
   pair_time_total += MPI_Wtime() - pair_start_time;
   // kspace
   double kspace_start_time = MPI_Wtime();
-  electrode_kspace->compute_vector(vector, groupbit, source_grpbit, invert_source);
+  electrode_kspace->potential_group_group(vector, groupbit, source_grpbit, invert_source);
   MPI_Barrier(world);
   kspace_time_total += MPI_Wtime() - kspace_start_time;
   // boundary
   double boundary_start_time = MPI_Wtime();
-  electrode_kspace->compute_vector_corr(vector, groupbit, source_grpbit, invert_source);
+  electrode_kspace->potential_group_group_corr(vector, groupbit, source_grpbit, invert_source);
   MPI_Barrier(world);
   boundary_time_total += MPI_Wtime() - boundary_start_time;
   b_time_total += MPI_Wtime() - start_time;

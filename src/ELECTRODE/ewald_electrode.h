@@ -29,7 +29,7 @@ KSpaceStyle(ewald/electrode, EwaldElectrode);
 
 namespace LAMMPS_NS {
 
-class EwaldElectrode : public Ewald, public ElectrodeKSpace {
+class EwaldElectrode : public Ewald {
  public:
   EwaldElectrode(class LAMMPS *);
   ~EwaldElectrode() override;
@@ -39,10 +39,10 @@ class EwaldElectrode : public Ewald, public ElectrodeKSpace {
   void compute_group_group(int, int, int) override;
 
   // k-space part of coulomb matrix computation
-  void compute_vector(double *, int, int, bool) override;
-  void compute_vector_corr(double *, int, int, bool) override;
-  void compute_matrix(bigint *, double **, bool) override;
-  void compute_matrix_corr(bigint *, double **) override;
+  void potential_group_group(double *, int, int, bool) override;
+  void potential_group_group_corr(double *, int, int, bool) override;
+  void matrix_group_group(bigint *, double **, bool) override;
+  void matrix_group_group_corr(bigint *, double **) override;
 
  protected:
   class BoundaryCorrection *boundcorr;

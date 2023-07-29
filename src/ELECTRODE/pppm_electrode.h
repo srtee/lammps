@@ -29,7 +29,7 @@ KSpaceStyle(pppm/electrode, PPPMElectrode);
 
 namespace LAMMPS_NS {
 
-class PPPMElectrode : public PPPM, public ElectrodeKSpace {
+class PPPMElectrode : public PPPM {
  public:
   PPPMElectrode(class LAMMPS *);
   ~PPPMElectrode() override;
@@ -38,10 +38,10 @@ class PPPMElectrode : public PPPM, public ElectrodeKSpace {
   void reset_grid() override;
   void compute(int, int) override;
 
-  void compute_vector(double *, int, int, bool) override;
-  void compute_vector_corr(double *, int, int, bool) override;
-  void compute_matrix(bigint *, double **, bool) override;
-  void compute_matrix_corr(bigint *, double **) override;
+  void potential_group_group(double *, int, int, bool) override;
+  void potential_group_group_corr(double *, int, int, bool) override;
+  void matrix_group_group(bigint *, double **, bool) override;
+  void matrix_group_group_corr(bigint *, double **) override;
 
   void compute_group_group(int, int, int) override;
 

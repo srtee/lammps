@@ -45,7 +45,7 @@ class ElectrodeMatrix : protected Pointers {
   std::vector<bigint> mpos;
   class Pair *pair;
   class NeighList *list;
-  class ElectrodeKSpace *electrode_kspace;
+  class KSpace *electrode_kspace;
 
   void update_mpos();
   void pair_contribution(double **);

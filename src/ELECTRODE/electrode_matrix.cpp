@@ -55,9 +55,10 @@ void ElectrodeMatrix::setup(const std::unordered_map<tagint, int> &tag_ids, clas
   cutsq = pair->cutsq;
   list = fix_neighlist;
 
-  electrode_kspace = dynamic_cast<ElectrodeKSpace *>(force->kspace);
-  if (electrode_kspace == nullptr) error->all(FLERR, "KSpace does not implement ElectrodeKSpace");
-  g_ewald = force->kspace->g_ewald;
+  electrode_kspace = force->kspace;
+  if (!(electrode_kspace)) error->all(FLERR, "ELECTRODE requires KSpace");
+  if (!(electrode_kspace->electrodeflag)) error->all(FLERR, "KSpace does not implement ElectrodeKSpace");
+  g_ewald = electrode_kspace->g_ewald;
 
   tag_to_iele = tag_ids;
 }
@@ -81,7 +82,7 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
   MPI_Barrier(world);
   double kspace_time = MPI_Wtime();
   update_mpos();
-  electrode_kspace->compute_matrix(&mpos[0], array, timer_flag);
+  electrode_kspace->matrix_group_group(&mpos[0], array, timer_flag);
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, fmt::format("KSpace time: {:.4g} s\n", MPI_Wtime() - kspace_time));
@@ -89,7 +90,7 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
   pair_contribution(array);
   //cout << array[0][0] << ", " << array[0][1] << endl;
   self_contribution(array);
-  electrode_kspace->compute_matrix_corr(&mpos[0], array);
+  electrode_kspace->matrix_group_group_corr(&mpos[0], array);
   if (tfflag) tf_contribution(array);
 
   // reduce coulomb matrix with contributions from all procs

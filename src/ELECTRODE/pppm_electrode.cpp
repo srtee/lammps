@@ -88,6 +88,7 @@ PPPMElectrode::PPPMElectrode(LAMMPS *lmp) :
   compute_vector_called = false;
   last_source_grpbit = 1 << 0;    // initialize to "all"
   last_invert_source = false;     // not sure what to initialize here
+  electrodeflag = 1;
 }
 /* ----------------------------------------------------------------------
    free all memory
@@ -582,7 +583,7 @@ void PPPMElectrode::start_compute()
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
-void PPPMElectrode::compute_vector(double *vec, int sensor_grpbit, int source_grpbit,
+void PPPMElectrode::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit,
                                    bool invert_source)
 {
   start_compute();
@@ -667,7 +668,7 @@ void PPPMElectrode::project_psi(double *vec, int sensor_grpbit)
 -------------------------------------------------------------------------
 */
 
-void PPPMElectrode::compute_matrix(bigint *imat, double **matrix, bool timer_flag)
+void PPPMElectrode::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
 {
   compute(1, 0);    // make sure density bricks etc. are set up
 
@@ -1860,7 +1861,7 @@ void PPPMElectrode::compute_group_group(int /*groupbit_A*/, int /*groupbit_B*/, 
   error->all(FLERR, "group group interaction not implemented in pppm/electrode yet");
 }
 
-void PPPMElectrode::compute_matrix_corr(bigint *imat, double **matrix)
+void PPPMElectrode::matrix_group_group_corr(bigint *imat, double **matrix)
 {
   boundcorr->matrix_corr(imat, matrix);
 }
@@ -1870,7 +1871,7 @@ void PPPMElectrode::compute_matrix_corr(bigint *imat, double **matrix)
  -------------------------------------------------------------------------
 */
 
-void PPPMElectrode::compute_vector_corr(double *vec, int sensor_grpbit, int source_grpbit,
+void PPPMElectrode::potential_group_group_corr(double *vec, int sensor_grpbit, int source_grpbit,
                                         bool invert_source)
 {
   boundcorr->vector_corr(vec, sensor_grpbit, source_grpbit, invert_source);

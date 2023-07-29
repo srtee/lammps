@@ -42,7 +42,7 @@ class ElectrodeVector : protected Pointers {
   std::map<int, double> tf_types;
   class Pair *pair;
   class NeighList *list;
-  class ElectrodeKSpace *electrode_kspace;
+  class KSpace *electrode_kspace;
 
   void pair_contribution(double *);
   void self_contribution(double *);

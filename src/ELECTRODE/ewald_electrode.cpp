@@ -44,6 +44,7 @@ using namespace MathConst;
 EwaldElectrode::EwaldElectrode(LAMMPS *lmp) : Ewald(lmp), boundcorr(nullptr)
 {
   eikr_step = -1;
+  electrodeflag = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -889,7 +890,7 @@ void EwaldElectrode::compute_group_group(int /*groupbit_A*/, int /*groupbit_B*/,
    compute b-vector of constant potential approach
  ------------------------------------------------------------------------- */
 
-void EwaldElectrode::compute_vector(double *vec, int sensor_grpbit, int source_grpbit,
+void EwaldElectrode::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit,
                                     bool invert_source)
 {
   update_eikr(false);
@@ -945,7 +946,7 @@ void EwaldElectrode::compute_vector(double *vec, int sensor_grpbit, int source_g
    compute b-vector EW3DC correction of constant potential approach
  ------------------------------------------------------------------------- */
 
-void EwaldElectrode::compute_vector_corr(double *vec, int sensor_grpbit, int source_grpbit,
+void EwaldElectrode::potential_group_group_corr(double *vec, int sensor_grpbit, int source_grpbit,
                                          bool invert_source)
 {
   update_eikr(false);
@@ -958,7 +959,7 @@ void EwaldElectrode::compute_vector_corr(double *vec, int sensor_grpbit, int sou
    obtained.
  ------------------------------------------------------------------------- */
 
-void EwaldElectrode::compute_matrix(bigint *imat, double **matrix, bool /* timer_flag */)
+void EwaldElectrode::matrix_group_group(bigint *imat, double **matrix, bool /* timer_flag */)
 {
   update_eikr(false);
   int nlocal = atom->nlocal;
@@ -1128,7 +1129,7 @@ void EwaldElectrode::compute_matrix(bigint *imat, double **matrix, bool /* timer
    obtained.
  ------------------------------------------------------------------------- */
 
-void EwaldElectrode::compute_matrix_corr(bigint *imat, double **matrix)
+void EwaldElectrode::matrix_group_group_corr(bigint *imat, double **matrix)
 {
   update_eikr(false);
   boundcorr->matrix_corr(imat, matrix);

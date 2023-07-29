@@ -143,7 +143,9 @@ class KSpace : protected Pointers {
   // ELECTRODE methods
 
   virtual void potential_group_group(double *, int, int, bool){};
-  virtual void matrix_group_group(bigint *, double **, bool){}; 
+  virtual void potential_group_group_corr(double*, int, int, bool){};
+  virtual void matrix_group_group(bigint *, double **, bool){};
+  virtual void matrix_group_group_corr(bigint *, double **){};
 
   /* ----------------------------------------------------------------------
    compute gamma for MSM and pair styles
