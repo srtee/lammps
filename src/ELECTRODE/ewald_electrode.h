@@ -24,7 +24,6 @@ KSpaceStyle(ewald/electrode, EwaldElectrode);
 #ifndef LMP_EWALD_ELECTRODE_H
 #define LMP_EWALD_ELECTRODE_H
 
-#include "electrode_kspace.h"
 #include "ewald.h"
 
 namespace LAMMPS_NS {

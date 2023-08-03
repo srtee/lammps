@@ -19,7 +19,6 @@
 
 #include "atom.h"
 #include "comm.h"
-#include "electrode_kspace.h"
 #include "electrode_math.h"
 #include "error.h"
 #include "force.h"

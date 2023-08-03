@@ -24,7 +24,6 @@ KSpaceStyle(pppm/electrode, PPPMElectrode);
 #ifndef LMP_PPPM_ELECTRODE_H
 #define LMP_PPPM_ELECTRODE_H
 
-#include "electrode_kspace.h"
 #include "pppm.h"
 
 namespace LAMMPS_NS {

@@ -30,7 +30,6 @@ KSpaceStyle(pppm/electrode/intel,PPPMElectrodeIntel)
 #define LMP_PPPM_ELECTRODE_INTEL_H
 
 #include "boundary_correction.h"
-#include "electrode_kspace.h"
 #include "fix_intel.h"
 #include "pppm.h"
 #include "pppm_intel.h"
@@ -38,7 +37,7 @@ KSpaceStyle(pppm/electrode/intel,PPPMElectrodeIntel)
 
 namespace LAMMPS_NS {
 
-class PPPMElectrodeIntel : public PPPMIntel, public ElectrodeKSpace {
+class PPPMElectrodeIntel : public PPPMIntel {
  public:
   PPPMElectrodeIntel(class LAMMPS *);
   ~PPPMElectrodeIntel();
@@ -46,10 +45,10 @@ class PPPMElectrodeIntel : public PPPMIntel, public ElectrodeKSpace {
   void setup() override;
   void compute(int, int) override;
 
-  void compute_vector(double *, int, int, bool) override;
-  void compute_vector_corr(double *, int, int, bool) override;
-  void compute_matrix(bigint *, double **, bool) override;
-  void compute_matrix_corr(bigint *, double **) override;
+  void potential_group_group(double *, int, int, bool) override;
+  void potential_group_group_corr(double *, int, int, bool) override;
+  void matrix_group_group(bigint *, double **, bool) override;
+  void matrix_group_group_corr(bigint *, double **) override;
 
   void compute_group_group(int, int, int) override;
 
@@ -94,7 +93,7 @@ class PPPMElectrodeIntel : public PPPMIntel, public ElectrodeKSpace {
   void one_step_multiplication(bigint *, double *, double **, double **, int const, bool);
   void two_step_multiplication(bigint *, double *, double **, double **, int const, bool);
   void build_amesh(int, int, int, double *, double *);
-  bool compute_vector_called;
+  bool potential_group_group_called;
 };
 
 }    // namespace LAMMPS_NS

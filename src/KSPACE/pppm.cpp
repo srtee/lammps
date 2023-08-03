@@ -37,6 +37,7 @@
 #include "neighbor.h"
 #include "pair.h"
 #include "remap_wrap.h"
+#include "update.h"
 
 #include <cmath>
 #include <cstring>
@@ -74,7 +75,8 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
   sf_precoeff4(nullptr), sf_precoeff5(nullptr), sf_precoeff6(nullptr),
   acons(nullptr), fft1(nullptr), fft2(nullptr), remap(nullptr), gc(nullptr),
   gc_buf1(nullptr), gc_buf2(nullptr), density_A_brick(nullptr), density_B_brick(nullptr), density_A_fft(nullptr),
-  density_B_fft(nullptr), part2grid(nullptr), boxlo(nullptr)
+  density_B_fft(nullptr), part2grid(nullptr), boxlo(nullptr),
+  density_source_brick(nullptr), density_source_fft(nullptr)
 {
   peratom_allocate_flag = 0;
   group_allocate_flag = 0;
@@ -122,6 +124,12 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
 
   nmax = 0;
   part2grid = nullptr;
+
+  // ELECTRODE
+  electrodeflag = 1;
+  compute_step = -1;
+  density_source_brick = nullptr;
+  density_source_fft = nullptr;
 
   // define acons coefficients for estimation of kspace errors
   // see JCP 109, pg 7698 for derivation of coefficients
@@ -182,6 +190,7 @@ PPPM::~PPPM()
   PPPM::deallocate();
   if (peratom_allocate_flag) PPPM::deallocate_peratom();
   if (group_allocate_flag) PPPM::deallocate_groups();
+  if (source_allocate_flag) PPPM::deallocate_source();
   memory->destroy(part2grid);
   memory->destroy(acons);
 }
@@ -289,6 +298,7 @@ void PPPM::init()
   deallocate();
   if (peratom_allocate_flag) deallocate_peratom();
   if (group_allocate_flag) deallocate_groups();
+  if (source_allocate_flag) deallocate_source();
 
   // setup FFT grid resolution and g_ewald
   // normally one iteration thru while loop is all that is required
@@ -341,7 +351,8 @@ void PPPM::init()
   double estimated_accuracy = final_accuracy();
 
   // allocate K-space dependent memory
-  // don't invoke allocate peratom() or group(), will be allocated when needed
+  // don't invoke allocate peratom() or groups() or source(),
+  // will be allocated when needed
 
   allocate();
 
@@ -566,6 +577,7 @@ void PPPM::reset_grid()
   deallocate();
   if (peratom_allocate_flag) deallocate_peratom();
   if (group_allocate_flag) deallocate_groups();
+  if (source_allocate_flag) deallocate_source();
 
   // reset portion of global grid that each proc owns
 
@@ -3007,6 +3019,14 @@ double PPPM::memory_usage()
     bytes += (double)2 * nfft_both * sizeof(FFT_SCALAR);
   }
 
+  if (source_allocate_flag) {
+    bytes += (double)nbrick * sizeof(FFT_SCALAR);
+    if (differentiation_flag != 1) {
+      bytes += (double)nbrick * sizeof(FFT_SCALAR);
+    }
+    bytes += (double)nfft_both * sizeof(FFT_SCALAR);
+  }
+
   // two Grid3d bufs
 
   bytes += (double)(ngc_buf1 + ngc_buf2) * npergrid * sizeof(FFT_SCALAR);
@@ -3446,3 +3466,435 @@ void PPPM::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
   const double ffact = qscale * (-4.0*MY_PI/volume);
   f2group[2] += ffact * (qsum_A*dipole_B - qsum_B*dipole_A);
 }
+
+void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit, bool invert_source) {
+  // early setup on first step
+  if (compute_step == -1) setup();
+  if (compute_step < update->ntimestep) {
+    boxlo = domain->boxlo;
+    if (atom->nmax > nmax) {
+      memory->destroy(part2grid);
+      nmax = atom->nmax;
+      memory->create(part2grid, nmax, 3, "pppm:part2grid");
+    }
+    particle_map();
+    compute_step = update->ntimestep;
+  }
+
+  // switch pointers so we can reuse brick2fft
+  FFT_SCALAR ***density_brick_real = density_brick;
+  FFT_SCALAR *density_fft_real = density_fft;
+  make_rho_source(source_grpbit, invert_source);
+  density_brick = density_source_brick;
+  density_fft = density_source_fft;
+  gc->reverse_comm(Grid3d::KSPACE, this, REVERSE_RHO, 1, sizeof(FFT_SCALAR), gc_buf1, gc_buf2, MPI_FFT_SCALAR);
+  brick2fft();
+  // switch back pointers
+  density_brick = density_brick_real;
+  density_fft = density_fft_real;
+  
+  // transform source charge density (r -> k) (complex conjugate)
+  for (int i = 0, n = 0; i < nfft; i++) {
+    work1[n++] = density_source_fft[i];
+    work1[n++] = ZEROF;
+  }
+  fft1->compute(work1, work1, -1);
+
+  // k->r FFT of Green's * source density = u_brick
+  for (int i = 0, n = 0; i < nfft; i++) {
+    work2[n] = work1[n] * greensfn[i];
+    n++;
+    work2[n] = work1[n] * greensfn[i];
+    n++;
+  }
+  fft2->compute(work2, work2, 1);
+  for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
+    for (int j = nylo_in; j <= nyhi_in; j++)
+      for (int i = nxlo_in; i <= nxhi_in; i++) {
+        u_brick[k][j][i] = work2[n];
+        n += 2;
+      }
+  gc->forward_comm(Grid3d::KSPACE, this, FORWARD_AD, 1, sizeof(FFT_SCALAR), gc_buf1, gc_buf2,
+                   MPI_FFT_SCALAR);
+  
+  
+  // project u_brick onto sensor charges' rho
+  double **x = atom->x;
+  int *mask = atom->mask;
+  double const scaleinv = 1.0 / (nx_pppm * ny_pppm * nz_pppm);
+  for (int i = 0; i < atom->nlocal; i++) {
+    if (!(mask[i] & sensor_grpbit)) continue;
+    double v = 0.;
+    // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
+    // (dx,dy,dz) = distance to "lower left" grid pt
+    // (mx,my,mz) = global coords of moving stencil pt
+    int nix = part2grid[i][0];
+    int niy = part2grid[i][1];
+    int niz = part2grid[i][2];
+    FFT_SCALAR dix = nix + shiftone - (x[i][0] - boxlo[0]) * delxinv;
+    FFT_SCALAR diy = niy + shiftone - (x[i][1] - boxlo[1]) * delyinv;
+    FFT_SCALAR diz = niz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
+    compute_rho1d(dix, diy, diz);
+    for (int ni = nlower; ni <= nupper; ni++) {
+      double iz0 = rho1d[2][ni];
+      int miz = ni + niz;
+      for (int mi = nlower; mi <= nupper; mi++) {
+        double iy0 = iz0 * rho1d[1][mi];
+        int miy = mi + niy;
+        for (int li = nlower; li <= nupper; li++) {
+          int mix = li + nix;
+          double ix0 = iy0 * rho1d[0][li];
+          v += ix0 * u_brick[miz][miy][mix];
+        }
+      }
+    }
+    vec[i] += v * scaleinv;
+  }
+}
+  
+void PPPM::make_rho_source(int source_grpbit, bool invert_source) {
+  // TODO: extend make_rho to take these arguments
+  // instead of duplicating all the code??
+
+  int l,m,n,nx,ny,nz,mx,my,mz;
+  FFT_SCALAR dx,dy,dz,x0,y0,z0;
+
+  if (!source_allocate_flag) allocate_source();
+  memset(&(density_source_brick[nzlo_out][nylo_out][nxlo_out]),0,ngrid*sizeof(FFT_SCALAR));
+
+  double *q = atom->q;
+  double **x = atom->x;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    bool const i_in_source = !!(mask[i] & source_grpbit) != invert_source;
+    if (!i_in_source) continue;
+    nx = part2grid[i][0];
+    ny = part2grid[i][1];
+    nz = part2grid[i][2];
+    dx = nx + shiftone - (x[i][0] - boxlo[0]) * delxinv;
+    dy = ny + shiftone - (x[i][1] - boxlo[1]) * delyinv;
+    dz = nz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
+
+    compute_rho1d(dx, dy, dz);
+
+    z0 = delvolinv * q[i];
+    for (n = nlower; n <= nupper; n++) {
+      mz = n + nz;
+      y0 = z0 * rho1d[2][n];
+      for (m = nlower; m <= nupper; m++) {
+        my = m + ny;
+        x0 = y0 * rho1d[1][m];
+        for (l = nlower; l <= nupper; l++) {
+          mx = l + nx;
+          density_source_brick[mz][my][mx] += x0 * rho1d[0][l];
+        }
+      }
+    }
+  }
+}
+
+void PPPM::potential_group_group_corr(double* vec, int sensor_grpbit, int source_grpbit , bool invert_source)
+{
+  // todo: add correction for nonzero total charge
+  int const nlocal = atom->nlocal;
+  double **x = atom->x;
+  double *q = atom->q;
+  int *mask = atom->mask;
+  double dipole = 0.;
+  for (int i = 0; i < nlocal; i++) {
+    if (!!(mask[i] & source_grpbit) != invert_source) dipole += q[i] * x[i][2];
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &dipole, 1, MPI_DOUBLE, MPI_SUM, world);
+  dipole *= 4.0 * MY_PI / volume;
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & sensor_grpbit) vec[i] += x[i][2] * dipole;
+  }
+}
+
+void PPPM::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
+{
+  // early setup on first step
+  if (compute_step == -1) setup();
+  if (compute_step < update->ntimestep) {
+    boxlo = domain->boxlo;
+    if (atom->nmax > nmax) {
+      memory->destroy(part2grid);
+      nmax = atom->nmax;
+      memory->create(part2grid, nmax, 3, "pppm:part2grid");
+    }
+    particle_map();
+    compute_step = update->ntimestep;
+  }
+
+  // fft green's function k -> r (double)
+  double *greens_real;
+  memory->create(greens_real, nz_pppm * ny_pppm * nx_pppm, "pppm:greens_real");
+  memset(greens_real, 0, (std::size_t)nz_pppm * (std::size_t)ny_pppm * (std::size_t)nx_pppm * sizeof(double));
+  for (int i = 0, n = 0; i < nfft; i++) {
+    work2[n++] = greensfn[i];
+    work2[n++] = ZEROF;
+  }
+  fft2->compute(work2, work2, -1);
+  for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
+    for (int j = nylo_in; j <= nyhi_in; j++)
+      for (int i = nxlo_in; i <= nxhi_in; i++) {
+        greens_real[ny_pppm * nx_pppm * k + nx_pppm * j + i] = work2[n];
+        n += 2;
+      }
+  MPI_Allreduce(MPI_IN_PLACE, greens_real, nz_pppm * ny_pppm * nx_pppm, MPI_DOUBLE, MPI_SUM, world);
+  int const nlocal = atom->nlocal;
+  int nmat = 0;
+  for (int i = 0; i < nlocal; i++) {
+    if (imat[i] >= 0) nmat++;
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &nmat, 1, MPI_INT, MPI_SUM, world);
+
+  // gather x_ele
+  double **x_ele;
+  memory->create(x_ele, nmat, 3, "pppm:x_ele");
+  memset(&(x_ele[0][0]), 0, nmat * 3 * sizeof(double));
+  double **x = atom->x;
+  for (int i = 0; i < nlocal; i++) {
+    int ipos = imat[i];
+    if (ipos < 0) continue;
+    for (int dim = 0; dim < 3; dim++) x_ele[ipos][dim] = x[i][dim];
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &(x_ele[0][0]), nmat * 3, MPI_DOUBLE, MPI_SUM, world);
+
+  one_step_multiplication(imat, greens_real, x_ele, matrix, nmat, timer_flag);
+  memory->destroy(greens_real);
+  memory->destroy(x_ele);
+}
+
+void PPPM::one_step_multiplication(bigint *imat, double *greens_real, double **x_ele,
+                                            double **matrix, int const nmat, bool timer_flag)
+{
+  // map green's function in real space from mesh to particle positions
+  // with matrix multiplication 'W^T G W' in one steps. Uses less memory than
+  // two_step_multiplication
+  //
+  int const nlocal = atom->nlocal;
+  double **x = atom->x;
+  MPI_Barrier(world);
+  double step1_time = MPI_Wtime();
+
+  // precalculate rho_1d for local electrode
+  std::vector<int> j_list;
+  for (int j = 0; j < nlocal; j++) {
+    int jpos = imat[j];
+    if (jpos < 0) continue;
+    j_list.push_back(j);
+  }
+  int const nj_local = j_list.size();
+
+  FFT_SCALAR ***rho1d_j;
+  memory->create(rho1d_j, nj_local, 3, order, "pppm:rho1d_j");
+
+  for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
+    int j = j_list[jlist_pos];
+    int njx = part2grid[j][0];
+    int njy = part2grid[j][1];
+    int njz = part2grid[j][2];
+    FFT_SCALAR const djx = njx + shiftone - (x[j][0] - boxlo[0]) * delxinv;
+    FFT_SCALAR const djy = njy + shiftone - (x[j][1] - boxlo[1]) * delyinv;
+    FFT_SCALAR const djz = njz + shiftone - (x[j][2] - boxlo[2]) * delzinv;
+    compute_rho1d(djx, djy, djz);
+    for (int dim = 0; dim < 3; dim++) {
+      for (int oi = 0; oi < order; oi++) { rho1d_j[jlist_pos][dim][oi] = rho1d[dim][oi + nlower]; }
+    }
+  }
+
+  // nested loops over weights of electrode atoms i and j
+  // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
+  // (dx,dy,dz) = distance to "lower left" grid pt
+  // (mx,my,mz) = global coords of moving stencil pt
+  int const order2 = order * order;
+  int const order6 = order2 * order2 * order2;
+  double *amesh;
+  memory->create(amesh, order6, "pppm:amesh");
+  for (int ipos = 0; ipos < nmat; ipos++) {
+    double *_noalias xi_ele = x_ele[ipos];
+    // new calculation for nx, ny, nz because part2grid available for nlocal,
+    // only
+    int nix = static_cast<int>((xi_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
+    int niy = static_cast<int>((xi_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
+    int niz = static_cast<int>((xi_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
+    FFT_SCALAR const dix = nix + shiftone - (xi_ele[0] - boxlo[0]) * delxinv;
+    FFT_SCALAR const diy = niy + shiftone - (xi_ele[1] - boxlo[1]) * delyinv;
+    FFT_SCALAR const diz = niz + shiftone - (xi_ele[2] - boxlo[2]) * delzinv;
+    compute_rho1d(dix, diy, diz);
+    int njx = -1;
+    int njy = -1;
+    int njz = -1;    // force initial build_amesh
+    for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
+      int j = j_list[jlist_pos];
+      int ind_amesh = 0;
+      int jpos = imat[j];
+      if ((ipos < jpos) == !((ipos - jpos) % 2)) continue;
+      double aij = 0.;
+      if (njx != part2grid[j][0] || njy != part2grid[j][1] || njz != part2grid[j][2]) {
+        njx = part2grid[j][0];
+        njy = part2grid[j][1];
+        njz = part2grid[j][2];
+        build_amesh(njx - nix, njy - niy, njz - niz, amesh, greens_real);
+      }
+      for (int ni = nlower; ni <= nupper; ni++) {    // i's rho1d[dim] indexed from nlower to nupper
+        FFT_SCALAR const iz0 = rho1d[2][ni];
+        for (int nj = 0; nj < order; nj++) {    // j's rho1d_j[][dim] indexed from 0 to order-1
+          FFT_SCALAR const jz0 = rho1d_j[jlist_pos][2][nj];
+          for (int mi = nlower; mi <= nupper; mi++) {
+            FFT_SCALAR const iy0 = iz0 * rho1d[1][mi];
+            for (int mj = 0; mj < order; mj++) {
+              FFT_SCALAR const jy0 = jz0 * rho1d_j[jlist_pos][1][mj];
+              for (int li = nlower; li <= nupper; li++) {
+                FFT_SCALAR const ix0 = iy0 * rho1d[0][li];
+                double aij_xscan = 0.;
+                for (int lj = 0; lj < order; lj++) {
+                  aij_xscan += (double) amesh[ind_amesh] * rho1d_j[jlist_pos][0][lj];
+                  ind_amesh++;
+                }
+                aij += (double) ix0 * jy0 * aij_xscan;
+              }
+            }
+          }
+        }
+      }
+      matrix[ipos][jpos] += aij / volume;
+      if (ipos != jpos) matrix[jpos][ipos] += aij / volume;
+    }
+  }
+  memory->destroy(amesh);
+  memory->destroy(rho1d_j);
+  MPI_Barrier(world);
+  if (timer_flag && (comm->me == 0))
+    utils::logmesg(lmp, fmt::format("Single step time: {:.4g} s\n", MPI_Wtime() - step1_time));
+}
+
+void PPPM::build_amesh(const int dx,    // = njx - nix
+                                const int dy,    // = njy - niy
+                                const int dz,    // = njz - niz
+                                double *amesh, double *const greens_real)
+{
+  auto fmod = [](int x, int n) {    // fast unsigned mod
+    int r = abs(x);
+    while (r >= n) r -= n;
+    return r;
+  };
+  int ind_amesh = 0;
+
+  for (int iz = 0; iz < order; iz++)
+    for (int jz = 0; jz < order; jz++) {
+      int const mz = fmod(dz + jz - iz, nz_pppm) * nx_pppm * ny_pppm;
+      for (int iy = 0; iy < order; iy++)
+        for (int jy = 0; jy < order; jy++) {
+          int const my = fmod(dy + jy - iy, ny_pppm) * nx_pppm;
+          for (int ix = 0; ix < order; ix++)
+            for (int jx = 0; jx < order; jx++) {
+              int const mx = fmod(dx + jx - ix, nx_pppm);
+              amesh[ind_amesh] = greens_real[mz + my + mx];
+              ind_amesh++;
+            }
+        }
+    }
+}
+
+void PPPM::matrix_group_group_corr(bigint *imat, double **matrix)
+{
+  int nlocal = atom->nlocal;
+  double **x = atom->x;
+
+  // how many local and total group atoms?
+  int ngrouplocal = 0;
+  for (int i = 0; i < nlocal; i++)
+    if (imat[i] > -1) ngrouplocal++;
+  bigint ngroup = 0;
+  MPI_Allreduce(&ngrouplocal, &ngroup, 1, MPI_INT, MPI_SUM, world);
+
+  std::vector<double> nprd_local = std::vector<double>(ngrouplocal);
+  for (int i = 0, n = 0; i < nlocal; i++) {
+    if (imat[i] < 0) continue;
+    nprd_local[n++] = x[i][2];
+  }
+
+  // gather subsets nprd positions
+  std::vector<int> recvcounts = gather_recvcounts(ngrouplocal);
+  std::vector<int> displs = gather_displs(recvcounts);
+  std::vector<double> nprd_all = std::vector<double>(ngroup);
+  MPI_Allgatherv(&nprd_local.front(), ngrouplocal, MPI_DOUBLE, &nprd_all.front(),
+                 &recvcounts.front(), &displs.front(), MPI_DOUBLE, world);
+
+  std::vector<bigint> jmat = gather_jmat(imat);
+  const double prefac = MY_4PI / volume;
+  for (int i = 0; i < nlocal; i++) {
+    if (imat[i] < 0) continue;
+    for (bigint j = 0; j < ngroup; j++) {
+      if (jmat[j] > imat[i]) continue;    // matrix is symmetric
+      double aij = prefac * x[i][2] * nprd_all[j];
+      matrix[imat[i]][jmat[j]] += aij;
+      if (imat[i] != jmat[j]) matrix[jmat[j]][imat[i]] += aij;
+    }
+  }
+}
+
+void PPPM::allocate_source()
+{
+  memory->create3d_offset(density_source_brick, nzlo_out, nzhi_out, nylo_out, nyhi_out,
+                          nxlo_out, nxhi_out, "pppm:density_source_brick");
+  memory->create(density_source_fft, nfft_both, "pppm:density_source_fft");
+
+  if (differentiation_flag != 1)
+    memory->create3d_offset(u_brick, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out, nxhi_out,
+                            "pppm:u_brick");
+
+}
+
+void PPPM::deallocate_source()
+{
+  memory->destroy3d_offset(density_source_brick, nzlo_out, nylo_out, nxlo_out);
+  memory->destroy(density_source_fft);
+  if (differentiation_flag != 1) memory->destroy3d_offset(u_brick, nzlo_out, nylo_out, nxlo_out);
+}
+
+std::vector<int> PPPM::gather_recvcounts(int n)
+{
+  int const nprocs = comm->nprocs;
+  auto recvcounts = std::vector<int>(nprocs);
+  MPI_Allgather(&n, 1, MPI_INT, &recvcounts.front(), 1, MPI_INT, world);
+  return recvcounts;
+}
+
+std::vector<int> PPPM::gather_displs(const std::vector<int> &recvcounts)
+{
+  int const nprocs = comm->nprocs;
+  auto displs = std::vector<int>(nprocs);
+  displs[0] = 0;
+  for (int i = 1; i < nprocs; i++) displs[i] = displs[i - 1] + recvcounts[i - 1];
+  return displs;
+}
+
+std::vector<bigint> PPPM::gather_jmat(bigint *imat)
+{
+  int nlocal = atom->nlocal;
+  bigint ngroup = 0;
+  int ngrouplocal = 0;
+  for (int i = 0; i < nlocal; i++)
+    if (imat[i] > -1) ngrouplocal++;
+  MPI_Allreduce(&ngrouplocal, &ngroup, 1, MPI_INT, MPI_SUM, world);
+
+  std::vector<bigint> jmat_local = std::vector<bigint>(ngrouplocal);
+  for (int i = 0, n = 0; i < nlocal; i++) {
+    if (imat[i] < 0) continue;
+    jmat_local[n++] = imat[i];
+  }
+
+  // gather global matrix indexing
+  auto jmat = std::vector<bigint>(ngroup);
+  auto recvcounts = gather_recvcounts(ngrouplocal);
+  auto displs = gather_displs(recvcounts);
+  MPI_Allgatherv(&jmat_local.front(), ngrouplocal, MPI_LMP_BIGINT, &jmat.front(),
+                 &recvcounts.front(), &displs.front(), MPI_LMP_BIGINT, world);
+  return jmat;
+}
+

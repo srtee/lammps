@@ -85,6 +85,25 @@ class PPPM : public KSpace {
   FFT_SCALAR *gc_buf1, *gc_buf2;
   int ngc_buf1, ngc_buf2, npergrid;
 
+  // ELECTRODE
+
+  int source_allocate_flag;
+  void allocate_source();
+  void deallocate_source();
+  FFT_SCALAR ***density_source_brick;
+  FFT_SCALAR *density_source_fft;
+  void potential_group_group(double *, int, int, bool) override;
+  void potential_group_group_corr(double*, int, int, bool) override;
+  void matrix_group_group(bigint *, double **, bool) override;
+  void matrix_group_group_corr(bigint *, double **) override;
+  void make_rho_source(int, bool);
+  void one_step_multiplication(bigint *, double *, double **, double **, int const, bool);
+  void build_amesh(int, int, int, double *, double *);
+  int compute_step;
+  std::vector<int> gather_recvcounts(int);
+  std::vector<int> gather_displs(const std::vector<int> &);
+  std::vector<bigint> gather_jmat(bigint *);
+
   // group-group interactions
 
   int group_allocate_flag;

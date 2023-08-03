@@ -79,15 +79,16 @@ static const char cite_pppm_electrode[] =
     "}\n";
 
 PPPMElectrodeIntel::PPPMElectrodeIntel(LAMMPS *lmp) :
-    PPPMIntel(lmp), ElectrodeKSpace(), electrolyte_density_brick(nullptr),
+    PPPMIntel(lmp), electrolyte_density_brick(nullptr),
     electrolyte_density_fft(nullptr), boundcorr(nullptr)
 {
   if (lmp->citeme) lmp->citeme->add(cite_pppm_electrode);
 
+  electrodeflag = 1;
   group_group_enable = 0;
   electrolyte_density_brick = nullptr;
   electrolyte_density_fft = nullptr;
-  compute_vector_called = false;
+  potential_group_group_called = false;
   last_source_grpbit = 1 << 0;    // default to "all"
   last_invert_source = false;
 }
@@ -207,7 +208,7 @@ void PPPMElectrodeIntel::compute(int eflag, int vflag)
   // map my particle charge onto my local 3d density grid
   // optimized versions can only be used for orthogonal boxes
 
-  if (compute_vector_called) {
+  if (potential_group_group_called) {
     // electrolyte_density_brick is filled, so we can
     // grab only electrode atoms
     switch (fix->precision()) {
@@ -286,7 +287,7 @@ void PPPMElectrodeIntel::compute(int eflag, int vflag)
   PPPMIntel::compute_second(eflag, vflag);
   slabflag = tempslabflag;
   boundcorr->compute_corr(qsum,  eflag_atom, eflag_global, energy, eatom);
-  compute_vector_called = false;
+  potential_group_group_called = false;
 }
 
 void PPPMElectrodeIntel::start_compute()
@@ -326,7 +327,7 @@ void PPPMElectrodeIntel::start_compute()
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
-void PPPMElectrodeIntel::compute_vector(double *vec, int sensor_grpbit, int source_grpbit,
+void PPPMElectrodeIntel::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit,
                                         bool invert_source)
 {
   start_compute();
@@ -397,7 +398,7 @@ void PPPMElectrodeIntel::compute_vector(double *vec, int sensor_grpbit, int sour
     default:
       project_psi<float, float>(fix->get_single_buffers(), vec, sensor_grpbit);
   }
-  compute_vector_called = true;
+  potential_group_group_called = true;
 }
 
 // project u_brick with weight matrix
@@ -513,7 +514,7 @@ void PPPMElectrodeIntel::project_psi(IntelBuffers<flt_t, acc_t> *buffers, double
 }
 /* ----------------------------------------------------------------------
   ---------------------------------------------------------------------  */
-void PPPMElectrodeIntel::compute_matrix(bigint *imat, double **matrix, bool timer_flag)
+void PPPMElectrodeIntel::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
 {
   // TODO replace compute with required setup
   compute(1, 0);
@@ -1060,12 +1061,12 @@ void PPPMElectrodeIntel::compute_group_group(int /*groupbit_A*/, int /*groupbit_
   error->all(FLERR, "group group interaction not implemented in pppm/electrode yet");
 }
 
-void PPPMElectrodeIntel::compute_matrix_corr(bigint *imat, double **matrix)
+void PPPMElectrodeIntel::matrix_group_group_corr(bigint *imat, double **matrix)
 {
   boundcorr->matrix_corr(imat, matrix);
 }
 
-void PPPMElectrodeIntel::compute_vector_corr(double *vec, int sensor_grpbit, int source_grpbit,
+void PPPMElectrodeIntel::potential_group_group_corr(double *vec, int sensor_grpbit, int source_grpbit,
                                              bool invert_source)
 {
   boundcorr->vector_corr(vec, sensor_grpbit, source_grpbit, invert_source);
