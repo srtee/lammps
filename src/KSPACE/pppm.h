@@ -99,7 +99,7 @@ class PPPM : public KSpace {
   void make_rho_source(int, bool);
   void one_step_multiplication(bigint *, double *, double **, double **, int const, bool);
   void build_amesh(int, int, int, double *, double *);
-  int compute_step;
+  bigint potential_group_step;
   std::vector<int> gather_recvcounts(int);
   std::vector<int> gather_displs(const std::vector<int> &);
   std::vector<bigint> gather_jmat(bigint *);

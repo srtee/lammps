@@ -77,6 +77,7 @@ PPPMDipole::PPPMDipole(LAMMPS *lmp) : PPPM(lmp),
 {
   dipoleflag = 1;
   group_group_enable = 0;
+  electrodeflag = 0; // not equipped for dipoles
 
   gc_dipole = nullptr;
 }

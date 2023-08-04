@@ -53,6 +53,7 @@ PPPMCG::PPPMCG(LAMMPS *lmp) : PPPM(lmp),
 {
   num_charged = -1;
   group_group_enable = 1;
+  electrodeflag = 1; // but not optimized
 }
 
 /* ---------------------------------------------------------------------- */

@@ -45,6 +45,7 @@ PPPMDispTIP4P::PPPMDispTIP4P(LAMMPS *lmp) : PPPMDisp(lmp)
 {
   triclinic_support = 0;
   tip4pflag = 1;
+  electrodeflag = 0; // not yet implemented for virtual sites
 }
 
 /* ---------------------------------------------------------------------- */

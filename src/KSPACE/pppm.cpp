@@ -127,7 +127,7 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
 
   // ELECTRODE
   electrodeflag = 1;
-  compute_step = -1;
+  potential_group_step = -1;
   density_source_brick = nullptr;
   density_source_fft = nullptr;
 
@@ -3469,8 +3469,8 @@ void PPPM::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
 
 void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit, bool invert_source) {
   // early setup on first step
-  if (compute_step == -1) setup();
-  if (compute_step < update->ntimestep) {
+  if (potential_group_step == -1) setup();
+  if (potential_group_step < update->ntimestep) {
     boxlo = domain->boxlo;
     if (atom->nmax > nmax) {
       memory->destroy(part2grid);
@@ -3478,7 +3478,7 @@ void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpb
       memory->create(part2grid, nmax, 3, "pppm:part2grid");
     }
     particle_map();
-    compute_step = update->ntimestep;
+    potential_group_step = update->ntimestep;
   }
 
   // switch pointers so we can reuse brick2fft
@@ -3616,8 +3616,8 @@ void PPPM::potential_group_group_corr(double* vec, int sensor_grpbit, int source
 void PPPM::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
 {
   // early setup on first step
-  if (compute_step == -1) setup();
-  if (compute_step < update->ntimestep) {
+  if (potential_group_step == -1) setup();
+  if (potential_group_step < update->ntimestep) {
     boxlo = domain->boxlo;
     if (atom->nmax > nmax) {
       memory->destroy(part2grid);
@@ -3625,7 +3625,7 @@ void PPPM::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
       memory->create(part2grid, nmax, 3, "pppm:part2grid");
     }
     particle_map();
-    compute_step = update->ntimestep;
+    potential_group_step = update->ntimestep;
   }
 
   // fft green's function k -> r (double)

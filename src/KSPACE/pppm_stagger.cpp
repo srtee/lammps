@@ -55,6 +55,7 @@ PPPMStagger::PPPMStagger(LAMMPS *lmp) :
 {
   stagger_flag = 1;
   group_group_enable = 0;
+  electrodeflag = 0; // not sure how to even start
 
   memory->create(gf_b2,8,7,"pppm_stagger:gf_b2");
   gf_b2[1][0] = 1.0;

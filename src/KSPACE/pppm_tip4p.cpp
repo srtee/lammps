@@ -45,6 +45,7 @@ PPPMTIP4P::PPPMTIP4P(LAMMPS *lmp) : PPPM(lmp)
 {
   triclinic_support = 1;
   tip4pflag = 1;
+  electrodeflag = 0; // not yet updated for virtual site
 }
 
 /* ---------------------------------------------------------------------- */
