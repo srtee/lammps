@@ -139,7 +139,7 @@ class KSpace : protected Pointers {
 
   virtual int modify_param(int, char **) { return 0; }
   virtual double memory_usage() { return 0.0; }
-  
+
   // ELECTRODE methods
 
   virtual void potential_group_group(double *, int, int, bool){};

@@ -3492,7 +3492,7 @@ void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpb
   // switch back pointers
   density_brick = density_brick_real;
   density_fft = density_fft_real;
-  
+
   // transform source charge density (r -> k) (complex conjugate)
   for (int i = 0, n = 0; i < nfft; i++) {
     work1[n++] = density_source_fft[i];
@@ -3516,8 +3516,8 @@ void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpb
       }
   gc->forward_comm(Grid3d::KSPACE, this, FORWARD_AD, 1, sizeof(FFT_SCALAR), gc_buf1, gc_buf2,
                    MPI_FFT_SCALAR);
-  
-  
+
+
   // project u_brick onto sensor charges' rho
   double **x = atom->x;
   int *mask = atom->mask;
@@ -3551,7 +3551,7 @@ void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpb
     vec[i] += v * scaleinv;
   }
 }
-  
+
 void PPPM::make_rho_source(int source_grpbit, bool invert_source) {
   // TODO: extend make_rho to take these arguments
   // instead of duplicating all the code??

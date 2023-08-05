@@ -76,7 +76,7 @@ void ElectrodeVector::setup(class Pair *fix_pair, class NeighList *fix_neighlist
   cutsq = pair->cutsq;
   list = fix_neighlist;
   this->timer_flag = timer_flag;
-  
+
   electrode_kspace = force->kspace;
   if (!(electrode_kspace)) error->all(FLERR, "ELECTRODE requires KSpace");
   if (!(electrode_kspace->electrodeflag)) error->all(FLERR, "KSpace does not implement ElectrodeKSpace");
