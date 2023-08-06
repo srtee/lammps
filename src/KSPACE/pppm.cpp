@@ -3468,6 +3468,10 @@ void PPPM::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
 }
 
 void PPPM::potential_group_group(double *vec, int sensor_grpbit, int source_grpbit, bool invert_source) {
+
+  if (domain->triclinic)
+    error->all(FLERR,"KSpace does not support potential calculations with triclinic box");
+
   // early setup on first step
   if (potential_group_step == -1) setup();
   if (potential_group_step < update->ntimestep) {
@@ -3615,6 +3619,9 @@ void PPPM::potential_group_group_corr(double* vec, int sensor_grpbit, int source
 
 void PPPM::matrix_group_group(bigint *imat, double **matrix, bool timer_flag)
 {
+  if (domain->triclinic)
+    error->all(FLERR,"KSpace does not support A-matrix calculations with triclinic box");
+
   // early setup on first step
   if (potential_group_step == -1) setup();
   if (potential_group_step < update->ntimestep) {
