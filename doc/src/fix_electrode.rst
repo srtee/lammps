@@ -100,14 +100,14 @@ electrostatic configurations:
 
   *  (resulting in changing electrode total charges)
 
-* *electrode/conq* sets the total charge on each electrode
+* *electrode/conq* sets the total charge on each electrode :ref:`(Tee2) <Tee2>`
 
   *  (resulting in changing electrode potentials)
 
 * *electrode/thermo* sets a thermopotentiostat
   :ref:`(Deissenbeck)<Deissenbeck>` between two electrodes
 
-  * (resulting in changing charges and potentials with appropriate
+  *  (resulting in changing charges and potentials with appropriate
      average potential difference and thermal variance)
 
 The first group-ID provided to each fix specifies the first electrode
@@ -212,6 +212,12 @@ electrodes and a moderate mesh size but requires more memory.
 .. code-block:: LAMMPS
 
    kspace_modify amat onestep/twostep
+
+.. versionadded:: Sep2023
+
+The base *pppm* KSpace solver is now also compatible with these *electrode*
+fixes, although the additional non-periodic boundary conditions and matrix
+implementations listed above are not available (only one-step calculation).
 
 For all versions of the fix, the keyword-value *ffield on* enables the
 finite-field mode (:ref:`Dufils <Dufils>`, :ref:`Tee <Tee>`), which uses
@@ -434,3 +440,7 @@ The default keyword-option settings are *algo mat_inv*, *symm off*,
 .. _Ahrens-Iwers2:
 
 **(Ahrens-Iwers2022)** Ahrens-Iwers *et al.*, J. Chem. Phys. 157, 084801 (2022).
+
+.. _Tee2:
+
+**(Tee2)** Tee and Searles, J. Chem. Theory Comput. 19 (10), 2758 (2023).
