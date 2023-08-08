@@ -162,15 +162,12 @@ void ElectrodeVector::pair_contribution(double *vector)
       double const rinv = 1.0 / r;
       double aij = rinv;
       aij *= ElectrodeMath::safe_erfc(g_ewald * r);
-      if (invert_source)
+      if (invert_source) // TODO: safer check for different types' eta
         aij -= ElectrodeMath::safe_erfc(eta * r) * rinv;
       else
         aij -= ElectrodeMath::safe_erfc(etaij * r) * rinv;
-      if (i_in_sensor) {
-        vector[i] += aij * q[j];
-        //} else if (j_in_sensor) {
-      }
-      if (j_in_sensor && (!invert_source || !i_in_sensor)) { vector[j] += aij * q[i]; }
+      if (i_in_sensor) vector[i] += aij * q[j];
+      if (j_in_sensor) vector[j] += aij * q[i];
     }
   }
 }
