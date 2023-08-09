@@ -269,10 +269,10 @@ void ElectrodeVector::pair_contribution_tip4p(double *vector)
   int newton_pair = force->newton_pair;
 
   double const cut_coulsqplus = (cut_coul+2.0*qdist) * (cut_coul+2.0*qdist);
-  
+
   double *xi, *xj, *xH1, *xH2;
   int iH1, iH2, jH1, jH2;
-  
+
   int const nall = nlocal + atom->nghost;
 
   if (atom->nmax > nmax_tip4p) {
@@ -282,11 +282,11 @@ void ElectrodeVector::pair_contribution_tip4p(double *vector)
     memory->destroy(newsite);
     memory->create(newsite,nmax_tip4p,3,"pair:newsite");
   }
-  
+
   if (neighbor->ago == 0)
     for (int i = 0; i < nall; i++) hneigh[i][0] = -1;
   for (int i = 0; i < nall; i++) hneigh[i][2] = 0;
-  
+
   for (int ii = 0; ii < inum; ii++) {
     int const i = ilist[ii];
     bool const i_in_sensor = (mask[i] & groupbit);
@@ -346,7 +346,7 @@ void ElectrodeVector::pair_contribution_tip4p(double *vector)
           hneigh[j][0] = jH1;
           hneigh[j][1] = jH2;
           hneigh[j][2] = 1;
-  
+
         } else {
           iH1 = hneigh[i][0];
           iH2 = hneigh[j][1];

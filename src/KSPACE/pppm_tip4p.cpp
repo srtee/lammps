@@ -689,7 +689,7 @@ void PPPMTIP4P::make_rho_source(int source_grpbit, bool invert_source)
 
   if (!source_allocate_flag) allocate_source();
   memset(&(density_source_brick[nzlo_out][nylo_out][nxlo_out]),0,ngrid*sizeof(FFT_SCALAR));
-  
+
   // loop over my charges, add their contribution to nearby grid points
   // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
   // (dx,dy,dz) = distance to "lower left" grid pt
@@ -738,7 +738,7 @@ void PPPMTIP4P::potential_group_group_corr(double* vec, int sensor_grpbit, int s
 {
   // todo: add correction for nonzero total charge
   double *xi, xM[3]; int iH1, iH2;  //for TIP4P virtual site
-  
+
   int const nlocal = atom->nlocal;
   double **x = atom->x;
   double *q = atom->q;

@@ -393,7 +393,7 @@ void FixElectrodeConp::init()
   if (pair == nullptr) pair = (Pair *) force->pair_match("coul", 0, 1); // maybe hybrid substyle
   if (pair == nullptr) {
     pair = (Pair *) force->pair_match("tip4p", 0); // TIP4P?
-    if (pair) 
+    if (pair)
       tip4pflag = true;
     else {
       pair = (Pair *) force->pair_match("tip4p", 0, 1); // maybe hybrid substyle
@@ -440,7 +440,7 @@ void FixElectrodeConp::init()
     auto Req = neighbor->add_request(this);
     if (intelflag) Req->enable_intel();
   }
-  
+
   // extract TIP4P info
   if (tip4pflag) {
     int itmp = 0;
@@ -470,6 +470,14 @@ void FixElectrodeConp::init()
     double theta = force->angle->equilibrium_angle(typeA);
     double blen = force->bond->equilibrium_distance(typeB);
     alpha = qdist / (cos(0.5*theta) * blen);
+
+    // forbid electrode atoms from having typeO
+    int const nlocal = atom->nlocal;
+    int *mask = atom->mask;
+    int *type = atom->type;
+    for (int i = 0; i < nlocal; i++)
+      if ((groupbit & mask[i]) && (type[i] == typeO))
+        error->all(FLERR,"Fix electrode does not allow TIP4P oxygens in electrode groups");
   }
 
 }
@@ -1670,7 +1678,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
   // int key, n, vlist[6];
   double *xi, *xj, *xH1, *xH2;
   int iH1, iH2, jH1, jH2;
-  
+
   int const nall = nlocal + atom->nghost;
 
   if (atom->nmax > nmax_tip4p) {
@@ -1680,7 +1688,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
     memory->destroy(newsite);
     memory->create(newsite,nmax_tip4p,3,"pair:newsite");
   }
-  
+
   if (neighbor->ago == 0)
     for (int i = 0; i < nall; i++) hneigh[i][0] = -1;
   for (int i = 0; i < nall; i++) hneigh[i][2] = 0;
@@ -1690,7 +1698,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
     bool i_in_ele = groupbit & mask[i];
     double qtmp = q[i];
     int itype = type[i];
-    
+
     if (itype == typeO) {
       if (hneigh[i][0] < 0) {
         iH1 = atom->map(tag[i] + 1);
@@ -1716,11 +1724,11 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
       }
       xi = newsite[i];
     } else xi = x[i];
-    
+
     double xtmp = xi[0];
     double ytmp = xi[1];
     double ztmp = xi[2];
-    
+
     int *jlist = firstneigh[i];
     int jnum = numneigh[i];
 
@@ -1746,7 +1754,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
           hneigh[j][0] = jH1;
           hneigh[j][1] = jH2;
           hneigh[j][2] = 1;
-  
+
         } else {
           iH1 = hneigh[i][0];
           iH2 = hneigh[j][1];
@@ -1776,7 +1784,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
             f[i][0] += delx * fpair;
             f[i][1] += dely * fpair;
             f[i][2] += delz * fpair;
-	  } else {
+          } else {
             fd[0] = delx*fpair;
             fd[1] = dely*fpair;
             fd[2] = delz*fpair;
@@ -1800,14 +1808,14 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
             f[iH2][0] += fH[0];
             f[iH2][1] += fH[1];
             f[iH2][2] += fH[2];
-	  }
-            
+          }
+
           if (newton_pair || j < nlocal) {
             if (jtype != typeO) {
               f[j][0] -= delx * fpair;
               f[j][1] -= dely * fpair;
               f[j][2] -= delz * fpair;
-	    } else {
+            } else {
               fd[0] = -delx*fpair;
               fd[1] = -dely*fpair;
               fd[2] = -delz*fpair;
@@ -1832,7 +1840,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
               f[jH2][1] += fH[1];
               f[jH2][2] += fH[2];
             }
-	  }
+          }
 
         }
 
@@ -1843,7 +1851,7 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
           force->pair->ev_tally(i, j, nlocal, newton_pair, 0., ecoul, fpair, delx, dely, delz);
         }
         // not precisely correct for virial but it's just too hard
-	// in a fix instead of a pair, for such a small correction
+        // in a fix instead of a pair, for such a small correction
 
       }
     }

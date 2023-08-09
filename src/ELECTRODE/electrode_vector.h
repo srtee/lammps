@@ -54,7 +54,7 @@ class ElectrodeVector : protected Pointers {
   double b_time_total;
 
   bool timer_flag;
-  
+
   // TIP4P
   bool tip4p_flag;
   int typeO, typeH;

@@ -178,7 +178,7 @@ class FixElectrodeConp : public Fix {
   void buffer_and_gather(double *, double *);    // buffer into buf_iele then gather and rearrange
 
   int nmax;
-  
+
   // TIP4P
   bool tip4pflag;
   int typeO, typeH;
