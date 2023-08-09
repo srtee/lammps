@@ -270,6 +270,16 @@ individual electrodes, and since *symm on* constrains the total charge of all
 electrodes to be zero, either option is incompatible with the *qtotal* keyword
 (even if *qtotal* is set to zero).
 
+.. versionchanged:: tip4p
+
+All electrode fixes are automatically usable with :doc:`TIP4P <Howto_tip4p>`
+simulations, without additional flags -- the electrode fixes will
+automatically detect when *tip4p* pair and kspace styles are being used,
+and account for the virtual site positions of TIP4P oxygen charges.
+The only restriction is that no particles with the TIP4P oxygen type
+are allowed in any electrode group (which would make little physical sense anyway).
+
+
 Restart, fix_modify, output, run start/stop, minimize info
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
