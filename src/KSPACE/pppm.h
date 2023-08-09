@@ -93,10 +93,10 @@ class PPPM : public KSpace {
   FFT_SCALAR ***density_source_brick;
   FFT_SCALAR *density_source_fft;
   void potential_group_group(double *, int, int, bool) override;
-  void potential_group_group_corr(double*, int, int, bool) override;
+  virtual void make_rho_source(int, bool);
+  virtual void potential_group_group_corr(double*, int, int, bool) override;
   void matrix_group_group(bigint *, double **, bool) override;
   void matrix_group_group_corr(bigint *, double **) override;
-  void make_rho_source(int, bool);
   void one_step_multiplication(bigint *, double *, double **, double **, int const, bool);
   void build_amesh(int, int, int, double *, double *);
   bigint potential_group_step;

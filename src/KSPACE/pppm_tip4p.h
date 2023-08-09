@@ -36,6 +36,9 @@ class PPPMTIP4P : public PPPM {
   void fieldforce_ad() override;
   void fieldforce_peratom() override;
   void slabcorr() override;
+  void make_rho_source(int, bool) override; // no need to override potential_group_group
+				   // because TIP4P O should never be a sensor
+  void potential_group_group_corr(double*, int, int, bool) override;
 
  private:
   void find_M(int, int &, int &, double *);

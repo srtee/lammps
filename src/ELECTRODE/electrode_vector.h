@@ -54,6 +54,16 @@ class ElectrodeVector : protected Pointers {
   double b_time_total;
 
   bool timer_flag;
+  
+  // TIP4P
+  bool tip4p_flag;
+  int typeO, typeH;
+  double qdist, alpha, cut_coul;
+  int **hneigh;
+  double **newsite;
+  void pair_contribution_tip4p(double *);
+  int nmax_tip4p;
+  void compute_newsite(double *, double *, double *, double *);
 };
 
 }    // namespace LAMMPS_NS

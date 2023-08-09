@@ -680,3 +680,84 @@ void PPPMTIP4P::find_M(int i, int &iH1, int &iH2, double *xM)
     xM[2] = x[i][2] + alpha * 0.5 * (delz1 + delz2);
   }
 }
+
+void PPPMTIP4P::make_rho_source(int source_grpbit, bool invert_source)
+{
+  int i,l,m,n,nx,ny,nz,mx,my,mz,iH1,iH2;
+  FFT_SCALAR dx,dy,dz,x0,y0,z0;
+  double *xi,xM[3];
+
+  if (!source_allocate_flag) allocate_source();
+  memset(&(density_source_brick[nzlo_out][nylo_out][nxlo_out]),0,ngrid*sizeof(FFT_SCALAR));
+  
+  // loop over my charges, add their contribution to nearby grid points
+  // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
+  // (dx,dy,dz) = distance to "lower left" grid pt
+  // (mx,my,mz) = global coords of moving stencil pt
+
+  int *type = atom->type;
+  double *q = atom->q;
+  double **x = atom->x;
+  int nlocal = atom->nlocal;
+  int *mask = atom->mask;
+
+  for (int i = 0; i < nlocal; i++) {
+    bool const i_in_source = !!(mask[i] & source_grpbit) != invert_source;
+    if (!i_in_source) continue;
+    if (type[i] == typeO) {
+      find_M(i,iH1,iH2,xM);
+      xi = xM;
+    } else xi = x[i];
+
+    nx = part2grid[i][0];
+    ny = part2grid[i][1];
+    nz = part2grid[i][2];
+    dx = nx+shiftone - (xi[0]-boxlo[0])*delxinv;
+    dy = ny+shiftone - (xi[1]-boxlo[1])*delyinv;
+    dz = nz+shiftone - (xi[2]-boxlo[2])*delzinv;
+
+    compute_rho1d(dx,dy,dz);
+
+    z0 = delvolinv * q[i];
+    for (n = nlower; n <= nupper; n++) {
+      mz = n+nz;
+      y0 = z0*rho1d[2][n];
+      for (m = nlower; m <= nupper; m++) {
+        my = m+ny;
+        x0 = y0*rho1d[1][m];
+        for (l = nlower; l <= nupper; l++) {
+          mx = l+nx;
+          density_brick[mz][my][mx] += x0*rho1d[0][l];
+        }
+      }
+    }
+  }
+}
+
+void PPPMTIP4P::potential_group_group_corr(double* vec, int sensor_grpbit, int source_grpbit , bool invert_source)
+{
+  // todo: add correction for nonzero total charge
+  double *xi, xM[3]; int iH1, iH2;  //for TIP4P virtual site
+  
+  int const nlocal = atom->nlocal;
+  double **x = atom->x;
+  double *q = atom->q;
+  int *mask = atom->mask;
+  int *type = atom->type;
+  double dipole = 0.;
+  for (int i = 0; i < nlocal; i++) {
+    if (!!(mask[i] & source_grpbit) != invert_source) {
+      if (type[i] == typeO) {
+        find_M(i,iH1,iH2,xM);
+        xi = xM;
+      } else xi = x[i];
+      dipole += q[i] * xi[2];
+    }
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &dipole, 1, MPI_DOUBLE, MPI_SUM, world);
+  dipole *= 4.0 * MY_PI / volume;
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & sensor_grpbit) vec[i] += x[i][2] * dipole;
+  }
+}
+

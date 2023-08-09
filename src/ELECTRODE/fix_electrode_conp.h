@@ -107,6 +107,7 @@ class FixElectrodeConp : public Fix {
   int qtotal_var_id;
   VarStyle qtotal_var_style;
 
+
  private:
   std::string output_file_inv, output_file_mat, output_file_vec;
   std::string input_file_inv, input_file_mat;
@@ -177,6 +178,16 @@ class FixElectrodeConp : public Fix {
   void buffer_and_gather(double *, double *);    // buffer into buf_iele then gather and rearrange
 
   int nmax;
+  
+  // TIP4P
+  bool tip4pflag;
+  int typeO, typeH;
+  double qdist, alpha, cut_coul;
+  int **hneigh;
+  double **newsite;
+  double gausscorr_tip4p(int, bool);
+  int nmax_tip4p;
+  void compute_newsite(double *, double *, double *, double *);
 };
 
 }    // namespace LAMMPS_NS

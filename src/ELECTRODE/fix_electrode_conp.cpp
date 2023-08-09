@@ -17,7 +17,9 @@
 
 #include "fix_electrode_conp.h"
 
+#include "angle.h"
 #include "atom.h"
+#include "bond.h"
 #include "citeme.h"
 #include "comm.h"
 #include "domain.h"
@@ -76,7 +78,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), elyt_vector(nullptr), elec_vector(nullptr), capacitance(nullptr),
     elastance(nullptr), pair(nullptr), mat_neighlist(nullptr), vec_neighlist(nullptr),
     recvcounts(nullptr), displs(nullptr), iele_gathered(nullptr), buf_gathered(nullptr),
-    potential_i(nullptr), potential_iele(nullptr)
+    potential_i(nullptr), potential_iele(nullptr), hneigh(nullptr), newsite(nullptr)
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_electrode);
   // fix.h output flags
@@ -305,7 +307,9 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
 
   nlocalele = 0;
 
-  nmax = 0;
+  nmax = nmax_tip4p = 0;
+
+  tip4pflag = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -386,9 +390,15 @@ void FixElectrodeConp::init()
 {
   pair = nullptr;    // not sure if needed -- remove if unnecessary
   pair = (Pair *) force->pair_match("coul", 0);
-  if (pair == nullptr) {    // couldn't find a pair with name coul -- maybe hybrid
-    // return 1st hybrid substyle containing 'coul'
-    pair = (Pair *) force->pair_match("coul", 0, 1);
+  if (pair == nullptr) pair = (Pair *) force->pair_match("coul", 0, 1); // maybe hybrid substyle
+  if (pair == nullptr) {
+    pair = (Pair *) force->pair_match("tip4p", 0); // TIP4P?
+    if (pair) 
+      tip4pflag = true;
+    else {
+      pair = (Pair *) force->pair_match("tip4p", 0, 1); // maybe hybrid substyle
+      if (pair) tip4pflag = true;
+    }
   }
   if (pair == nullptr) error->all(FLERR, "Fix electrode couldn't find a Coulombic pair style");
 
@@ -430,6 +440,38 @@ void FixElectrodeConp::init()
     auto Req = neighbor->add_request(this);
     if (intelflag) Req->enable_intel();
   }
+  
+  // extract TIP4P info
+  if (tip4pflag) {
+    int itmp = 0;
+    auto p_qdist = (double *) force->pair->extract("qdist",itmp);
+    auto p_cut_coul = (double *) force->pair->extract("cut_coul",itmp);
+    int *p_typeO = (int *) force->pair->extract("typeO",itmp);
+    int *p_typeH = (int *) force->pair->extract("typeH",itmp);
+    int *p_typeA = (int *) force->pair->extract("typeA",itmp);
+    int *p_typeB = (int *) force->pair->extract("typeB",itmp);
+    if (!p_qdist || !p_typeO || !p_typeH || !p_typeA || !p_typeB)
+      error->all(FLERR,"Pair style is incompatible with fix electrode TIP4P mode");
+    qdist = *p_qdist;
+    typeO = *p_typeO;
+    typeH = *p_typeH;
+    int typeA = *p_typeA;
+    int typeB = *p_typeB;
+
+    if (force->angle == nullptr || force->bond == nullptr ||
+        force->angle->setflag == nullptr || force->bond->setflag == nullptr)
+      error->all(FLERR,"Bond and angle potentials must be defined for TIP4P");
+    if (typeA < 1 || typeA > atom->nangletypes ||
+        force->angle->setflag[typeA] == 0)
+      error->all(FLERR,"Bad TIP4P angle type for PPPM/TIP4P");
+    if (typeB < 1 || typeB > atom->nbondtypes ||
+        force->bond->setflag[typeB] == 0)
+      error->all(FLERR,"Bad TIP4P bond type for PPPM/TIP4P");
+    double theta = force->angle->equilibrium_angle(typeA);
+    double blen = force->bond->equilibrium_distance(typeB);
+    alpha = qdist / (cos(0.5*theta) * blen);
+  }
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -628,7 +670,8 @@ void FixElectrodeConp::setup_post_neighbor()
 void FixElectrodeConp::setup_pre_reverse(int eflag, int /*vflag*/)
 {
   // correct forces for initial timestep
-  gausscorr(eflag, true);
+  if (tip4pflag) gausscorr_tip4p(eflag, true);
+  else gausscorr(eflag, true);
   self_energy(eflag);
   // potential_energy(eflag); // not always part of the energy, depending on ensemble, therefore
   // removed
@@ -760,7 +803,8 @@ void FixElectrodeConp::pre_force(int)
 
 void FixElectrodeConp::pre_reverse(int eflag, int /*vflag*/)
 {
-  gausscorr(eflag, true);
+  if (tip4pflag) gausscorr_tip4p(eflag, true);
+  else gausscorr(eflag, true);
   self_energy(eflag);
   //potential_energy(eflag); // not always part of the energy, depending on ensemble, therefore
   // removed
@@ -1598,3 +1642,230 @@ void FixElectrodeConp::unpack_forward_comm(int n, int first, double *buf)
   int const last = first + n;
   for (int i = first, m = 0; i < last; i++) atom->q[i] = buf[m++];
 }
+
+
+double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
+{
+  // correction to short range interaction due to eta
+
+  int evflag = pair->evflag;
+  double const qqrd2e = force->qqrd2e;
+  int const nlocal = atom->nlocal;
+  int *mask = atom->mask;
+  tagint *tag = atom->tag;
+  double *q = atom->q;
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int newton_pair = force->newton_pair;
+  int inum = vec_neighlist->inum;
+  int *ilist = vec_neighlist->ilist;
+  int *numneigh = vec_neighlist->numneigh;
+  int **firstneigh = vec_neighlist->firstneigh;
+  double energy_sr = 0.;
+  double const cut_coulsqplus = (cut_coul+2.0*qdist) * (cut_coul+2.0*qdist);
+
+  double fO[3], fH[3], fd[3];
+  // double v[6]; TODO: needed for super accurate virial
+  // int key, n, vlist[6];
+  double *xi, *xj, *xH1, *xH2;
+  int iH1, iH2, jH1, jH2;
+  
+  int const nall = nlocal + atom->nghost;
+
+  if (atom->nmax > nmax_tip4p) {
+    nmax_tip4p = atom->nmax;
+    memory->destroy(hneigh);
+    memory->create(hneigh,nmax_tip4p,3,"pair:hneigh");
+    memory->destroy(newsite);
+    memory->create(newsite,nmax_tip4p,3,"pair:newsite");
+  }
+  
+  if (neighbor->ago == 0)
+    for (int i = 0; i < nall; i++) hneigh[i][0] = -1;
+  for (int i = 0; i < nall; i++) hneigh[i][2] = 0;
+
+  for (int ii = 0; ii < inum; ii++) {
+    int i = ilist[ii];
+    bool i_in_ele = groupbit & mask[i];
+    double qtmp = q[i];
+    int itype = type[i];
+    
+    if (itype == typeO) {
+      if (hneigh[i][0] < 0) {
+        iH1 = atom->map(tag[i] + 1);
+        iH2 = atom->map(tag[i] + 2);
+        if (iH1 == -1 || iH2 == -1)
+          error->one(FLERR,"TIP4P hydrogen is missing");
+        if (atom->type[iH1] != typeH || atom->type[iH2] != typeH)
+          error->one(FLERR,"TIP4P hydrogen has incorrect atom type");
+        // set iH1,iH2 to closest image to O
+        iH1 = domain->closest_image(i,iH1);
+        iH2 = domain->closest_image(i,iH2);
+        compute_newsite(x[i],x[iH1],x[iH2],newsite[i]);
+        hneigh[i][0] = iH1;
+        hneigh[i][1] = iH2;
+        hneigh[i][2] = 1;
+      } else {
+        iH1 = hneigh[i][0];
+        iH2 = hneigh[i][1];
+        if (hneigh[i][2] == 0) {
+          hneigh[i][2] = 1;
+          compute_newsite(x[i],x[iH1],x[iH2],newsite[i]);
+        }
+      }
+      xi = newsite[i];
+    } else xi = x[i];
+    
+    double xtmp = xi[0];
+    double ytmp = xi[1];
+    double ztmp = xi[2];
+    
+    int *jlist = firstneigh[i];
+    int jnum = numneigh[i];
+
+    for (int jj = 0; jj < jnum; jj++) {
+      int const j = jlist[jj] & NEIGHMASK;
+      bool j_in_ele = groupbit & mask[j];
+      if (!(i_in_ele || j_in_ele)) continue;
+      double eta_ij = (i_in_ele && j_in_ele) ? eta / MY_SQRT2 : eta;
+
+      int jtype = type[j];
+      if (jtype == typeO) {
+        if (hneigh[j][0] < 0) {
+          jH1 = atom->map(tag[j] + 1);
+          jH2 = atom->map(tag[j] + 2);
+          if (jH1 == -1 || jH2 == -1)
+            error->one(FLERR,"TIP4P hydrogen is missing");
+          if (atom->type[jH1] != typeH || atom->type[jH2] != typeH)
+            error->one(FLERR,"TIP4P hydrogen has incorrect atom type");
+          // set iH1,iH2 to closest image to O
+          jH1 = domain->closest_image(j,jH1);
+          jH2 = domain->closest_image(j,jH2);
+          compute_newsite(x[j],x[jH1],x[jH2],newsite[j]);
+          hneigh[j][0] = jH1;
+          hneigh[j][1] = jH2;
+          hneigh[j][2] = 1;
+  
+        } else {
+          iH1 = hneigh[i][0];
+          iH2 = hneigh[j][1];
+          if (hneigh[j][2] == 0) {
+            hneigh[j][2] = 1;
+            compute_newsite(x[j],x[jH1],x[jH2],newsite[j]);
+          }
+        }
+        xj = newsite[j];
+      } else xj = x[j];
+      double delx = xtmp - xj[0];
+      double dely = ytmp - xj[1];
+      double delz = ztmp - xj[2];
+      double rsq = delx * delx + dely * dely + delz * delz;
+
+      if (rsq < cut_coulsqplus) {
+        double r2inv = 1.0 / rsq;
+        double r = sqrt(rsq);
+        double erfc_etar = 0.;
+        double derfcr = ElectrodeMath::safe_derfcr(eta_ij * r, erfc_etar);
+        double prefactor = qqrd2e * qtmp * q[j] / r;
+        energy_sr -= prefactor * erfc_etar;
+
+        double fpair = prefactor * derfcr * r2inv;
+        if (fflag) {
+          if (itype != typeO) {
+            f[i][0] += delx * fpair;
+            f[i][1] += dely * fpair;
+            f[i][2] += delz * fpair;
+	  } else {
+            fd[0] = delx*fpair;
+            fd[1] = dely*fpair;
+            fd[2] = delz*fpair;
+
+            fO[0] = fd[0]*(1 - alpha);
+            fO[1] = fd[1]*(1 - alpha);
+            fO[2] = fd[2]*(1 - alpha);
+
+            fH[0] = 0.5 * alpha * fd[0];
+            fH[1] = 0.5 * alpha * fd[1];
+            fH[2] = 0.5 * alpha * fd[2];
+
+            f[i][0] += fO[0];
+            f[i][1] += fO[1];
+            f[i][2] += fO[2];
+
+            f[iH1][0] += fH[0];
+            f[iH1][1] += fH[1];
+            f[iH1][2] += fH[2];
+
+            f[iH2][0] += fH[0];
+            f[iH2][1] += fH[1];
+            f[iH2][2] += fH[2];
+	  }
+            
+          if (newton_pair || j < nlocal) {
+            if (jtype != typeO) {
+              f[j][0] -= delx * fpair;
+              f[j][1] -= dely * fpair;
+              f[j][2] -= delz * fpair;
+	    } else {
+              fd[0] = -delx*fpair;
+              fd[1] = -dely*fpair;
+              fd[2] = -delz*fpair;
+
+              fO[0] = fd[0]*(1 - alpha);
+              fO[1] = fd[1]*(1 - alpha);
+              fO[2] = fd[2]*(1 - alpha);
+
+              fH[0] = 0.5 * alpha * fd[0];
+              fH[1] = 0.5 * alpha * fd[1];
+              fH[2] = 0.5 * alpha * fd[2];
+
+              f[j][0] += fO[0];
+              f[j][1] += fO[1];
+              f[j][2] += fO[2];
+
+              f[jH1][0] += fH[0];
+              f[jH1][1] += fH[1];
+              f[jH1][2] += fH[2];
+
+              f[jH2][0] += fH[0];
+              f[jH2][1] += fH[1];
+              f[jH2][2] += fH[2];
+            }
+	  }
+
+        }
+
+        double ecoul = 0.;
+        if (eflag) ecoul = -prefactor * erfc_etar;
+
+        if (evflag) {
+          force->pair->ev_tally(i, j, nlocal, newton_pair, 0., ecoul, fpair, delx, dely, delz);
+        }
+        // not precisely correct for virial but it's just too hard
+	// in a fix instead of a pair, for such a small correction
+
+      }
+    }
+  }
+
+  MPI_Allreduce(MPI_IN_PLACE, &energy_sr, 1, MPI_DOUBLE, MPI_SUM, world);
+  return energy_sr;
+}
+
+void FixElectrodeConp::compute_newsite(double *xO, double *xH1,
+                                         double *xH2, double *xM)
+{
+  double delx1 = xH1[0] - xO[0];
+  double dely1 = xH1[1] - xO[1];
+  double delz1 = xH1[2] - xO[2];
+
+  double delx2 = xH2[0] - xO[0];
+  double dely2 = xH2[1] - xO[1];
+  double delz2 = xH2[2] - xO[2];
+
+  xM[0] = xO[0] + alpha * 0.5 * (delx1 + delx2);
+  xM[1] = xO[1] + alpha * 0.5 * (dely1 + dely2);
+  xM[2] = xO[2] + alpha * 0.5 * (delz1 + delz2);
+}
+
