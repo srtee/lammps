@@ -41,7 +41,7 @@ using namespace MathConst;
 
 ElectrodeVector::ElectrodeVector(LAMMPS *lmp, int sensor_group, int source_group, double eta,
                                  bool invert_source) :
-    Pointers(lmp)
+    Pointers(lmp), hneigh(nullptr), newsite(nullptr)
 {
   igroup = sensor_group;                // group of all atoms at which we calculate potential
   this->source_group = source_group;    // group of all atoms influencing potential
@@ -348,8 +348,8 @@ void ElectrodeVector::pair_contribution_tip4p(double *vector)
           hneigh[j][2] = 1;
 
         } else {
-          iH1 = hneigh[i][0];
-          iH2 = hneigh[j][1];
+          jH1 = hneigh[j][0];
+          jH2 = hneigh[j][1];
           if (hneigh[j][2] == 0) {
             hneigh[j][2] = 1;
             compute_newsite(x[j],x[jH1],x[jH2],newsite[j]);

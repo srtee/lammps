@@ -3602,6 +3602,7 @@ void PPPM::make_rho_source(int source_grpbit, bool invert_source) {
 
 void PPPM::potential_group_group_corr(double* vec, int sensor_grpbit, int source_grpbit , bool invert_source)
 {
+  if (slabflag == 0) return;
   // todo: add correction for nonzero total charge
   int const nlocal = atom->nlocal;
   double **x = atom->x;
@@ -3863,6 +3864,8 @@ void PPPM::deallocate_source()
   memory->destroy3d_offset(density_source_brick, nzlo_out, nylo_out, nxlo_out);
   memory->destroy(density_source_fft);
   if (differentiation_flag != 1) memory->destroy3d_offset(u_brick, nzlo_out, nylo_out, nxlo_out);
+
+  source_allocate_flag = 0;
 }
 
 std::vector<int> PPPM::gather_recvcounts(int n)

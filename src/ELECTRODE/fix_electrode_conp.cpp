@@ -1756,8 +1756,8 @@ double FixElectrodeConp::gausscorr_tip4p(int eflag, bool fflag)
           hneigh[j][2] = 1;
 
         } else {
-          iH1 = hneigh[i][0];
-          iH2 = hneigh[j][1];
+          jH1 = hneigh[j][0];
+          jH2 = hneigh[j][1];
           if (hneigh[j][2] == 0) {
             hneigh[j][2] = 1;
             compute_newsite(x[j],x[jH1],x[jH2],newsite[j]);

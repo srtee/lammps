@@ -45,7 +45,7 @@ PPPMTIP4P::PPPMTIP4P(LAMMPS *lmp) : PPPM(lmp)
 {
   triclinic_support = 1;
   tip4pflag = 1;
-  electrodeflag = 0; // not yet updated for virtual site
+  electrodeflag = 1; // not yet updated for virtual site
 }
 
 /* ---------------------------------------------------------------------- */
@@ -736,6 +736,7 @@ void PPPMTIP4P::make_rho_source(int source_grpbit, bool invert_source)
 
 void PPPMTIP4P::potential_group_group_corr(double* vec, int sensor_grpbit, int source_grpbit , bool invert_source)
 {
+  if (slabflag == 0) return;
   // todo: add correction for nonzero total charge
   double *xi, xM[3]; int iH1, iH2;  //for TIP4P virtual site
 
