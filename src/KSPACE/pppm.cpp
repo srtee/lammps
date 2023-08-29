@@ -130,6 +130,7 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
   potential_group_step = -1;
   density_source_brick = nullptr;
   density_source_fft = nullptr;
+  source_allocate_flag = 0;
 
   // define acons coefficients for estimation of kspace errors
   // see JCP 109, pg 7698 for derivation of coefficients
@@ -3854,7 +3855,7 @@ void PPPM::allocate_source()
   if (differentiation_flag != 1)
     memory->create3d_offset(u_brick, nzlo_out, nzhi_out, nylo_out, nyhi_out, nxlo_out, nxhi_out,
                             "pppm:u_brick");
-
+  source_allocate_flag = 1;
 }
 
 void PPPM::deallocate_source()
