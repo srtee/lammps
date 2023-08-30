@@ -101,6 +101,7 @@ void ElectrodeVector::setup(class Pair *fix_pair, class NeighList *fix_neighlist
     int *p_typeB = (int *) force->pair->extract("typeB",itmp);
     if (!p_qdist || !p_typeO || !p_typeH || !p_typeA || !p_typeB)
       error->all(FLERR,"Pair style is incompatible with fix electrode TIP4P mode");
+    cut_coul = *p_cut_coul;
     qdist = *p_qdist;
     typeO = *p_typeO;
     typeH = *p_typeH;
@@ -140,7 +141,7 @@ void ElectrodeVector::compute_vector(double *vector)
   double pair_start_time = MPI_Wtime();
   if (tip4p_flag) pair_contribution_tip4p(vector);
   else pair_contribution(vector);
-  self_contribution(vector);
+  // self_contribution(vector);
   if (tfflag) tf_contribution(vector);
   MPI_Barrier(world);
   pair_time_total += MPI_Wtime() - pair_start_time;

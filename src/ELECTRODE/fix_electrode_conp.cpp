@@ -101,6 +101,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   intelflag = false;
   tfflag = false;
   timer_flag = false;
+  tip4pflag = false;
 
   update_time = 0;
   mult_time = 0;
@@ -221,6 +222,9 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
       symm = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if ((strcmp(arg[iarg], "ffield") == 0)) {
       ffield = utils::logical(FLERR, arg[++iarg], false, lmp);
+    } else if ((strcmp(arg[iarg], "ffield_tip4p") == 0)) {
+      ffield = utils::logical(FLERR, arg[++iarg], false, lmp);
+      tip4pflag = ffield;
     } else {
       error->all(FLERR, "Unknown keyword {} for fix {} command", arg[iarg], style);
     }
@@ -309,7 +313,6 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
 
   nmax = nmax_tip4p = 0;
 
-  tip4pflag = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -391,16 +394,19 @@ void FixElectrodeConp::init()
   pair = nullptr;    // not sure if needed -- remove if unnecessary
   pair = (Pair *) force->pair_match("coul", 0);
   if (pair == nullptr) pair = (Pair *) force->pair_match("coul", 0, 1); // maybe hybrid substyle
+  // error if TIP4P efield was selected
+  if (!!(pair) && ffield && tip4pflag)
+    error->all(FLERR, "cannot use efield/tip4p for finite field with non-TIP4P pair style");
   if (pair == nullptr) {
     pair = (Pair *) force->pair_match("tip4p", 0); // TIP4P?
-    if (pair)
+    if (pair == nullptr) pair = (Pair *) force->pair_match("tip4p", 0, 1); // maybe hybrid substyle
+    if (pair) {
+      if (ffield && !tip4pflag)
+        error->all(FLERR, "cannot use efield without tip4p for finite field with TIP4P pair style");
       tip4pflag = true;
-    else {
-      pair = (Pair *) force->pair_match("tip4p", 0, 1); // maybe hybrid substyle
-      if (pair) tip4pflag = true;
     }
+    else error->all(FLERR, "Fix electrode couldn't find a Coulombic or TIP4P pair style");
   }
-  if (pair == nullptr) error->all(FLERR, "Fix electrode couldn't find a Coulombic pair style");
 
   // error if more than one fix electrode/*
   int count = 0;
@@ -520,7 +526,9 @@ void FixElectrodeConp::post_constructor()
     error->warning(FLERR, "Other efield fixes found -- please make sure this is intended!");
   // call fix command:
   // fix [varstem]_efield all efield 0.0 0.0 [var_vdiff]/lz
-  std::string efield_call = fixname + "_efield all efield 0.0 0.0 v_" + var_efield;
+  std::string ef_tip4p = (tip4pflag) ? "/tip4p" : "";
+  std::string efield_substring = "_efield all efield" + ef_tip4p + " 0.0 0.0 v_";
+  std::string efield_call = fixname + efield_substring + var_efield;
   modify->add_fix(efield_call, 1);
 }
 

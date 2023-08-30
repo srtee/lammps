@@ -3811,6 +3811,7 @@ void PPPM::build_amesh(const int dx,    // = njx - nix
 
 void PPPM::matrix_group_group_corr(bigint *imat, double **matrix)
 {
+  if (slabflag == 0) return;
   int nlocal = atom->nlocal;
   double **x = atom->x;
 

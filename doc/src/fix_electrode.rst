@@ -273,11 +273,12 @@ electrodes to be zero, either option is incompatible with the *qtotal* keyword
 .. versionchanged:: tip4p
 
 All electrode fixes are automatically usable with :doc:`TIP4P <Howto_tip4p>`
-simulations, without additional flags -- the electrode fixes will
-automatically detect when *tip4p* pair and kspace styles are being used,
-and account for the virtual site positions of TIP4P oxygen charges.
-The only restriction is that no particles with the TIP4P oxygen type
-are allowed in any electrode group (which would make little physical sense anyway).
+simulations. In most use cases the electrode fixes will automatically detect
+*tip4p* pair and kspace styles are being used and account for the virtual site
+positions of TIP4P oxygen charges, without any additional flags. For finite field
+simulations, the *ffield_tip4p* flag must be used instead of the *ffield* flag
+so that *fix efield/tip4p* is used to supply the electric field. Note that
+LAMMPS must be compiled with the EXTRA-FIX package to use *fix efield/tip4p*.
 
 
 Restart, fix_modify, output, run start/stop, minimize info
@@ -398,6 +399,12 @@ store an interaction matrix (either elastance or capacitance) of *N* by
 *N* doubles for each MPI process. This memory requirement may be
 prohibitive for large electrode groups.  The fix will issue a warning if
 it expects to use more than 0.5 GiB of memory.
+
+In TIP4P simulations, electrode fixes will trigger an error if any electrode
+particle has the TIP4P oxygen type. Additionally, the *ffield* flag will
+trigger an error if used in TIP4P simulations and the *ffield_tip4p* flag will
+trigger an error if used outside TIP4P simulations, since in either case
+the electric field fix would be incompatible with the simulation setup.
 
 Default
 """""""

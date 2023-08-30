@@ -727,7 +727,7 @@ void PPPMTIP4P::make_rho_source(int source_grpbit, bool invert_source)
         x0 = y0*rho1d[1][m];
         for (l = nlower; l <= nupper; l++) {
           mx = l+nx;
-          density_brick[mz][my][mx] += x0*rho1d[0][l];
+          density_source_brick[mz][my][mx] += x0*rho1d[0][l];
         }
       }
     }

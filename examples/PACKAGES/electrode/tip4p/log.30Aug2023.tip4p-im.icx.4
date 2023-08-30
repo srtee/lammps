@@ -1,0 +1,226 @@
+LAMMPS (2 Aug 2023)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:98)
+  using 1 OpenMP thread(s) per MPI task
+# TIP4P electrode simulation with implicit virtual charge sites
+units real
+if "$(extract_setting(world_size) % 2) == 0" then "processors * * 2"
+processors * * 2
+
+atom_style full
+#pair_style arguments: typeO typeH bond angle qdist cutoff
+pair_style lj/cut/tip4p/long 4 2 1 1 0.125 8.0
+kspace_style pppm/tip4p 1e-5
+bond_style zero
+angle_style zero
+
+read_data "tip4p_ex.data"
+Reading data file ...
+  orthogonal box = (0 0 0) to (33.262303 33.606999 96.863651)
+  1 by 2 by 2 MPI processor grid
+  reading atoms ...
+  13580 atoms
+  reading velocities ...
+  13580 velocities
+  scanning bonds ...
+  3 = max bonds/atom
+  scanning angles ...
+  1 = max angles/atom
+  reading bonds ...
+  9162 bonds
+  reading angles ...
+  3054 angles
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     3 = max # of 1-2 neighbors
+     2 = max # of 1-3 neighbors
+     2 = max # of 1-4 neighbors
+     3 = max # of special neighbors
+  special bonds CPU = 0.003 seconds
+  read_data CPU = 0.083 seconds
+comm_modify cutoff 12
+# for ffield, remove change_box and omit slab
+change_box all boundary p p f
+Changing box ...
+kspace_modify mesh 45 45 90 gewald 0.388 slab 3.0
+
+# remove vsites for use with TIP4P styles
+delete_bonds all bond 2 remove special
+System init for delete_bonds ...
+PPPM initialization ...
+  extracting TIP4P info from pair style
+  using 12-bit tables for long-range coulomb (src/kspace.cpp:342)
+  G vector (1/distance) = 0.388
+  grid = 45 45 90
+  stencil order = 5
+  estimated absolute RMS force accuracy = 1.4442936
+  estimated relative force accuracy = 0.0043494473
+  using double precision KISS FFT
+  3d grid and FFT values/proc = 128898 77625
+Generated 21 of 21 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 10.25
+  ghost atom cutoff = 12
+  binsize = 5.125, bins = 7 7 19
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/cut/tip4p/long, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Deleting bonds ...
+  6108 total bonds, 6108 turned on, 0 turned off
+  3054 total angles, 3054 turned on, 0 turned off
+  0 total dihedrals, 0 turned on, 0 turned off
+  0 total impropers, 0 turned on, 0 turned off
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     2 = max # of 1-2 neighbors
+     1 = max # of 1-3 neighbors
+     1 = max # of 1-4 neighbors
+     3 = max # of special neighbors
+  special bonds CPU = 0.001 seconds
+group vsites type 7
+3054 atoms in group vsites
+delete_atoms group vsites
+WARNING: Ignoring 'compress yes' for molecular system (src/delete_atoms.cpp:140)
+Deleted 3054 atoms, new total = 10526
+set type 4 charge -1.04844
+Setting atom values ...
+  3054 settings made for charge
+
+group wat type 2 4
+9162 atoms in group wat
+fix rigid wat shake 0.0001 10 10000 b 1 a 1
+Finding SHAKE clusters ...
+       0 = # of size 2 clusters
+       0 = # of size 3 clusters
+       0 = # of size 4 clusters
+    3054 = # of frozen angles
+  find clusters CPU = 0.002 seconds
+fix wat_integrate wat nvt temp 300.0 300.0 100.0
+group salt type 1 3
+20 atoms in group salt
+fix salt_integrate salt nve
+
+variable q atom q
+variable px atom mass*vx
+variable py atom mass*vy
+variable pz atom mass*vz
+
+group sol union wat salt
+9182 atoms in group sol
+group top type 5
+672 atoms in group top
+group bot type 6
+672 atoms in group bot
+
+compute p sol reduce sum v_px v_py v_pz
+compute qtop top reduce sum v_q
+compute qbot bot reduce sum v_q
+
+fix ele top electrode/conp 2.0 1.805 couple bot 0.0 symm on
+1344 atoms in group conp_group
+# for ffield, use: fix ele top electrode/conp 0.0 1.805 couple bot 0.0 symm on ffield_tip4p on
+
+thermo_style custom step temp etotal c_p[1] c_p[2] c_p[3] c_qtop c_qbot
+thermo_modify flush yes
+thermo 10
+# short steps and run because dynamics diverge fast, even without electrode
+timestep 0.5
+run 100
+
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+Your simulation uses code contributions which should be cited:
+
+- fix electrode command:
+
+@article{Ahrens2022
+author = {Ahrens-Iwers, Ludwig J.V. and Janssen, Mahijs and Tee, Shern R. and Mei{\ss}ner, Robert H.},
+doi = {10.1063/5.0099239},
+title = {{ELECTRODE: An electrochemistry package for LAMMPS}},
+journal = {The Journal of Chemical Physics},
+year = {2022}
+volume = {157},
+pages = {084801},
+}
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+PPPM initialization ...
+  extracting TIP4P info from pair style
+  using 12-bit tables for long-range coulomb (src/kspace.cpp:342)
+  G vector (1/distance) = 0.388
+  grid = 45 45 90
+  stencil order = 5
+  estimated absolute RMS force accuracy = 1.6404904
+  estimated relative force accuracy = 0.0049402881
+  using double precision KISS FFT
+  3d grid and FFT values/proc = 128898 77625
+Generated 21 of 21 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 10.25
+  ghost atom cutoff = 12
+  binsize = 5.125, bins = 7 7 19
+  2 neighbor lists, perpetual/occasional/extra = 2 0 0
+  (1) pair lj/cut/tip4p/long, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (2) fix electrode/conp, perpetual, copy from (1)
+      attributes: half, newton on
+      pair build: copy
+      stencil: none
+      bin: none
+SHAKE stats (type/ave/delta/count) on step 0
+Bond:   1   0.957203  0.00253136      6108
+Angle:  1   104.52    0.227551        3054
+Per MPI rank memory allocation (min/avg/max) = 42.38 | 46.28 | 50.4 Mbytes
+   Step          Temp          TotEng         c_p[1]         c_p[2]         c_p[3]         c_qtop         c_qbot    
+         0   0              22892.052      0              0              0             -2.0105464      2.0105464    
+        10   4051.058       21742.142     -0.010367342    0.017890188   -0.049429382   -1.9614007      1.9614007    
+        20   4997.9683      17971.026     -0.054975143    0.074404498   -0.15314178    -1.7655605      1.7655605    
+        30   4873.3883      12627.834     -0.11750115     0.11383344    -0.2919032     -1.5402496      1.5402496    
+        40   4648.7961      6813.6977     -0.18896479     0.10630823    -0.49894877    -1.4137251      1.4137251    
+        50   4502.3027      834.03441     -0.31940284     0.034235098   -0.54180836    -1.3440734      1.3440734    
+        60   4360.7345     -5215.6183     -0.59707251    -0.25653772    -0.13130643    -1.2897136      1.2897136    
+        70   4164.2102     -11202.287     -0.78542098    -0.89095248     0.57818823    -1.2643437      1.2643437    
+        80   3952.3572     -16978.053     -1.1309401     -1.4289337      2.6709653     -1.2480454      1.2480454    
+        90   3809.2913     -22579.526     -1.6314397     -1.7094998      4.1781788     -1.2432155      1.2432155    
+       100   3643.7631     -28011.186     -2.0040455     -2.0208333      4.9888085     -1.2599722      1.2599722    
+Loop time of 5.30606 on 4 procs for 100 steps with 10526 atoms
+
+Performance: 0.814 ns/day, 29.478 hours/ns, 18.846 timesteps/s, 198.377 katom-step/s
+96.8% CPU use with 4 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 1.158      | 1.24       | 1.3652     |   6.9 | 23.37
+Bond    | 0.00010239 | 0.00011552 | 0.00012802 |   0.0 |  0.00
+Kspace  | 2.0005     | 2.1261     | 2.2082     |   5.3 | 40.07
+Neigh   | 0.26675    | 0.26714    | 0.2675     |   0.1 |  5.03
+Comm    | 0.034948   | 0.036773   | 0.038741   |   0.9 |  0.69
+Output  | 0.0020972  | 0.0022723  | 0.0027927  |   0.6 |  0.04
+Modify  | 1.6252     | 1.627      | 1.6289     |   0.1 | 30.66
+Other   |            | 0.006694   |            |       |  0.13
+
+Nlocal:         2631.5 ave        2660 max        2590 min
+Histogram: 1 0 0 0 0 0 1 1 0 1
+Nghost:          11513 ave       11616 max       11430 min
+Histogram: 1 0 0 1 1 0 0 0 0 1
+Neighs:         598255 ave      647610 max      565889 min
+Histogram: 1 1 0 0 1 0 0 0 0 1
+
+Total # of neighbors = 2393019
+Ave neighs/atom = 227.34363
+Ave special neighs/atom = 1.7408322
+Neighbor list builds = 11
+Dangerous builds = 0
+Total wall time: 0:00:16
