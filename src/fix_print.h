@@ -35,6 +35,7 @@ class FixPrint : public Fix {
   void end_of_step() override;
 
  private:
+  bool firstflag;
   int screenflag;
   SafeFilePtr fp;
   char *text, *copy, *work;

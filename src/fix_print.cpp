@@ -48,6 +48,7 @@ FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
 
   // parse optional args
 
+  firstflag = false;
   screenflag = 1;
   char *title = nullptr;
 
@@ -69,6 +70,10 @@ FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg], "screen") == 0) {
       if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix print screen", error);
       screenflag = utils::logical(FLERR, arg[iarg + 1], false, lmp);
+      iarg += 2;
+    } else if (strcmp(arg[iarg], "first") == 0) {
+      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix print first", error);
+      firstflag = utils::logical(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "title") == 0) {
       if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix print title", error);
@@ -122,11 +127,16 @@ void FixPrint::init()
     if (!input->variable->equalstyle(ivar_print))
       error->all(FLERR, Error::NOLASTLINE, "Variable {} for fix print timestep is invalid style",
                  var_print);
-    next_print = static_cast<bigint>(input->variable->compute_equal(ivar_print));
-    if (next_print <= update->ntimestep)
-      error->all(FLERR, Error::NOLASTLINE,
+    if (firstflag) {
+      next_print = update->ntimestep;
+    }
+    else {
+      next_print = static_cast<bigint>(input->variable->compute_equal(ivar_print));
+      if (next_print <= update->ntimestep)
+        error->all(FLERR, Error::NOLASTLINE,
                  "Fix print timestep variable {} returned a bad timestep: {}", var_print,
                  next_print);
+    }
   } else {
     if (update->ntimestep % nevery)
       next_print = (update->ntimestep / nevery) * nevery + nevery;
@@ -145,6 +155,7 @@ void FixPrint::init()
 
 void FixPrint::setup(int /* vflag */)
 {
+  // if (comm->me == 0) utils::logmesg(lmp, "setup: next_print = {} update->ntimestep = {}\n", next_print, update->ntimestep);
   end_of_step();
 }
 
@@ -158,6 +169,7 @@ void FixPrint::end_of_step()
   // substitute for $ variables (no printing)
   // append a newline and print final copy
   // variable evaluation may invoke computes so wrap with clear/add
+  // if (comm->me == 0) utils::logmesg(lmp, "ensp0: next_print = {} update->ntimestep = {}, ivar_print = {}\n", next_print, update->ntimestep, ivar_print);
 
   modify->clearstep_compute();
 
@@ -181,4 +193,5 @@ void FixPrint::end_of_step()
       fflush(fp);
     }
   }
+  // if (comm->me == 0) utils::logmesg(lmp, "ensp1: next_print = {} update->ntimestep = {}\n", next_print, update->ntimestep);
 }
