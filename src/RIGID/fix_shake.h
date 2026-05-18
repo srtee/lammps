@@ -143,11 +143,13 @@ class FixShake : public Fix {
   void shake(int);
   void shake3(int);
   void shake4(int);
-  void shake3angle(int);
+  virtual void shake3angle(int);
   double bond_force(int, int, double);
   virtual void stats();
   int bondtype_findset(int, tagint, tagint, int);
   int angletype_findset(int, tagint, tagint, int);
+
+  int rigsflag; // turn on RIGS
 
   // data used by rendezvous callback methods
 
