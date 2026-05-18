@@ -15,6 +15,8 @@
 
 #include "fix_rigs.h"
 
+#include "comm.h"
+
 using namespace LAMMPS_NS;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg):
@@ -103,11 +105,25 @@ void FixRigs::shake3angle(int ilist)
   double diff11 = bond1*bond1 - s11;
   double diff22 = bond2*bond2 - s22;
   double diff12 = bond12 - s12;
+  if (comm->me == 0) {
+    printf("diff11 = %20.14f \n", diff11); 
+    printf("diff12 = %20.14f \n", diff12); 
+    printf("diff22 = %20.14f \n", diff22); 
+  }
 
+  double mD11 = diff11*M11 + diff12*M12;
+  double mD12 = diff11*M12 + diff12*M22;
+  double mD21 = diff12*M11 + diff22*M12;
+  double mD22 = diff12*M12 + diff22*M12;
+
+  double D11 = M11*mD11 + M12*mD12;
+  double D12 = M11*mD12 + M12*mD22;
+  double D22 = M12*mD12 + M22*mD22;
+/*
   double D11 = M11*(diff11*M11 + 2*diff12*M12) + M12*diff22*M12;
-  double D22 = M22*(diff22*M22 + 2*diff12*M12) + M12*diff12*M12;
+  double D22 = M22*(diff22*M22 + 2*diff12*M12) + M12*diff11*M12;
   double D12 = M11*(diff11*M12 + diff12*M22) + M12*(diff12*M12 + diff22*M22);
-
+*/
   // K = M (S^T R)
   double K11 = M11*sr11 + M12*sr21;
   double K12 = M11*sr12 + M12*sr22;
@@ -125,70 +141,111 @@ void FixRigs::shake3angle(int ilist)
   double chi12 = K11*rh12 + K12*rh22;
   double chi21 = K21*rh11 + K22*rh12;
   double chi22 = K21*rh12 + K22*rh22;
-
+  if (comm->me == 0) {
+    printf("chi11 = %8.4f \n", chi11); 
+    printf("chi12 = %8.4f \n", chi12); 
+    printf("chi21 = %8.4f \n", chi21); 
+    printf("chi22 = %8.4f \n", chi22); 
+  }
+  
   // sigma = chi K^T - D (symm)
   double sig11 = chi11*K11 + chi12*K12 - D11;
   double sig12 = chi11*K21 + chi12*K22 - D12;
+  double sig21 = chi21*K11 + chi22*K12 - D12;
   double sig22 = chi21*K21 + chi22*K22 - D22;
 
   // sc = upper Chol of sigma
   double sc22 = sqrt(sig22);
   double sc12 = sig12/sc22;
   double sc11 = sqrt(sig11 - sc12*sc12);
-
-  // rc = lower Chol of rh
-  double rc11 = sqrt(rh11);
-  double rc21 = rh12/rc11;
-  double rc22 = sqrt(rh22 - rc21*rc21);
   
-  // phiV = sc x rc
-  double phiV11 = sc11*rc11 + sc12*rc21;
-  double phiV12 = sc12*rc22;
-  double phiV21 = sc22*rc21;
-  double phiV22 = sc22*rc22;
+  // rc = inverse of lower Chol of R^T R
+  double rc11 = 1/sqrt(r11);
+  double rc21 = r12/sqrt(r11);
+  double rc22 = 1/sqrt(r22 - rc21*rc21);
+  rc21 *= -1/(rc11*rc22);
+  
+  // phiC = sc x rc
+  double phiC11 = sc11*rc11 + sc12*rc21;
+  double phiC12 = sc12*rc22;
+  double phiC21 = sc22*rc21;
+  double phiC22 = sc22*rc22;
+  if (comm->me == 0) {
+  printf("phiC11 = %8.4f \n", phiC11); 
+  printf("phiC12 = %8.4f \n", phiC12); 
+  printf("phiC21 = %8.4f \n", phiC21); 
+  printf("phiC22 = %8.4f \n", phiC22); 
+  }
 
   // phiS = sc x [0, -1; 1, 0] x rc
   double phiS11 = sc12*rc11 - sc11*rc21;
   double phiS12 = -sc11*rc22;
-  double phiS21 = rc22*sc11;
+  double phiS21 = sc12*rc21;
+  if (comm->me == 0) {
+  printf("phiS11 = %8.4f \n", phiS11); 
+  printf("phiS12 = %8.4f \n", phiS12); 
+  printf("phiS21 = %8.4f \n", phiS21); 
+  }
 
   // versine solve
-  double skewV = phiV12 - phiV21;
-  double skewChi = skewV - (chi12 - chi21);
+  double skewC = phiC12 - phiC21;
+  double skewChi = (chi12 - chi21);
   double skewS = phiS12 - phiS21;
   
-  double cot_half_thet = skewS+sqrt(skewS*skewS - skewChi*(skewChi-2*skewV));
-  cot_half_thet /= skewChi;
-  double vskew = 1/(cot_half_thet*cot_half_thet+1);
-  double sskew = cot_half_thet * vskew;
+  // skewChi - cos skewC - sin skewS = 0
+  // cos th sin p + sin th cos p = skewChi/A, A = sqrt(skewC*2 + skewS*2)
+  // sin (th + p) = skCh/A, sin p = skewC/A, cos p = skewS/A
+  // sin (th) = skCh/A cos p - sqrt(A*A - skCh*skCh)/A sin p
+  // = (skewS skCh - skewC sqrt(A*A - skCh*skCh)) / A*A
+  double Asq = skewC*skewC + skewS*skewS;
+  double sinp = sqrt(Asq - skewChi*skewChi);
+  double sskew = -(skewS*skewChi - skewC*sinp)/Asq;
+  double cskew = sqrt(1-sskew*sskew);
+  if (comm->me == 0) {
+  printf("skewChi = %8.4f \n", skewChi); 
+  printf("skewC = %8.4f \n", skewC); 
+  printf("skewS = %8.4f \n", skewS); 
+  printf("cskew = %8.4f \n", cskew); 
+  printf("sskew = %8.4f \n", sskew); 
+  }
 
   // and finally!!
-  double lamda01 = chi11 - (1-vskew)*phiV11 - sskew*phiS11;
-  double lamda02 = chi22 - (1-vskew)*phiV22;
-  double lamda12 = chi12 - (1-vskew)*phiV12 - sskew*phiS12; 
+  double lamda01 = chi11 - (cskew)*phiC11 - sskew*phiS11;
+  double lamda02 = chi22 - (cskew)*phiC22;
+  double lamda12 = chi12 - (cskew)*phiC12 - sskew*phiS12; 
+  if (comm->me == 0) {
+  printf("lamda01 = %8.4f \n", lamda01); 
+  printf("lamda02 = %8.4f \n", lamda02); 
+  printf("lamda12 = %8.4f \n\n", lamda12); 
+  }
+
+  // avoid dumb stuff if Gamma is too small
+  if (fabs(diff11) < tolerance &&
+      fabs(diff22) < tolerance &&
+      fabs(diff12) < tolerance) return;
 
   // update forces if atom is owned by this processor
 
-  lamda01 = lamda01/dtfsq;
-  lamda02 = lamda02/dtfsq;
-  lamda12 = lamda12/dtfsq;
+  lamda01 = 0.5*lamda01/dtfsq;
+  lamda02 = 0.5*lamda02/dtfsq;
+  lamda12 = 0.5*lamda12/dtfsq;
 
   if (i0 < nlocal) {
-    f[i0][0] += (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
-    f[i0][1] += (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1];
-    f[i0][2] += (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2];
+    f[i0][0] -= (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
+    f[i0][1] -= (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1];
+    f[i0][2] -= (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2];
   }
 
   if (i1 < nlocal) {
-    f[i1][0] -= lamda01*r01[0] + lamda12*r02[0];
-    f[i1][1] -= lamda01*r01[1] + lamda12*r02[1];
-    f[i1][2] -= lamda01*r01[2] + lamda12*r02[2];
+    f[i1][0] += lamda01*r01[0] + lamda12*r02[0];
+    f[i1][1] += lamda01*r01[1] + lamda12*r02[1];
+    f[i1][2] += lamda01*r01[2] + lamda12*r02[2];
   }
 
   if (i2 < nlocal) {
-    f[i2][0] -= lamda02*r02[0] + lamda12*r01[0];
-    f[i2][1] -= lamda02*r02[1] + lamda12*r01[1];
-    f[i2][2] -= lamda02*r02[2] + lamda12*r01[2];
+    f[i2][0] += lamda02*r02[0] + lamda12*r01[0];
+    f[i2][1] += lamda02*r02[1] + lamda12*r01[1];
+    f[i2][2] += lamda02*r02[2] + lamda12*r01[2];
   }
 /* TO FIX
   if (evflag) {
