@@ -99,12 +99,21 @@ inline Mat2 mat_mul(const Mat2 &A, const Mat2 &B)
   return R;
 }
 
+inline SymMat2 mat_mul_tosym(const Mat2 &A, const Mat2 &B)
+{
+  SymMat2 R;
+  R.d00 = A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0);
+  R.d01 = A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1);
+  R.d11 = A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1);
+  return R;
+}
+
 inline Mat2 chol_upper(const SymMat2 &A)
 {
-  double s22 = std::sqrt(A.d11);
+  double s22 = sqrt(A.d11);
   double s12 = A.d01 / s22;
-  double sq00 = std::sqrt(A.d00);
-  double s11 = std::sqrt((sq00 - s12) * (sq00 + s12));
+  double sq00 = sqrt(A.d00);
+  double s11 = sqrt((sq00 - s12) * (sq00 + s12));
   Mat2 R;
   R(0, 0) = s11; R(0, 1) = s12;
   R(1, 0) = 0.0; R(1, 1) = s22;
@@ -113,16 +122,24 @@ inline Mat2 chol_upper(const SymMat2 &A)
 
 inline Mat2 inv_chol_lower(const SymMat2 &A)
 {
-  double l11 = std::sqrt(A.d00);
+  double l11 = sqrt(A.d00);
   double l21 = A.d01 / l11;
-  double sq11 = std::sqrt(A.d11);
-  double l22 = std::sqrt((sq11 + l21)*(sq11 - l21));
+  double sq11 = sqrt(A.d11);
+  double l22 = sqrt((sq11 + l21)*(sq11 - l21));
   double inv11 = 1.0 / l11;
   double inv22 = 1.0 / l22;
   double inv21 = -l21 * inv11 * inv22;
   Mat2 R;
   R(0, 0) = inv11; R(0, 1) = 0.0;
   R(1, 0) = inv21; R(1, 1) = inv22;
+  return R;
+}
+
+inline Mat2 transpose(const Mat2 &A)
+{
+  Mat2 R;
+  R(0, 0) = A(0, 0); R(0, 1) = A(1, 0);
+  R(1, 0) = A(0, 1); R(1, 1) = A(1, 1);
   return R;
 }
 

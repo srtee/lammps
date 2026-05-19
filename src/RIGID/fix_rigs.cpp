@@ -20,8 +20,10 @@
 #include "comm.h"
 #include "force.h"
 #include "mat2.h"
+#include "update.h"
 
 #include <cmath>
+#include <cstdio>
 
 using namespace LAMMPS_NS;
 
@@ -121,7 +123,7 @@ void FixRigs::shake3angle(int ilist)
   
   // D = M (L - S^T S) M (symm)
   SymMat2 L = {bond1*bond1, bond12, bond2*bond2};
-  SymMat2 diff = sym_outer_diff(L, ss);
+  SymMat2 diff = sym_minus(L, ss);
 
   // avoid dumb stuff if Gamma is too small
   if (diff.d00*diff.d00 < tolerance &&
@@ -162,11 +164,14 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 rh = inv_sym(rr);
 
   // chi = K * rh
-  Mat2 chi = mul_sym(K, rh);
+    Mat2 chi = mul_sym(K, rh);
+    SymMat2 chiKT = mat_mul_tosym(chi, transpose(K));
+  SymMat2 sigma = sym_minus(chiKT, D);
 
   // sigma = chi K^T - D (symm)
-  SymMat2 sigma = chi_KT_minus_D(chi, K, D);
-  
+//  SymMat2 sigma = chi_KT_minus_D(chi, transpose(K), D);
+//  chi = transpose(chi);
+
   // sc = upper Chol of sigma
   Mat2 sc = chol_upper(sigma);
   
@@ -188,7 +193,7 @@ void FixRigs::shake3angle(int ilist)
   double skewC = skew(phiC);
   double skewChi = skew(chi);
   double skewS = phiS12 - phiS21;
-  // printf("skewC = %8.6f, skewChi = %8.6f, skewS = %8.6f\n", skewC, skewChi, skewS);
+  //printf("skewC = %8.6f, skewChi = %8.6f, skewS = %8.6f\n", skewC, skewChi, skewS);
   
   // skewChi - cos skewC - sin skewS = 0
   // cos th sin p + sin th cos p = skewChi/A, A = sqrt(skewC*2 + skewS*2)
@@ -197,17 +202,22 @@ void FixRigs::shake3angle(int ilist)
   // = (skewS skCh - skewC sqrt(A*A - skCh*skCh)) / A*A
   double Asq = skewC*skewC + skewS*skewS;
   double A = sqrt(Asq);
-  double sinp = sqrt((A-skewChi)*(A+skewChi));
+  double sinp = sqrt(Asq - skewChi*skewChi);
+  // double sinp = sqrt((A-skewChi)*(A+skewChi));
   double sskew = (skewS*skewChi + skewC*sinp)/Asq;
-  // double cskew = sqrt(1-sskew*sskew);
-  double cskew = (-skewS*sinp + skewC*skewChi)/Asq;
-  // printf("Asq = %8.6f, sinp = %8.6f, sskew = %8.6f, cskew = %8.6f\n", Asq, sinp, sskew, cskew);
+  double cskew = sqrt(1-sskew*sskew);
+  //double cskew = (-skewS*sinp + skewC*skewChi)/Asq;
+//  printf("Asq = %8.6f, sinp = %8.6f, sskew = %8.6f, cskew = %8.6f\n", Asq, sinp, sskew, cskew);
 
   // and finally!!
   double lamda01 = chi(0,0) - cskew*phiC(0,0) - sskew*phiS11;
   double lamda02 = chi(1,1) - cskew*phiC(1,1);
   double lamda12 = chi(0,1) - cskew*phiC(0,1) - sskew*phiS12; 
   double lamda21 = chi(1,0) - cskew*phiC(1,0) - sskew*phiS21;
+
+//  printf("RIGS proc=%d step=%ld ilist=%d lambda=[[%.8e, %.8e], [%.8e, %.8e]]\n",
+  //       comm->me, update->ntimestep, ilist, lamda01, lamda12, lamda21, lamda02);
+
   // update forces if atom is owned by this processor
 
   lamda01 = lamda01/dtfsq;
@@ -232,23 +242,38 @@ void FixRigs::shake3angle(int ilist)
     f[i2][2] -= lamda02*r02[2] + lamda12*r01[2];
   }
   
-  if (evflag) { // taken from shake3 -- TO FIX
+  //printf("RIGS proc=%d step=%ld ilist=%d i0_force=(%.8e, %.8e, %.8e)\n", comm->me, update->ntimestep, ilist,
+    //     (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0],
+      //   (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1],
+        // (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2]);
+
+  if (evflag) {
     int count = 0;
     if (i0 < nlocal) atomlist[count++] = i0;
     if (i1 < nlocal) atomlist[count++] = i1;
     if (i2 < nlocal) atomlist[count++] = i2;
 
-    v[0] = lamda01*r01[0]*r01[0] + lamda02*r02[0]*r02[0];
-    v[1] = lamda01*r01[1]*r01[1] + lamda02*r02[1]*r02[1];
-    v[2] = lamda01*r01[2]*r01[2] + lamda02*r02[2]*r02[2];
-    v[3] = lamda01*r01[0]*r01[1] + lamda02*r02[0]*r02[1];
-    v[4] = lamda01*r01[0]*r01[2] + lamda02*r02[0]*r02[2];
-    v[5] = lamda01*r01[1]*r01[2] + lamda02*r02[1]*r02[2];
+    double r12[3];
+    r12[0] = r02[0] - r01[0];
+    r12[1] = r02[1] - r01[1];
+    r12[2] = r02[2] - r01[2];
 
-    double fpairlist[] = {lamda01, lamda02};
+    double lamda01_shake = lamda01 + lamda12;
+    double lamda02_shake = lamda02 + lamda12;
+    double lamda12_shake = -lamda12;
+
+    v[0] = lamda01_shake*r01[0]*r01[0] + lamda02_shake*r02[0]*r02[0] + lamda12_shake*r12[0]*r12[0];
+    v[1] = lamda01_shake*r01[1]*r01[1] + lamda02_shake*r02[1]*r02[1] + lamda12_shake*r12[1]*r12[1];
+    v[2] = lamda01_shake*r01[2]*r01[2] + lamda02_shake*r02[2]*r02[2] + lamda12_shake*r12[2]*r12[2];
+    v[3] = lamda01_shake*r01[0]*r01[1] + lamda02_shake*r02[0]*r02[1] + lamda12_shake*r12[0]*r12[1];
+    v[4] = lamda01_shake*r01[0]*r01[2] + lamda02_shake*r02[0]*r02[2] + lamda12_shake*r12[0]*r12[2];
+    v[5] = lamda01_shake*r01[1]*r01[2] + lamda02_shake*r02[1]*r02[2] + lamda12_shake*r12[1]*r12[2];
+
+    double fpairlist[] = {lamda01_shake, lamda02_shake, lamda12_shake};
     double dellist[][3]  = {{r01[0], r01[1], r01[2]},
-                            {r02[0], r02[1], r02[2]}};
-    int pairlist[][2] = {{i0,i1}, {i0,i2}};
-    v_tally(count,atomlist,3.0,v,nlocal,2,pairlist,fpairlist,dellist);
+                            {r02[0], r02[1], r02[2]},
+                            {r12[0], r12[1], r12[2]}};
+    int pairlist[][2] = {{i0,i1}, {i0,i2}, {i1,i2}};
+    v_tally(count,atomlist,3.0,v,nlocal,3,pairlist,fpairlist,dellist);
   }
 }
