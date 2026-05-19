@@ -196,7 +196,8 @@ void FixRigs::shake3angle(int ilist)
   // sin (th) = skCh/A cos p - sqrt(A*A - skCh*skCh)/A sin p
   // = (skewS skCh - skewC sqrt(A*A - skCh*skCh)) / A*A
   double Asq = skewC*skewC + skewS*skewS;
-  double sinp = sqrt(Asq - skewChi*skewChi);
+  double A = sqrt(Asq);
+  double sinp = sqrt((A-skewChi)*(A+skewChi));
   double sskew = (skewS*skewChi + skewC*sinp)/Asq;
   // double cskew = sqrt(1-sskew*sskew);
   double cskew = (-skewS*sinp + skewC*skewChi)/Asq;

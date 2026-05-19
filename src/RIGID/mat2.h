@@ -103,7 +103,8 @@ inline Mat2 chol_upper(const SymMat2 &A)
 {
   double s22 = std::sqrt(A.d11);
   double s12 = A.d01 / s22;
-  double s11 = std::sqrt(A.d00 - s12 * s12);
+  double sq00 = std::sqrt(A.d00);
+  double s11 = std::sqrt((sq00 - s12) * (sq00 + s12));
   Mat2 R;
   R(0, 0) = s11; R(0, 1) = s12;
   R(1, 0) = 0.0; R(1, 1) = s22;
@@ -114,7 +115,8 @@ inline Mat2 inv_chol_lower(const SymMat2 &A)
 {
   double l11 = std::sqrt(A.d00);
   double l21 = A.d01 / l11;
-  double l22 = std::sqrt(A.d11 - l21 * l21);
+  double sq11 = std::sqrt(A.d11);
+  double l22 = std::sqrt((sq11 + l21)*(sq11 - l21));
   double inv11 = 1.0 / l11;
   double inv22 = 1.0 / l22;
   double inv21 = -l21 * inv11 * inv22;
