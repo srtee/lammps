@@ -188,6 +188,7 @@ void FixRigs::shake3angle(int ilist)
   double skewC = skew(phiC);
   double skewChi = skew(chi);
   double skewS = phiS12 - phiS21;
+  // printf("skewC = %8.6f, skewChi = %8.6f, skewS = %8.6f\n", skewC, skewChi, skewS);
   
   // skewChi - cos skewC - sin skewS = 0
   // cos th sin p + sin th cos p = skewChi/A, A = sqrt(skewC*2 + skewS*2)
@@ -197,7 +198,9 @@ void FixRigs::shake3angle(int ilist)
   double Asq = skewC*skewC + skewS*skewS;
   double sinp = sqrt(Asq - skewChi*skewChi);
   double sskew = (skewS*skewChi + skewC*sinp)/Asq;
-  double cskew = sqrt(1-sskew*sskew);
+  // double cskew = sqrt(1-sskew*sskew);
+  double cskew = (-skewS*sinp + skewC*skewChi)/Asq;
+  // printf("Asq = %8.6f, sinp = %8.6f, sskew = %8.6f, cskew = %8.6f\n", Asq, sinp, sskew, cskew);
 
   // and finally!!
   double lamda01 = chi(0,0) - cskew*phiC(0,0) - sskew*phiS11;
