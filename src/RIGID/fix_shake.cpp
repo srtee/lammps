@@ -281,7 +281,6 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
   maxlist = 0;
   list = nullptr;
   closest_list = nullptr;
-  rigsflag = 0; // RIGS
 }
 
 /* ---------------------------------------------------------------------- */
@@ -491,15 +490,8 @@ void FixShake::init()
     angle = force->angle->equilibrium_angle(i);
     const double b1 = bond_distance[bond1_type];
     const double b2 = bond_distance[bond2_type];
-    if (false) {
-      angle_distance[i] = b1*b2*cos(angle);
-      if (comm->me == 0) printf("angle_distance[%d] = %12.8f\n", i, b1*b2*cos(angle));
-    }
-    else {
-      rsq = b1*b1 + b2*b2 - 2.0*b1*b2*cos(angle);
-      angle_distance[i] = sqrt(rsq);
-      if (comm->me == 0) printf("angle_distance[i] = %12.8f\n", i, sqrt(rsq));
-    }
+    rsq = b1*b1 + b2*b2 - 2.0*b1*b2*cos(angle);
+    angle_distance[i] = sqrt(rsq);
   }
 }
 

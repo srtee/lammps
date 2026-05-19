@@ -15,14 +15,60 @@
 
 #include "fix_rigs.h"
 
+#include "angle.h"
+#include "atom.h"
 #include "comm.h"
+#include "force.h"
+
+#include <cmath>
 
 using namespace LAMMPS_NS;
 
-FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg):
-    FixShake(lmp, narg, arg) { rigsflag = 1; }
+FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
+    FixShake(lmp, narg, arg), rigs_angle(nullptr) {}
 
-FixRigs::~FixRigs() {}
+FixRigs::~FixRigs() { delete[] rigs_angle; }
+
+void FixRigs::init()
+{
+  FixShake::init();
+
+  delete[] rigs_angle;
+  rigs_angle = new double[atom->nangletypes + 1];
+
+  int nlocal = atom->nlocal;
+  for (int i = 1; i <= atom->nangletypes; i++) {
+    if (angle_flag[i] == 0) continue;
+    if (force->angle == nullptr) continue;
+
+    int bond1_type = 0, bond2_type = 0;
+    for (int m = 0; m < nlocal; m++) {
+      if (shake_flag[m] != 1) continue;
+      if (shake_type[m][2] != i) continue;
+      int type1 = MIN(shake_type[m][0], shake_type[m][1]);
+      int type2 = MAX(shake_type[m][0], shake_type[m][1]);
+      bond1_type = type1;
+      bond2_type = type2;
+      break;
+    }
+
+    int flag_all;
+    MPI_Allreduce(&bond1_type, &flag_all, 1, MPI_INT, MPI_MAX, world);
+    bond1_type = flag_all;
+    MPI_Allreduce(&bond2_type, &flag_all, 1, MPI_INT, MPI_MAX, world);
+    bond2_type = flag_all;
+
+    if (bond1_type == 0) {
+      rigs_angle[i] = 0.0;
+      continue;
+    }
+
+    double b1 = bond_distance[bond1_type];
+    double b2 = bond_distance[bond2_type];
+    double angle = force->angle->equilibrium_angle(i);
+    rigs_angle[i] = b1 * b2 * cos(angle);
+  }
+}
 
 /* ----------------------------------------------------------------------
    calculate RIGS constraint forces for size 3 cluster = two bonds + angle
@@ -42,10 +88,7 @@ void FixRigs::shake3angle(int ilist)
   int i2 = closest_list[ilist][2];
   double bond1 = bond_distance[shake_type[m][0]];
   double bond2 = bond_distance[shake_type[m][1]];
-  double dist12 = angle_distance[shake_type[m][2]];
-  double bond12 = 0.5*(bond1*bond1 + bond2*bond2 - dist12*dist12);
-  if (comm->me == 0) printf("bond12 = %12.8f\n", bond12);
-
+  double bond12 = rigs_angle[shake_type[m][2]];
   // r01,r02 = distance vec between atoms
 
   double r01[3];
@@ -195,14 +238,6 @@ void FixRigs::shake3angle(int ilist)
   double lamda02 = chi22 - cskew*phiC22;
   double lamda12 = chi12 - cskew*phiC12 - sskew*phiS12; 
   double lamda21 = chi21 - cskew*phiC21 - sskew*phiS21;
-  /*
-  if (comm->me == 0) {
-    printf("Matrices (lambda, chi, phiC, phiS): (dtfsq = %12.4f)\n", dtfsq);
-    printf("%8.6f %8.6f   %8.6f %8.6f   %8.6f %8.6f   %8.6f %8.6f\n", lamda01, lamda12, chi11, chi12, phiC11, phiC12, phiS11, phiS12);
-    printf("%8.6f %8.6f   %8.6f %8.6f   %8.6f %8.6f   %8.6f 0.0\n", lamda21, lamda02, chi21, chi22, phiC21, phiC22, phiS21);
-    printf("cskew = %8.6f,  sskew = %8.6f\n\n", cskew, sskew);
-  }
-  */
   // update forces if atom is owned by this processor
 
   lamda01 = lamda01/dtfsq;

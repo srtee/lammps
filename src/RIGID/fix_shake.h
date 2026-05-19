@@ -149,8 +149,6 @@ class FixShake : public Fix {
   int bondtype_findset(int, tagint, tagint, int);
   int angletype_findset(int, tagint, tagint, int);
 
-  int rigsflag; // turn on RIGS
-
   // data used by rendezvous callback methods
 
   int nrvous;

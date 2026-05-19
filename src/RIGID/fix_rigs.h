@@ -27,10 +27,12 @@ FixStyle(rigs,FixRigs);
 namespace LAMMPS_NS {
 
 class FixRigs : public FixShake {
- public:
+  public:
   FixRigs(class LAMMPS *, int, char **);
   ~FixRigs() override;
+  void init() override;
  protected:
+  double *rigs_angle;
   void shake3angle(int) override;
 };
 
