@@ -19,6 +19,7 @@
 #include "atom.h"
 #include "comm.h"
 #include "force.h"
+#include "mat2.h"
 
 #include <cmath>
 
@@ -115,29 +116,26 @@ void FixRigs::shake3angle(int ilist)
 
   // scalar distances between atoms
 
-  double r11 = r01[0]*r01[0] + r01[1]*r01[1] + r01[2]*r01[2];
-  double r22 = r02[0]*r02[0] + r02[1]*r02[1] + r02[2]*r02[2];
-  double r12 = r01[0]*r02[0] + r01[1]*r02[1] + r01[2]*r02[2];
-  double s11 = s01[0]*s01[0] + s01[1]*s01[1] + s01[2]*s01[2];
-  double s22 = s02[0]*s02[0] + s02[1]*s02[1] + s02[2]*s02[2];
-  double s12 = s01[0]*s02[0] + s01[1]*s02[1] + s01[2]*s02[2];
+  SymMat2 rr = sym_dot(r01, r02);
+  SymMat2 ss = sym_dot(s01, s02);
   
   // D = M (L - S^T S) M (symm)
-  double diff11 = bond1*bond1 - s11;
-  double diff22 = bond2*bond2 - s22;
-  double diff12 = bond12 - s12;
+  SymMat2 L = {bond1*bond1, bond12, bond2*bond2};
+  SymMat2 diff = sym_outer_diff(L, ss);
+
   // avoid dumb stuff if Gamma is too small
-  if (diff11*diff11 < tolerance &&
-      diff12*diff12 < tolerance &&
-      diff22*diff22 < tolerance) {
+  if (diff.d00*diff.d00 < tolerance &&
+      diff.d01*diff.d01 < tolerance &&
+      diff.d11*diff.d11 < tolerance) {
     FixShake::shake3angle(ilist);
     return;
   }
 
-  double sr11 = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
-  double sr12 = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
-  double sr21 = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
-  double sr22 = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
+  Mat2 SR;
+  SR(0,0) = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
+  SR(0,1) = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
+  SR(1,0) = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
+  SR(1,1) = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
 
   // matrix coeffs and rhs for lamda equations
 
@@ -151,76 +149,44 @@ void FixRigs::shake3angle(int ilist)
     invmass02 = invmass0 + 1.0 / mass[type[i2]];
   }
 
-  // M = (mu01 mu0; mu0 mu02)^(-1)
-
-  double detM = invmass01 * invmass02 - (invmass0 * invmass0);
-  double M11 = invmass02 / detM;
-  double M12 = -invmass0 / detM;
-  double M22 = invmass01 / detM;
+  // M = (mu01 mu0; mu0 mu02)^(-1) (symm)
+  SymMat2 M = inv_sym({invmass01, invmass0, invmass02});
   
   // D = M (L - S^T S) M (symm)
-  double mD11 = diff11*M11 + diff12*M12;
-  double mD12 = diff11*M12 + diff12*M22;
-  double mD21 = diff12*M11 + diff22*M12;
-  double mD22 = diff12*M12 + diff22*M22;
+  SymMat2 D = sandwich(M, diff);
 
-  double D11 = M11*mD11 + M12*mD12;
-  double D12 = M11*mD12 + M12*mD22;
-  double D22 = M12*mD12 + M22*mD22;
-/*
-  double D11 = M11*(diff11*M11 + 2*diff12*M12) + M12*diff22*M12;
-  double D22 = M22*(diff22*M22 + 2*diff12*M12) + M12*diff11*M12;
-  double D12 = M11*(diff11*M12 + diff12*M22) + M12*(diff12*M12 + diff22*M22);
-*/
   // K = M (S^T R)
-  double K11 = M11*sr11 + M12*sr21;
-  double K12 = M11*sr12 + M12*sr22;
-  double K21 = M12*sr11 + M22*sr21;
-  double K22 = M12*sr12 + M22*sr22;
+  Mat2 K = sym_mul(M, SR);
 
   // rh = (R^T R)^(-1) (symm)
-  double detR = r11*r22 - (r12*r12);
-  double rh11 = r22/detR;
-  double rh12 = -r12/detR;
-  double rh22 = r11/detR;
+  SymMat2 rh = inv_sym(rr);
 
-  // chi = K rh
-  double chi11 = K11*rh11 + K12*rh12;
-  double chi12 = K11*rh12 + K12*rh22;
-  double chi21 = K21*rh11 + K22*rh12;
-  double chi22 = K21*rh12 + K22*rh22;
-  
+  // chi = K * rh
+  Mat2 chi = mul_sym(K, rh);
+
   // sigma = chi K^T - D (symm)
-  double sig11 = chi11*K11 + chi12*K12 - D11;
-  double sig12 = chi11*K21 + chi12*K22 - D12;
-  double sig21 = chi21*K11 + chi22*K12 - D12;
-  double sig22 = chi21*K21 + chi22*K22 - D22;
+  SymMat2 sigma = chi_KT_minus_D(chi, K, D);
   
   // sc = upper Chol of sigma
-  double sc22 = sqrt(sig22);
-  double sc12 = sig12/sc22;
-  double sc11 = sqrt(sig11 - sc12*sc12);
+  Mat2 sc = chol_upper(sigma);
   
   // rc = inverse of lower Chol of R^T R
-  double rc11 = 1/sqrt(r11);
-  double rc21 = r12/sqrt(r11);
-  double rc22 = 1/sqrt(r22 - rc21*rc21);
-  rc21 *= -(rc11*rc22);
-  
+  Mat2 rc = inv_chol_lower(rr);
+
   // phiC = sc x rc
-  double phiC11 = sc11*rc11 + sc12*rc21;
-  double phiC12 = sc12*rc22;
-  double phiC21 = sc22*rc21;
-  double phiC22 = sc22*rc22;
+  Mat2 phiC = mat_mul(sc, rc);
 
   // phiS = sc x [0, -1; 1, 0] x rc
-  double phiS11 = sc12*rc11 - sc11*rc21;
-  double phiS12 = -sc11*rc22;
-  double phiS21 = sc22*rc11;
-  
+  // J = [0,-1;1,0], so sc*J*rc has entries:
+  //   row0 = sc_row0 * J * rc_col = sc00*[0,-1;1,0]_row + sc01*[0,-1;1,0]_row
+  // Explicitly:
+  double phiS11 = sc(0,1)*rc(0,0) - sc(0,0)*rc(1,0);
+  double phiS12 = -sc(0,0)*rc(1,1);
+  double phiS21 = sc(1,1)*rc(0,0);
+
   // cosine solve
-  double skewC = phiC12 - phiC21;
-  double skewChi = chi12 - chi21;
+  double skewC = skew(phiC);
+  double skewChi = skew(chi);
   double skewS = phiS12 - phiS21;
   
   // skewChi - cos skewC - sin skewS = 0
@@ -234,10 +200,10 @@ void FixRigs::shake3angle(int ilist)
   double cskew = sqrt(1-sskew*sskew);
 
   // and finally!!
-  double lamda01 = chi11 - cskew*phiC11 - sskew*phiS11;
-  double lamda02 = chi22 - cskew*phiC22;
-  double lamda12 = chi12 - cskew*phiC12 - sskew*phiS12; 
-  double lamda21 = chi21 - cskew*phiC21 - sskew*phiS21;
+  double lamda01 = chi(0,0) - cskew*phiC(0,0) - sskew*phiS11;
+  double lamda02 = chi(1,1) - cskew*phiC(1,1);
+  double lamda12 = chi(0,1) - cskew*phiC(0,1) - sskew*phiS12; 
+  double lamda21 = chi(1,0) - cskew*phiC(1,0) - sskew*phiS21;
   // update forces if atom is owned by this processor
 
   lamda01 = lamda01/dtfsq;
