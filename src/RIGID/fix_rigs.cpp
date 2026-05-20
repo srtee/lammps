@@ -43,48 +43,153 @@ void FixRigs::post_constructor()
 {
   grow_arrays(atom->nmax);
 
-  int i;
+  int i, m;
   int nlocal = atom->nlocal;
   tagint *tag = atom->tag;
   int *mask_atom = atom->mask;
 
   atommols = atom->avec->onemols;
 
-  int impropers_allow = atom->avec->impropers_allow;
+  int dihedrals_allow = atom->avec->dihedrals_allow;
 
-  int nimproper = 0;
+  // dihedral detection: scan atom topology for chains A-B-C-D
+  // where all 3 bonds are SHAKE-eligible, both angles are constrained,
+  // and the dihedral type is in dihedral_flag
+  // set shake_flag = 6 on the owner atom B, and -1 on partners A, C, D
+  // find_clusters() will skip pre-assigned atoms
 
   for (i = 0; i < nlocal; i++) {
     rigs_type[i][0] = 0;
     rigs_type[i][1] = 0;
     rigs_type[i][2] = 0;
+  }
 
-    if (shake_flag[i] == 0) continue;
+  if (dihedrals_allow) {
+    for (i = 0; i < nlocal; i++) {
+      if (!(mask_atom[i] & groupbit)) continue;
+      int ndih = atom->num_dihedral[i];
+      for (m = 0; m < ndih; m++) {
+        if (atom->dihedral_type[i][m] <= 0) continue;
+        if (!dihedral_flag[atom->dihedral_type[i][m]]) continue;
+
+        tagint da1 = atom->dihedral_atom1[i][m];
+        tagint da2 = atom->dihedral_atom2[i][m];
+        tagint da3 = atom->dihedral_atom3[i][m];
+        tagint da4 = atom->dihedral_atom4[i][m];
+
+        // atom i must be one of the interior atoms (B or C)
+        // ownership convention: B = min(da2, da3), stored first in shake_atom
+        // check that i is an interior atom
+        tagint b, c;
+        if (tag[i] == da2) {
+          b = da2; c = da3;
+        } else if (tag[i] == da3) {
+          b = da3; c = da2;
+        } else {
+          continue;
+        }
+
+        tagint a, d;
+        if (b == da2 && c == da3) {
+          a = da1; d = da4;
+        } else {
+          a = da4; d = da1;
+        }
+
+        // owner atom: lowest interior ID
+        tagint owner_tag = MIN(da2, da3);
+        if (tag[i] != owner_tag) continue;
+
+        // check all 4 atoms are in the group
+        int a_idx = atom->map(a);
+        int b_idx = atom->map(b);
+        int c_idx = atom->map(c);
+        int d_idx = atom->map(d);
+        if (a_idx < 0 || b_idx < 0 || c_idx < 0 || d_idx < 0) continue;
+        if (!(mask_atom[a_idx] & groupbit)) continue;
+        if (!(mask_atom[b_idx] & groupbit)) continue;
+        if (!(mask_atom[c_idx] & groupbit)) continue;
+        if (!(mask_atom[d_idx] & groupbit)) continue;
+
+        // check 3 bonds are SHAKE-eligible
+        int bond_ab = bondtype_find(b_idx, a, 0);
+        int bond_bc = bondtype_find(b_idx, c, 0);
+        int bond_cd = bondtype_find(c_idx, d, 0);
+        if (bond_ab <= 0 || bond_cd <= 0) continue;
+
+        // bond B-C: could be stored on either B or C
+        int bond_bc_type = bondtype_find(b_idx, c, 0);
+        if (bond_bc_type <= 0) bond_bc_type = bondtype_find(c_idx, b, 0);
+        if (bond_bc_type <= 0) continue;
+
+        // check both angles are in angle_flag
+        if (atom->avec->angles_allow) {
+          int angle1 = angletype_find(b_idx, a, c, 0);
+          if (angle1 <= 0 || !angle_flag[angle1]) continue;
+          int angle2 = angletype_find(c_idx, b, d, 0);
+          if (angle2 <= 0 || !angle_flag[angle2]) continue;
+        }
+
+        // found a valid dihedral cluster
+        // set owner atom (B, the lower interior ID)
+        if (shake_flag[b_idx] != 0) continue;
+
+        shake_flag[b_idx] = 6;
+        shake_atom[b_idx][0] = b;
+        shake_atom[b_idx][1] = a;
+        shake_atom[b_idx][2] = c;
+        shake_atom[b_idx][3] = d;
+        shake_type[b_idx][0] = bond_ab;
+        shake_type[b_idx][1] = bond_bc_type;
+        shake_type[b_idx][2] = bond_cd;
+
+        // set rig_type for angles and dihedral
+        rigs_type[b_idx][0] = angletype_find(b_idx, a, c, 0);
+        rigs_type[b_idx][1] = angletype_find(c_idx, b, d, 0);
+        rigs_type[b_idx][2] = atom->dihedral_type[i][m];
+
+        // mark partner atoms as "don't touch" sentinels
+        if (a_idx < nlocal) shake_flag[a_idx] = -1;
+        if (c_idx < nlocal) shake_flag[c_idx] = -1;
+        if (d_idx < nlocal) shake_flag[d_idx] = -1;
+      }
+    }
+  }
+
+  find_clusters();
+
+  // improper detection: after find_clusters, upgrade flag 4 star clusters
+  // to flag 5 if they match an improper topology or have 3 constrained angles
+
+  int impropers_allow = atom->avec->impropers_allow;
+  int nimproper = 0;
+
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] != 4) continue;
     if (!(mask_atom[i] & groupbit)) continue;
     if (shake_atom[i][0] != tag[i]) continue;
-    if (shake_flag[i] == 4) {
-      int angles_allow_flag = atom->avec->angles_allow;
-      int nangle_found = 0;
-      if (angles_allow_flag) {
-        tagint a1 = shake_atom[i][1];
-        tagint a2 = shake_atom[i][2];
-        tagint a3_atom = shake_atom[i][3];
-        int n = angletype_findset(i, a1, a2, 0);
-        if (n > 0 && angle_flag[n]) nangle_found++;
-        n = angletype_findset(i, a1, a3_atom, 0);
-        if (n > 0 && angle_flag[n]) nangle_found++;
-        n = angletype_findset(i, a2, a3_atom, 0);
-        if (n > 0 && angle_flag[n]) nangle_found++;
-      }
-      if (nangle_found == 3) {
+
+    int angles_allow_flag = atom->avec->angles_allow;
+    int nangle_found = 0;
+    if (angles_allow_flag) {
+      tagint a1 = shake_atom[i][1];
+      tagint a2 = shake_atom[i][2];
+      tagint a3_atom = shake_atom[i][3];
+      int n = angletype_findset(i, a1, a2, 0);
+      if (n > 0 && angle_flag[n]) nangle_found++;
+      n = angletype_findset(i, a1, a3_atom, 0);
+      if (n > 0 && angle_flag[n]) nangle_found++;
+      n = angletype_findset(i, a2, a3_atom, 0);
+      if (n > 0 && angle_flag[n]) nangle_found++;
+    }
+    if (nangle_found == 3) {
+      shake_flag[i] = 5;
+      nimproper++;
+    } else if (impropers_allow) {
+      int impflag = improper_check(i);
+      if (impflag) {
         shake_flag[i] = 5;
         nimproper++;
-      } else if (impropers_allow) {
-        int impflag = improper_check(i);
-        if (impflag) {
-          shake_flag[i] = 5;
-          nimproper++;
-        }
       }
     }
   }
@@ -95,8 +200,6 @@ void FixRigs::post_constructor()
     }
   }
 
-  find_clusters();
-
   for (i = 0; i < nlocal; i++) {
     if (shake_flag[i] == 5) {
       if (rigs_type[i][0] > 0)
@@ -105,8 +208,32 @@ void FixRigs::post_constructor()
         angletype_findset(i, shake_atom[i][1], shake_atom[i][3], -1);
       if (rigs_type[i][2] > 0)
         angletype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
+    } else if (shake_flag[i] == 6) {
+      // dihedral chain A-B-C-D, owner is B
+      // shake_atom[B] = {B, A, C, D}, bonds are A-B, B-C, C-D
+      int c_idx = atom->map(shake_atom[i][2]);
+      bondtype_findset(i, shake_atom[i][0], shake_atom[i][1], -1);
+      bondtype_findset(i, shake_atom[i][0], shake_atom[i][2], -1);
+      if (c_idx >= 0 && c_idx < nlocal)
+        bondtype_findset(c_idx, shake_atom[i][2], shake_atom[i][3], -1);
+      // angle A-B-C (center B, stored on B)
+      if (rigs_type[i][0] > 0)
+        angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
+      // angle B-C-D (center C, stored on C)
+      if (rigs_type[i][1] > 0) {
+        if (c_idx >= 0 && c_idx < nlocal)
+          angletype_findset(c_idx, shake_atom[i][0], shake_atom[i][3], -1);
+      }
+      // dihedral type negation
+      dihedraltype_findset(i, shake_atom[i][0], shake_atom[i][1],
+                           shake_atom[i][2], shake_atom[i][3], -1);
     }
   }
+}
+
+int FixRigs::bondtype_find(int i, tagint partner, int setflag)
+{
+  return FixShake::bondtype_findset(i, tag[i], partner, setflag);
 }
 
 int FixRigs::improper_check(int i)
@@ -241,6 +368,56 @@ int FixRigs::impropertype_findset(int i, tagint n0, tagint n1, tagint n2, tagint
   return 0;
 }
 
+int FixRigs::dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag)
+{
+  int m, ndih;
+  int *dtype;
+
+  if (molecular == Atom::MOLECULAR) {
+    ndih = atom->num_dihedral[i];
+    for (m = 0; m < ndih; m++) {
+      tagint d1 = atom->dihedral_atom1[i][m];
+      tagint d2 = atom->dihedral_atom2[i][m];
+      tagint d3 = atom->dihedral_atom3[i][m];
+      tagint d4 = atom->dihedral_atom4[i][m];
+      if (d1 == n1 && d2 == n2 && d3 == n3 && d4 == n4) break;
+      if (d1 == n4 && d2 == n3 && d3 == n2 && d4 == n1) break;
+    }
+  } else {
+    int imol = atom->molindex[i];
+    int iatom = atom->molatom[i];
+    tagint tagprev = atom->tag[i] - iatom - 1;
+    ndih = atommols[imol]->num_dihedral[iatom];
+    dtype = atommols[imol]->dihedral_type[iatom];
+    for (m = 0; m < ndih; m++) {
+      tagint d1 = atommols[imol]->dihedral_atom1[iatom][m] + tagprev;
+      tagint d2 = atommols[imol]->dihedral_atom2[iatom][m] + tagprev;
+      tagint d3 = atommols[imol]->dihedral_atom3[iatom][m] + tagprev;
+      tagint d4 = atommols[imol]->dihedral_atom4[iatom][m] + tagprev;
+      if (d1 == n1 && d2 == n2 && d3 == n3 && d4 == n4) break;
+      if (d1 == n4 && d2 == n3 && d3 == n2 && d4 == n1) break;
+    }
+  }
+
+  if (m < ndih) {
+    if (setflag == 0) {
+      if (molecular == Atom::MOLECULAR) return atom->dihedral_type[i][m];
+      else return dtype[m];
+    }
+    if (molecular == Atom::MOLECULAR) {
+      if ((setflag < 0 && atom->dihedral_type[i][m] > 0) ||
+          (setflag > 0 && atom->dihedral_type[i][m] < 0))
+        atom->dihedral_type[i][m] = -atom->dihedral_type[i][m];
+    } else {
+      if ((setflag < 0 && dtype[m] > 0) ||
+          (setflag > 0 && dtype[m] < 0))
+        dtype[m] = -dtype[m];
+    }
+  }
+
+  return 0;
+}
+
 void FixRigs::grow_arrays(int nmax)
 {
   FixShake::grow_arrays(nmax);
@@ -293,7 +470,6 @@ int FixRigs::pack_restart(int i, double *buf)
 void FixRigs::unpack_restart(int i, int ncol, double *buf)
 {
   FixShake::unpack_restart(i, ncol, buf);
-  // TODO: restore rigs_type from buf for restart
 }
 
 int FixRigs::size_restart(int i)
@@ -351,7 +527,7 @@ void FixRigs::init()
 
 /* ----------------------------------------------------------------------
    calculate RIGS constraint forces for size 3 cluster = two bonds + angle
-------------------------------------------------------------------------- */
+   ------------------------------------------------------------------------- */
 
 void FixRigs::shake3angle(int ilist)
 {

@@ -103,6 +103,7 @@ class FixShake : public Fix {
   int nlocal;
   // atom-based arrays
   int *shake_flag;        // 0 if atom not in SHAKE cluster
+                           // -1 = sentinel: atom claimed by RIGS but not yet assigned
                            // 1 = size 3 angle cluster
                            // 2,3,4 = size of bond-only cluster
                            // 5 = size 4 improper cluster (RIGS only)

@@ -917,7 +917,7 @@ void FixShake::min_post_force(int vflag)
             b_min[m] = MIN(b_min[m], r);
           }
         }
-      } else if (shake_flag[i] == 4) {
+      } else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6) {
         atom1 = atom->map(shake_atom[i][0]);
         atom2 = atom->map(shake_atom[i][1]);
         atom3 = atom->map(shake_atom[i][2]);
@@ -1310,6 +1310,21 @@ void FixShake::find_clusters()
     if (flag_all) error->all(FLERR,"Shake clusters are connected");
   }
 
+  // RIGS: atoms in improper/dihedral clusters must have
+  // all their SHAKE bonds within the cluster
+  // nshake for flag 5 or 6 must equal 3 (3 bonds, all inside cluster)
+
+  if (rigsflag) {
+    flag = 0;
+    for (i = 0; i < nlocal; i++) {
+      if (shake_flag[i] != 5 && shake_flag[i] != 6) continue;
+      if (nshake[i] != 3) flag++;
+    }
+    MPI_Allreduce(&flag,&flag_all,1,MPI_INT,MPI_SUM,world);
+    if (flag_all)
+      error->all(FLERR,"RIGS cluster has extra SHAKE bonds outside the cluster");
+  }
+
   // -----------------------------------------------------
   // set SHAKE arrays that are stored with atoms & add angle constraints
   // zero shake arrays for all owned atoms
@@ -1330,6 +1345,16 @@ void FixShake::find_clusters()
 
   for (i = 0; i < nlocal; i++) {
     if (!rigsflag) shake_flag[i] = 0;
+    if (shake_flag[i] == -1) {
+      shake_flag[i] = 0;
+      shake_atom[i][0] = 0;
+      shake_atom[i][1] = 0;
+      shake_atom[i][2] = 0;
+      shake_atom[i][3] = 0;
+      shake_type[i][0] = 0;
+      shake_type[i][1] = 0;
+      shake_type[i][2] = 0;
+    }
     if (shake_flag[i]) continue;
     shake_atom[i][0] = 0;
     shake_atom[i][1] = 0;
@@ -1416,7 +1441,7 @@ void FixShake::find_clusters()
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],-1);
-    } else if (shake_flag[i] == 5 || shake_flag[i] == 6) {
+    } else if (shake_flag[i] == 5) {
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],-1);
