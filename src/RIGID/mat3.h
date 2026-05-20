@@ -196,4 +196,41 @@ inline Mat3 transpose(const Mat3 &A)
   return R;
 }
 
+inline void mat_vec(const Mat3 &A, const double v[3], double out[3])
+{
+  out[0] = A(0, 0) * v[0] + A(0, 1) * v[1] + A(0, 2) * v[2];
+  out[1] = A(1, 0) * v[0] + A(1, 1) * v[1] + A(1, 2) * v[2];
+  out[2] = A(2, 0) * v[0] + A(2, 1) * v[1] + A(2, 2) * v[2];
+}
+
+inline void cross(const double a[3], const double b[3], double out[3])
+{
+  out[0] = a[1] * b[2] - a[2] * b[1];
+  out[1] = a[2] * b[0] - a[0] * b[2];
+  out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+inline void skew(const Mat3 &A, double out[3])
+{
+  out[0] = A(2, 1) - A(1, 2);
+  out[1] = A(0, 2) - A(2, 0);
+  out[2] = A(1, 0) - A(0, 1);
+}
+
+inline void cayley_rotate(Mat3 &A, const double v[3])
+{
+  double v_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+  double w = sqrt(1.0 - v_sq);
+
+  for (int j = 0; j < 3; j++) {
+    double col[3] = {A(0, j), A(1, j), A(2, j)};
+    double cross1[3], cross2[3];
+    cross(v, col, cross1);
+    cross(v, cross1, cross2);
+    A(0, j) = col[0] + 2.0 * w * cross1[0] + 2.0 * cross2[0];
+    A(1, j) = col[1] + 2.0 * w * cross1[1] + 2.0 * cross2[1];
+    A(2, j) = col[2] + 2.0 * w * cross1[2] + 2.0 * cross2[2];
+  }
+}
+
 #endif
