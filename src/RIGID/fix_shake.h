@@ -75,6 +75,7 @@ class FixShake : public Fix {
 
   // settings from input command
   int *bond_flag, *angle_flag;    // bond/angle types to constrain
+  int *dihedral_flag, *improper_flag;  // dihedral/improper types to constrain (RIGS only)
   int *type_flag;                 // constrain bonds to these types
   double *mass_list;              // constrain bonds to these masses
   int nmass;                      // # of masses in mass_list

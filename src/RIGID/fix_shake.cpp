@@ -48,7 +48,8 @@ static constexpr double MASSDELTA = 0.1;
 /* ---------------------------------------------------------------------- */
 
 FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), bond_flag(nullptr), angle_flag(nullptr), type_flag(nullptr),
+    Fix(lmp, narg, arg), bond_flag(nullptr), angle_flag(nullptr), dihedral_flag(nullptr),
+    improper_flag(nullptr), type_flag(nullptr),
     mass_list(nullptr), bond_distance(nullptr), angle_distance(nullptr), fstore(nullptr),
     loop_respa(nullptr), step_respa(nullptr), x(nullptr), v(nullptr), f(nullptr), ftmp(nullptr),
     vtmp(nullptr), mass(nullptr), rmass(nullptr), type(nullptr), shake_flag(nullptr),
@@ -115,9 +116,15 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
           (atom->lmap->find_type("t", i) >= 0) ||
           (atom->lmap->find_type("m", i) >= 0)) allow_typelabels = false;
     }
+    if (utils::strmatch(style, "^rigs")) {
+      for (int i = Atom::DIHEDRAL; i <= Atom::IMPROPER; ++i) {
+        if ((atom->lmap->find_type("d", i) >= 0) ||
+            (atom->lmap->find_type("i", i) >= 0)) allow_typelabels = false;
+      }
+    }
     if (!allow_typelabels && (comm->me == 0))
-      error->warning(FLERR, "At least one typelabel conflicts with a fix shake option: "
-                     "support for typelabels is disabled.");
+      error->warning(FLERR, "At least one typelabel conflicts with a fix {} option: "
+                     "support for typelabels is disabled.", style);
   }
 
   // parse SHAKE args for bond and angle types
@@ -130,6 +137,10 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
   for (int i = 1; i <= atom->nbondtypes; i++) bond_flag[i] = 0;
   angle_flag = new int[atom->nangletypes + 1];
   for (int i = 1; i <= atom->nangletypes; i++) angle_flag[i] = 0;
+  dihedral_flag = new int[atom->ndihedraltypes + 1];
+  for (int i = 1; i <= atom->ndihedraltypes; i++) dihedral_flag[i] = 0;
+  improper_flag = new int[atom->nimpropertypes + 1];
+  for (int i = 1; i <= atom->nimpropertypes; i++) improper_flag[i] = 0;
   type_flag = new int[atom->ntypes + 1];
   for (int i = 1; i <= atom->ntypes; i++) type_flag[i] = 0;
   mass_list = new double[atom->ntypes];
@@ -145,6 +156,15 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[next],"m") == 0) {
       mode = 'm';
       atom->check_mass(FLERR);
+
+    } else if (strcmp(arg[next],"d") == 0) {
+      if (!utils::strmatch(style, "^rigs"))
+        error->all(FLERR,"Dihedral type constraints are not supported by fix {}", style);
+      mode = 'd';
+    } else if (strcmp(arg[next],"i") == 0) {
+      if (!utils::strmatch(style, "^rigs"))
+        error->all(FLERR,"Improper type constraints are not supported by fix {}", style);
+      mode = 'i';
 
     // break if known optional keyword
 
@@ -169,6 +189,22 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
       if (i < 1 || i > atom->nangletypes)
         error->all(FLERR,"Invalid angle type {} for {}", arg[next], mystyle);
       angle_flag[i] = 1;
+
+    } else if (mode == 'd') {
+      if (allow_typelabels) i = utils::expand_type_int(FLERR, arg[next], Atom::DIHEDRAL, lmp);
+      else i = utils::inumeric(FLERR, arg[next], false, lmp);
+
+      if (i < 1 || i > atom->ndihedraltypes)
+        error->all(FLERR,"Invalid dihedral type {} for {}", arg[next], mystyle);
+      dihedral_flag[i] = 1;
+
+    } else if (mode == 'i') {
+      if (allow_typelabels) i = utils::expand_type_int(FLERR, arg[next], Atom::IMPROPER, lmp);
+      else i = utils::inumeric(FLERR, arg[next], false, lmp);
+
+      if (i < 1 || i > atom->nimpropertypes)
+        error->all(FLERR,"Invalid improper type {} for {}", arg[next], mystyle);
+      improper_flag[i] = 1;
 
     } else if (mode == 't') {
       if (allow_typelabels) i = utils::expand_type_int(FLERR, arg[next], Atom::ATOM, lmp);
@@ -331,6 +367,8 @@ FixShake::~FixShake()
 
   delete[] bond_flag;
   delete[] angle_flag;
+  delete[] dihedral_flag;
+  delete[] improper_flag;
   delete[] type_flag;
   delete[] mass_list;
 
