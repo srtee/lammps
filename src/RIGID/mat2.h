@@ -20,6 +20,13 @@
 
 struct SymMat2 {
   double d00, d01, d11;
+
+  SymMat2 operator+(const SymMat2 &B) const {
+    return {d00 + B.d00, d01 + B.d01, d11 + B.d11};
+  }
+  SymMat2 operator-(const SymMat2 &B) const {
+    return {d00 - B.d00, d01 - B.d01, d11 - B.d11};
+  }
 };
 
 struct Mat2 {
@@ -27,18 +34,42 @@ struct Mat2 {
 
   double &operator()(int i, int j) { return d[i][j]; }
   double operator()(int i, int j) const { return d[i][j]; }
+
+  Mat2 operator*(const Mat2 &B) const {
+    Mat2 R;
+    R(0, 0) = d[0][0] * B(0, 0) + d[0][1] * B(1, 0);
+    R(0, 1) = d[0][0] * B(0, 1) + d[0][1] * B(1, 1);
+    R(1, 0) = d[1][0] * B(0, 0) + d[1][1] * B(1, 0);
+    R(1, 1) = d[1][0] * B(0, 1) + d[1][1] * B(1, 1);
+    return R;
+  }
+
+  Mat2 operator*(const SymMat2 &B) const {
+    Mat2 R;
+    R(0, 0) = d[0][0] * B.d00 + d[0][1] * B.d01;
+    R(0, 1) = d[0][0] * B.d01 + d[0][1] * B.d11;
+    R(1, 0) = d[1][0] * B.d00 + d[1][1] * B.d01;
+    R(1, 1) = d[1][0] * B.d01 + d[1][1] * B.d11;
+    return R;
+  }
 };
 
+inline Mat2 operator*(const SymMat2 &A, const Mat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = A.d00 * B(0, 0) + A.d01 * B(1, 0);
+  R(0, 1) = A.d00 * B(0, 1) + A.d01 * B(1, 1);
+  R(1, 0) = A.d01 * B(0, 0) + A.d11 * B(1, 0);
+  R(1, 1) = A.d01 * B(0, 1) + A.d11 * B(1, 1);
+  return R;
+}
+
+// r1·r1, r1·r2, r2·r2
 inline SymMat2 sym_dot(const double r1[3], const double r2[3])
 {
   return {r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2],
           r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2],
           r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
-}
-
-inline SymMat2 sym_outer_diff(const SymMat2 &L, const SymMat2 &S)
-{
-  return {L.d00 - S.d00, L.d01 - S.d01, L.d11 - S.d11};
 }
 
 inline SymMat2 inv_sym(const SymMat2 &A)
@@ -58,60 +89,11 @@ inline SymMat2 sandwich(const SymMat2 &M, const SymMat2 &A)
           MA10 * M.d01 + MA11 * M.d11 };
 }
 
-inline Mat2 sym_mul(const SymMat2 &A, const Mat2 &B)
-{
-  Mat2 R;
-  R(0, 0) = A.d00 * B(0, 0) + A.d01 * B(1, 0);
-  R(0, 1) = A.d00 * B(0, 1) + A.d01 * B(1, 1);
-  R(1, 0) = A.d01 * B(0, 0) + A.d11 * B(1, 0);
-  R(1, 1) = A.d01 * B(0, 1) + A.d11 * B(1, 1);
-  return R;
-}
-
-inline Mat2 mul_sym(const Mat2 &A, const SymMat2 &B)
-{
-  Mat2 R;
-  R(0, 0) = A(0, 0) * B.d00 + A(0, 1) * B.d01;
-  R(0, 1) = A(0, 0) * B.d01 + A(0, 1) * B.d11;
-  R(1, 0) = A(1, 0) * B.d00 + A(1, 1) * B.d01;
-  R(1, 1) = A(1, 0) * B.d01 + A(1, 1) * B.d11;
-  return R;
-}
-
-inline SymMat2 sym_minus(const SymMat2 &A, const SymMat2 &B)
-{
-  return {A.d00 - B.d00, A.d01 - B.d01, A.d11 - B.d11};
-}
-
-inline SymMat2 sym_plus(const SymMat2 &A, const SymMat2 &B)
-{
-  return {A.d00 + B.d00, A.d01 + B.d01, A.d11 + B.d11};
-}
-
-inline SymMat2 chi_KT_minus_D(const Mat2 &chi, const Mat2 &K, const SymMat2 &D)
-{
-  return {chi(0, 0) * K(0, 0) + chi(0, 1) * K(0, 1) - D.d00,
-          chi(0, 0) * K(1, 0) + chi(0, 1) * K(1, 1) - D.d01,
-          chi(1, 0) * K(1, 0) + chi(1, 1) * K(1, 1) - D.d11};
-}
-
-inline Mat2 mat_mul(const Mat2 &A, const Mat2 &B)
-{
-  Mat2 R;
-  R(0, 0) = A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0);
-  R(0, 1) = A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1);
-  R(1, 0) = A(1, 0) * B(0, 0) + A(1, 1) * B(1, 0);
-  R(1, 1) = A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1);
-  return R;
-}
-
 inline SymMat2 mat_mul_tosym(const Mat2 &A, const Mat2 &B)
 {
-  SymMat2 R;
-  R.d00 = A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0);
-  R.d01 = A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1);
-  R.d11 = A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1);
-  return R;
+  return {A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0),
+          A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1),
+          A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1)};
 }
 
 inline Mat2 chol_upper(const SymMat2 &A)
