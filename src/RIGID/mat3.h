@@ -210,6 +210,11 @@ inline void cross(const double a[3], const double b[3], double out[3])
   out[2] = a[0] * b[1] - a[1] * b[0];
 }
 
+inline void get_col(const Mat3 &A, int j, double out[3])
+{
+  out[0] = A(0, j); out[1] = A(1, j); out[2] = A(2, j);
+}
+
 inline void skew(const Mat3 &A, double out[3])
 {
   out[0] = A(2, 1) - A(1, 2);
