@@ -68,6 +68,7 @@ class FixShake : public Fix {
   int eflag_pre_reverse;    // store the eflag of last pre_reverse call
   int respa;                // 0 = vel. Verlet, 1 = respa
   int rattle;               // 0 = SHAKE, 1 = RATTLE
+  int rigsflag;             // 1 if fix style is rigs, 0 otherwise
   double tolerance;         // SHAKE tolerance
   int max_iter;             // max # of SHAKE iterations
   int output_every;         // SHAKE stat output every so often
@@ -102,14 +103,16 @@ class FixShake : public Fix {
   int nlocal;
   // atom-based arrays
   int *shake_flag;        // 0 if atom not in SHAKE cluster
-                          // 1 = size 3 angle cluster
-                          // 2,3,4 = size of bond-only cluster
+                           // 1 = size 3 angle cluster
+                           // 2,3,4 = size of bond-only cluster
+                           // 5 = size 4 improper cluster (RIGS only)
+                           // 6 = size 4 dihedral cluster (RIGS only)
   tagint **shake_atom;    // global IDs of atoms in cluster
-                          // central atom is 1st
-                          // lowest global ID is 1st for size 2
+                           // central atom is 1st
+                           // lowest global ID is 1st for size 2
   int **shake_type;       // bondtype of each bond in cluster
-                          // for angle cluster, 3rd value
-                          //   is angletype
+                           // for angle cluster, 3rd value
+                           //   is angletype
   double **xshake;        // unconstrained atom coords
   int *nshake;            // count
 

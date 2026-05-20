@@ -18,8 +18,11 @@
 #include "angle.h"
 #include "atom.h"
 #include "comm.h"
+#include "error.h"
 #include "force.h"
 #include "mat2.h"
+#include "memory.h"
+#include "modify.h"
 #include "update.h"
 
 #include <cmath>
@@ -28,9 +31,282 @@ using namespace LAMMPS_NS;
 using namespace RigsMath;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
-    FixShake(lmp, narg, arg), rigs_angle(nullptr) {}
+    FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr) {}
 
-FixRigs::~FixRigs() { delete[] rigs_angle; }
+FixRigs::~FixRigs()
+{
+  memory->destroy(rigs_type);
+  delete[] rigs_angle;
+}
+
+void FixRigs::post_constructor()
+{
+  grow_arrays(atom->nmax);
+
+  int i;
+  int nlocal = atom->nlocal;
+  tagint *tag = atom->tag;
+  int *mask_atom = atom->mask;
+
+  atommols = atom->avec->onemols;
+
+  int impropers_allow = atom->avec->impropers_allow;
+
+  int nimproper = 0;
+
+  for (i = 0; i < nlocal; i++) {
+    rigs_type[i][0] = 0;
+    rigs_type[i][1] = 0;
+    rigs_type[i][2] = 0;
+
+    if (shake_flag[i] == 0) continue;
+    if (!(mask_atom[i] & groupbit)) continue;
+    if (shake_atom[i][0] != tag[i]) continue;
+    if (shake_flag[i] == 4) {
+      int angles_allow_flag = atom->avec->angles_allow;
+      int nangle_found = 0;
+      if (angles_allow_flag) {
+        tagint a1 = shake_atom[i][1];
+        tagint a2 = shake_atom[i][2];
+        tagint a3_atom = shake_atom[i][3];
+        int n = angletype_findset(i, a1, a2, 0);
+        if (n > 0 && angle_flag[n]) nangle_found++;
+        n = angletype_findset(i, a1, a3_atom, 0);
+        if (n > 0 && angle_flag[n]) nangle_found++;
+        n = angletype_findset(i, a2, a3_atom, 0);
+        if (n > 0 && angle_flag[n]) nangle_found++;
+      }
+      if (nangle_found == 3) {
+        shake_flag[i] = 5;
+        nimproper++;
+      } else if (impropers_allow) {
+        int impflag = improper_check(i);
+        if (impflag) {
+          shake_flag[i] = 5;
+          nimproper++;
+        }
+      }
+    }
+  }
+
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] == 5) {
+      fill_improper_types(i);
+    }
+  }
+
+  find_clusters();
+
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] == 5) {
+      if (rigs_type[i][0] > 0)
+        angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
+      if (rigs_type[i][1] > 0)
+        angletype_findset(i, shake_atom[i][1], shake_atom[i][3], -1);
+      if (rigs_type[i][2] > 0)
+        angletype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
+    }
+  }
+}
+
+int FixRigs::improper_check(int i)
+{
+  tagint a1 = shake_atom[i][1];
+  tagint a2 = shake_atom[i][2];
+  tagint a3_atom = shake_atom[i][3];
+
+  if (molecular == Atom::MOLECULAR) {
+    int nimp = atom->num_improper[i];
+    for (int m = 0; m < nimp; m++) {
+      if (atom->improper_type[i][m] <= 0) continue;
+      if (!improper_flag[atom->improper_type[i][m]]) continue;
+      tagint b1 = atom->improper_atom1[i][m];
+      tagint b2 = atom->improper_atom2[i][m];
+      tagint b3 = atom->improper_atom3[i][m];
+      tagint b4 = atom->improper_atom4[i][m];
+
+      if (b1 != atom->tag[i]) continue;
+      if ((b2 == a1 && b3 == a2 && b4 == a3_atom) ||
+          (b2 == a1 && b3 == a3_atom && b4 == a2) ||
+          (b2 == a2 && b3 == a1 && b4 == a3_atom) ||
+          (b2 == a2 && b3 == a3_atom && b4 == a1) ||
+          (b2 == a3_atom && b3 == a1 && b4 == a2) ||
+          (b2 == a3_atom && b3 == a2 && b4 == a1))
+        return 1;
+    }
+  } else {
+    int imol = atom->molindex[i];
+    int iatom = atom->molatom[i];
+    tagint tagprev = atom->tag[i] - iatom - 1;
+    int nimp = atommols[imol]->num_improper[iatom];
+    for (int m = 0; m < nimp; m++) {
+      if (atommols[imol]->improper_type[iatom][m] <= 0) continue;
+      if (!improper_flag[atommols[imol]->improper_type[iatom][m]]) continue;
+      tagint b1 = atommols[imol]->improper_atom1[iatom][m] + tagprev;
+      tagint b2 = atommols[imol]->improper_atom2[iatom][m] + tagprev;
+      tagint b3 = atommols[imol]->improper_atom3[iatom][m] + tagprev;
+      tagint b4 = atommols[imol]->improper_atom4[iatom][m] + tagprev;
+      if (b1 != atom->tag[i]) continue;
+      if ((b2 == a1 && b3 == a2 && b4 == a3_atom) ||
+          (b2 == a1 && b3 == a3_atom && b4 == a2) ||
+          (b2 == a2 && b3 == a1 && b4 == a3_atom) ||
+          (b2 == a2 && b3 == a3_atom && b4 == a1) ||
+          (b2 == a3_atom && b3 == a1 && b4 == a2) ||
+          (b2 == a3_atom && b3 == a2 && b4 == a1))
+        return 1;
+    }
+  }
+  return 0;
+}
+
+void FixRigs::fill_improper_types(int i)
+{
+  tagint a1 = shake_atom[i][1];
+  tagint a2 = shake_atom[i][2];
+  tagint a3_atom = shake_atom[i][3];
+
+  rigs_type[i][0] = 0;
+  rigs_type[i][1] = 0;
+  rigs_type[i][2] = 0;
+
+  int n = angletype_findset(i, a1, a2, 0);
+  if (n > 0 && angle_flag[n]) rigs_type[i][0] = n;
+
+  n = angletype_findset(i, a1, a3_atom, 0);
+  if (n > 0 && angle_flag[n]) rigs_type[i][1] = n;
+
+  n = angletype_findset(i, a2, a3_atom, 0);
+  if (n > 0 && angle_flag[n]) rigs_type[i][2] = n;
+
+  int nimp = impropertype_findset(i, shake_atom[i][0], a1, a2, a3_atom, 0);
+  if (nimp > 0 && improper_flag[nimp]) {
+    if (rigs_type[i][2] == 0) rigs_type[i][2] = -nimp;
+  }
+}
+
+int FixRigs::impropertype_findset(int i, tagint n0, tagint n1, tagint n2, tagint n3, int setflag)
+{
+  int m, nimp;
+
+  if (molecular == Atom::MOLECULAR) {
+    nimp = atom->num_improper[i];
+    for (m = 0; m < nimp; m++) {
+      tagint b0 = atom->improper_atom1[i][m];
+      tagint b1 = atom->improper_atom2[i][m];
+      tagint b2 = atom->improper_atom3[i][m];
+      tagint b3 = atom->improper_atom4[i][m];
+      if (b0 != n0) continue;
+      if (b1 == n1 && b2 == n2 && b3 == n3) break;
+      if (b1 == n1 && b2 == n3 && b3 == n2) break;
+      if (b1 == n2 && b2 == n1 && b3 == n3) break;
+    }
+  } else {
+    int imol = atom->molindex[i];
+    int iatom = atom->molatom[i];
+    tagint tagprev = atom->tag[i] - iatom - 1;
+    nimp = atommols[imol]->num_improper[iatom];
+    int *itype = atommols[imol]->improper_type[iatom];
+    for (m = 0; m < nimp; m++) {
+      tagint b0 = atommols[imol]->improper_atom1[iatom][m] + tagprev;
+      tagint b1 = atommols[imol]->improper_atom2[iatom][m] + tagprev;
+      tagint b2 = atommols[imol]->improper_atom3[iatom][m] + tagprev;
+      tagint b3 = atommols[imol]->improper_atom4[iatom][m] + tagprev;
+      if (b0 != n0) continue;
+      if (b1 == n1 && b2 == n2 && b3 == n3) break;
+      if (b1 == n1 && b2 == n3 && b3 == n2) break;
+      if (b1 == n2 && b2 == n1 && b3 == n3) break;
+    }
+  }
+
+  if (m < nimp) {
+    if (setflag == 0) {
+      if (molecular == Atom::MOLECULAR) return atom->improper_type[i][m];
+      else {
+        int *itype = atommols[atom->molindex[i]]->improper_type[atom->molatom[i]];
+        return itype[m];
+      }
+    }
+    if (molecular == Atom::MOLECULAR) {
+      if ((setflag < 0 && atom->improper_type[i][m] > 0) ||
+          (setflag > 0 && atom->improper_type[i][m] < 0))
+        atom->improper_type[i][m] = -atom->improper_type[i][m];
+    } else {
+      int *itype = atommols[atom->molindex[i]]->improper_type[atom->molatom[i]];
+      if ((setflag < 0 && itype[m] > 0) ||
+          (setflag > 0 && itype[m] < 0))
+        itype[m] = -itype[m];
+    }
+  }
+
+  return 0;
+}
+
+void FixRigs::grow_arrays(int nmax)
+{
+  FixShake::grow_arrays(nmax);
+  memory->grow(rigs_type, nmax, 3, "rigs:rigs_type");
+}
+
+void FixRigs::copy_arrays(int i, int j, int delflag)
+{
+  FixShake::copy_arrays(i, j, delflag);
+  if (shake_flag[j] == 5 || shake_flag[j] == 6) {
+    rigs_type[j][0] = rigs_type[i][0];
+    rigs_type[j][1] = rigs_type[i][1];
+    rigs_type[j][2] = rigs_type[i][2];
+  }
+}
+
+int FixRigs::pack_exchange(int i, double *buf)
+{
+  int m = FixShake::pack_exchange(i, buf);
+  if (shake_flag[i] == 5 || shake_flag[i] == 6) {
+    buf[m++] = rigs_type[i][0];
+    buf[m++] = rigs_type[i][1];
+    buf[m++] = rigs_type[i][2];
+  }
+  return m;
+}
+
+int FixRigs::unpack_exchange(int nlocal, double *buf)
+{
+  int m = FixShake::unpack_exchange(nlocal, buf);
+  if (shake_flag[nlocal] == 5 || shake_flag[nlocal] == 6) {
+    rigs_type[nlocal][0] = static_cast<int>(buf[m++]);
+    rigs_type[nlocal][1] = static_cast<int>(buf[m++]);
+    rigs_type[nlocal][2] = static_cast<int>(buf[m++]);
+  }
+  return m;
+}
+
+int FixRigs::pack_restart(int i, double *buf)
+{
+  int m = FixShake::pack_restart(i, buf);
+  if (shake_flag[i] == 5 || shake_flag[i] == 6) {
+    buf[m++] = rigs_type[i][0];
+    buf[m++] = rigs_type[i][1];
+    buf[m++] = rigs_type[i][2];
+  }
+  return m;
+}
+
+void FixRigs::unpack_restart(int i, int ncol, double *buf)
+{
+  FixShake::unpack_restart(i, ncol, buf);
+  // TODO: restore rigs_type from buf for restart
+}
+
+int FixRigs::size_restart(int i)
+{
+  int n = FixShake::size_restart(i);
+  if (shake_flag[i] == 5 || shake_flag[i] == 6) n += 3;
+  return n;
+}
+
+int FixRigs::maxsize_restart()
+{
+  return FixShake::maxsize_restart() + 3;
+}
 
 void FixRigs::init()
 {
@@ -83,8 +359,6 @@ void FixRigs::shake3angle(int ilist)
   double v[6];
   double invmass0,invmass01,invmass02;
 
-  // local atom IDs and constraint distances
-
   int m = list[ilist];
   int i0 = closest_list[ilist][0];
   int i1 = closest_list[ilist][1];
@@ -103,8 +377,6 @@ void FixRigs::shake3angle(int ilist)
   r02[1] = x[i0][1] - x[i2][1];
   r02[2] = x[i0][2] - x[i2][2];
 
-  // s01, s02 = distance vec after unconstrained update
-
   double s01[3];
   s01[0] = xshake[i0][0] - xshake[i1][0];
   s01[1] = xshake[i0][1] - xshake[i1][1];
@@ -114,8 +386,6 @@ void FixRigs::shake3angle(int ilist)
   s02[0] = xshake[i0][0] - xshake[i2][0];
   s02[1] = xshake[i0][1] - xshake[i2][1];
   s02[2] = xshake[i0][2] - xshake[i2][2];
-
-  // scalar products between atoms
 
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
@@ -129,9 +399,7 @@ void FixRigs::shake3angle(int ilist)
   SR(1,0) = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
   SR(1,1) = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
 
-  // matrix coeffs and rhs for lamda equations
-
-  if (rmass) { // s/1.0/dtfsq??
+  if (rmass) {
     invmass0 = dtfsq / rmass[i0];
     invmass01 = invmass0 + dtfsq / rmass[i1];
     invmass02 = invmass0 + dtfsq / rmass[i2];
@@ -141,61 +409,40 @@ void FixRigs::shake3angle(int ilist)
     invmass02 = invmass0 + dtfsq / mass[type[i2]];
   }
 
-  // M = (mu01 mu0; mu0 mu02)^(-1)
   SymMat2 M = inv_sym({invmass01, invmass0, invmass02});
 
-  // D = M (L - S^T S) M
   SymMat2 D = sandwich(M, diff);
 
-  // K = M (S^T R)
   Mat2 K = M * SR;
 
-  // rh = (R^T R)^(-1)
   SymMat2 rh = inv_sym(rr);
 
-  // chi = K * rh
   Mat2 chi = K * rh;
   SymMat2 chiKT = mat_mul_tosym(chi, transpose(K));
   SymMat2 sigma = chiKT + D;
 
-  // sc = upper Chol of sigma
   Mat2 sc = chol_upper(sigma);
 
-  // rc = inverse of lower Chol of R^T R
   Mat2 rc = inv_chol_lower(rr);
 
-  // phiC = sc x rc
   Mat2 phiC = sc * rc;
 
-  // phiS = sc x [0,-1; 1,0] x rc
   double phiS11 = sc(0,1)*rc(0,0) - sc(0,0)*rc(1,0);
   double phiS12 = -sc(0,0)*rc(1,1);
   double phiS21 = sc(1,1)*rc(0,0);
 
-  // solve skewChi - cos*skewC - sin*skewS = 0
   double skewC = skew(phiC);
   double skewChi = skew(chi);
   double skewS = phiS12 - phiS21;
 
   double Asq = skewC * skewC + skewS * skewS;
-  // double A = sqrt(Asq);
-  // double sinp = sqrt((A - skewChi) * (A + skewChi));
   double sinp = sqrt(Asq - skewChi * skewChi);
   double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
-  // double cskew = -sqrt((1 - sskew) * (1 + sskew));
   double cskew = (skewS * sinp - skewChi * skewC) / Asq;
 
-  // and finally!!
   double lamda01 = chi(0,0) + cskew*phiC(0,0) + sskew*phiS11;
   double lamda02 = chi(1,1) + cskew*phiC(1,1);
-  double lamda12 = chi(0,1) + cskew*phiC(0,1) + sskew*phiS12; 
-  // double lamda21 = chi(1,0) + cskew*phiC(1,0) + sskew*phiS21;
-  // lamda12 = 0.5 * (lamda12 + lamda21);
-  // update forces if atom is owned by this processor
-
-  //lamda01 = lamda01/dtfsq;
-  //lamda02 = lamda02/dtfsq;
-  //lamda12 = lamda12/dtfsq;
+  double lamda12 = chi(0,1) + cskew*phiC(0,1) + sskew*phiS12;
 
   if (i0 < nlocal) {
     f[i0][0] -= (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];

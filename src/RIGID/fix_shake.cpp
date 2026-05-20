@@ -59,6 +59,7 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
     a_count_all(nullptr), a_ave(nullptr), a_max(nullptr), a_min(nullptr), a_ave_all(nullptr),
     a_max_all(nullptr), a_min_all(nullptr), atommols(nullptr), onemols(nullptr)
 {
+  rigsflag = utils::strmatch(style, "^rigs") ? 1 : 0;
   energy_global_flag = energy_peratom_flag = 1;
   virial_global_flag = virial_peratom_flag = 1;
   thermo_energy = thermo_virial = 1;
@@ -116,7 +117,7 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
           (atom->lmap->find_type("t", i) >= 0) ||
           (atom->lmap->find_type("m", i) >= 0)) allow_typelabels = false;
     }
-    if (utils::strmatch(style, "^rigs")) {
+    if (rigsflag) {
       for (int i = Atom::DIHEDRAL; i <= Atom::IMPROPER; ++i) {
         if ((atom->lmap->find_type("d", i) >= 0) ||
             (atom->lmap->find_type("i", i) >= 0)) allow_typelabels = false;
@@ -158,11 +159,11 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
       atom->check_mass(FLERR);
 
     } else if (strcmp(arg[next],"d") == 0) {
-      if (!utils::strmatch(style, "^rigs"))
+      if (!rigsflag)
         error->all(FLERR,"Dihedral type constraints are not supported by fix {}", style);
       mode = 'd';
     } else if (strcmp(arg[next],"i") == 0) {
-      if (!utils::strmatch(style, "^rigs"))
+      if (!rigsflag)
         error->all(FLERR,"Improper type constraints are not supported by fix {}", style);
       mode = 'i';
 
@@ -308,7 +309,7 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
 
   double time1 = platform::walltime();
 
-  find_clusters();
+  if (!rigsflag) find_clusters();
 
   if (comm->me == 0)
     utils::logmesg(lmp,"  find clusters CPU = {:.3f} seconds\n",platform::walltime()-time1);
@@ -348,6 +349,10 @@ FixShake::~FixShake()
         bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],1);
         bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],1);
       } else if (shake_flag[i] == 4) {
+        bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],1);
+        bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],1);
+        bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],1);
+      } else if (shake_flag[i] == 5 || shake_flag[i] == 6) {
         bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],1);
         bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],1);
         bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],1);
@@ -656,7 +661,7 @@ void FixShake::pre_neighbor()
           closest_list[nlist][1] = atom2;
           nlist++;
         }
-      } else if (shake_flag[i] % 2 == 1) {
+      } else if (shake_flag[i] == 1 || shake_flag[i] == 3) {
         atom1 = atom->map(shake_atom[i][0]);
         atom2 = atom->map(shake_atom[i][1]);
         atom3 = atom->map(shake_atom[i][2]);
@@ -726,7 +731,7 @@ void FixShake::post_force(int vflag)
     m = list[i];
     if (shake_flag[m] == 2) shake(i);
     else if (shake_flag[m] == 3) shake3(i);
-    else if (shake_flag[m] == 4) shake4(i);
+    else if (shake_flag[m] == 4 || shake_flag[m] == 5 || shake_flag[m] == 6) shake4(i);
     else shake3angle(i);
   }
 
@@ -774,7 +779,7 @@ void FixShake::post_force_respa(int vflag, int ilevel, int iloop)
     m = list[i];
     if (shake_flag[m] == 2) shake(i);
     else if (shake_flag[m] == 3) shake3(i);
-    else if (shake_flag[m] == 4) shake4(i);
+    else if (shake_flag[m] == 4 || shake_flag[m] == 5 || shake_flag[m] == 6) shake4(i);
     else shake3angle(i);
   }
 
@@ -1091,7 +1096,7 @@ bigint FixShake::dof(int igroup)
     if (shake_flag[i] == 1) n += 3;
     else if (shake_flag[i] == 2) n += 1;
     else if (shake_flag[i] == 3) n += 2;
-    else if (shake_flag[i] == 4) n += 3;
+    else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6) n += 3;
   }
 
   bigint nall;
@@ -1294,14 +1299,16 @@ void FixShake::find_clusters()
   MPI_Allreduce(&flag,&flag_all,1,MPI_INT,MPI_SUM,world);
   if (flag_all) error->all(FLERR,"Shake cluster of more than 4 atoms");
 
-  flag = 0;
-  for (i = 0; i < nlocal; i++) {
-    if (nshake[i] <= 1) continue;
-    for (j = 0; j < npartner[i]; j++)
-      if (partner_shake[i][j] && partner_nshake[i][j] > 1) flag++;
+  if (!rigsflag) {
+    flag = 0;
+    for (i = 0; i < nlocal; i++) {
+      if (nshake[i] <= 1) continue;
+      for (j = 0; j < npartner[i]; j++)
+        if (partner_shake[i][j] && partner_nshake[i][j] > 1) flag++;
+    }
+    MPI_Allreduce(&flag,&flag_all,1,MPI_INT,MPI_SUM,world);
+    if (flag_all) error->all(FLERR,"Shake clusters are connected");
   }
-  MPI_Allreduce(&flag,&flag_all,1,MPI_INT,MPI_SUM,world);
-  if (flag_all) error->all(FLERR,"Shake clusters are connected");
 
   // -----------------------------------------------------
   // set SHAKE arrays that are stored with atoms & add angle constraints
@@ -1322,7 +1329,8 @@ void FixShake::find_clusters()
   // -----------------------------------------------------
 
   for (i = 0; i < nlocal; i++) {
-    shake_flag[i] = 0;
+    if (!rigsflag) shake_flag[i] = 0;
+    if (shake_flag[i]) continue;
     shake_atom[i][0] = 0;
     shake_atom[i][1] = 0;
     shake_atom[i][2] = 0;
@@ -1408,6 +1416,10 @@ void FixShake::find_clusters()
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],-1);
       bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],-1);
+    } else if (shake_flag[i] == 5 || shake_flag[i] == 6) {
+      bondtype_findset(i,shake_atom[i][0],shake_atom[i][1],-1);
+      bondtype_findset(i,shake_atom[i][0],shake_atom[i][2],-1);
+      bondtype_findset(i,shake_atom[i][0],shake_atom[i][3],-1);
     }
   }
 
@@ -1415,13 +1427,15 @@ void FixShake::find_clusters()
   // print info on SHAKE clusters
   // -----------------------------------------------------
 
-  bigint count1,count2,count3,count4;
-  count1 = count2 = count3 = count4 = 0;
+  bigint count1,count2,count3,count4,count5,count6;
+  count1 = count2 = count3 = count4 = count5 = count6 = 0;
   for (i = 0; i < nlocal; i++) {
     if (shake_flag[i] == 1) count1++;
     else if (shake_flag[i] == 2) count2++;
     else if (shake_flag[i] == 3) count3++;
     else if (shake_flag[i] == 4) count4++;
+    else if (shake_flag[i] == 5) count5++;
+    else if (shake_flag[i] == 6) count6++;
   }
 
   bigint tmp;
@@ -1433,13 +1447,20 @@ void FixShake::find_clusters()
   MPI_Allreduce(&tmp,&count3,1,MPI_LMP_BIGINT,MPI_SUM,world);
   tmp = count4;
   MPI_Allreduce(&tmp,&count4,1,MPI_LMP_BIGINT,MPI_SUM,world);
+  tmp = count5;
+  MPI_Allreduce(&tmp,&count5,1,MPI_LMP_BIGINT,MPI_SUM,world);
+  tmp = count6;
+  MPI_Allreduce(&tmp,&count6,1,MPI_LMP_BIGINT,MPI_SUM,world);
 
   if (comm->me == 0) {
     utils::logmesg(lmp,"{:>8} = # of size 2 clusters\n"
                    "{:>8} = # of size 3 clusters\n"
                    "{:>8} = # of size 4 clusters\n"
-                   "{:>8} = # of frozen angles\n",
-                   count2/2,count3/3,count4/4,count1/3);
+                   "{:>8} = # of frozen angles\n"
+                   "{:>8} = # of improper clusters\n"
+                   "{:>8} = # of dihedral clusters\n",
+                   count2/2,count3/3,count4/4,count1/3,
+                   count5/4,count6/4);
   }
 }
 
@@ -2971,6 +2992,7 @@ void FixShake::stats()
     // bond stats
 
     if (n == 1) n = 3;
+    else if (n > 4) n = 4;
     int iatom = closest_list[ii][0];
     for (int j = 1; j < n; j++) {
       int jatom = closest_list[ii][j];
@@ -3230,7 +3252,7 @@ void FixShake::copy_arrays(int i, int j, int /*delflag*/)
     shake_atom[j][2] = shake_atom[i][2];
     shake_type[j][0] = shake_type[i][0];
     shake_type[j][1] = shake_type[i][1];
-  } else if (flag == 4) {
+  } else if (flag == 4 || flag == 5 || flag == 6) {
     shake_atom[j][0] = shake_atom[i][0];
     shake_atom[j][1] = shake_atom[i][1];
     shake_atom[j][2] = shake_atom[i][2];
@@ -3270,7 +3292,7 @@ void FixShake::update_arrays(int i, int atom_offset)
     shake_atom[i][0] += atom_offset;
     shake_atom[i][1] += atom_offset;
     shake_atom[i][2] += atom_offset;
-  } else if (flag == 4) {
+  } else if (flag == 4 || flag == 5 || flag == 6) {
     shake_atom[i][0] += atom_offset;
     shake_atom[i][1] += atom_offset;
     shake_atom[i][2] += atom_offset;
@@ -3320,7 +3342,7 @@ void FixShake::set_molecule(int nlocalprev, tagint tagprev, int imol,
       shake_atom[i][2] = mol_shake_atom[m][2] + tagprev;
       shake_type[i][0] = mol_shake_type[m][0];
       shake_type[i][1] = mol_shake_type[m][1];
-    } else if (flag == 4) {
+    } else if (flag == 4 || flag == 5 || flag == 6) {
       shake_atom[i][0] = mol_shake_atom[m][0] + tagprev;
       shake_atom[i][1] = mol_shake_atom[m][1] + tagprev;
       shake_atom[i][2] = mol_shake_atom[m][2] + tagprev;
@@ -3358,7 +3380,7 @@ int FixShake::pack_exchange(int i, double *buf)
     buf[m++] = shake_atom[i][2];
     buf[m++] = shake_type[i][0];
     buf[m++] = shake_type[i][1];
-  } else if (flag == 4) {
+  } else if (flag == 4 || flag == 5 || flag == 6) {
     buf[m++] = shake_atom[i][0];
     buf[m++] = shake_atom[i][1];
     buf[m++] = shake_atom[i][2];
@@ -3395,7 +3417,7 @@ int FixShake::unpack_exchange(int nlocal, double *buf)
     shake_atom[nlocal][2] = static_cast<tagint> (buf[m++]);
     shake_type[nlocal][0] = static_cast<int> (buf[m++]);
     shake_type[nlocal][1] = static_cast<int> (buf[m++]);
-  } else if (flag == 4) {
+  } else if (flag == 4 || flag == 5 || flag == 6) {
     shake_atom[nlocal][0] = static_cast<tagint> (buf[m++]);
     shake_atom[nlocal][1] = static_cast<tagint> (buf[m++]);
     shake_atom[nlocal][2] = static_cast<tagint> (buf[m++]);

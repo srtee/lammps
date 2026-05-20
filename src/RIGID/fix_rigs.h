@@ -30,10 +30,25 @@ class FixRigs : public FixShake {
   public:
   FixRigs(class LAMMPS *, int, char **);
   ~FixRigs() override;
+  void post_constructor() override;
   void init() override;
+  void grow_arrays(int) override;
+  void copy_arrays(int, int, int) override;
+  int pack_exchange(int, double *) override;
+  int unpack_exchange(int, double *) override;
+  int pack_restart(int, double *) override;
+  void unpack_restart(int, int) override;
+  int size_restart(int) override;
+  int maxsize_restart() override;
  protected:
+  int **rigs_type;
   double *rigs_angle;
   void shake3angle(int) override;
+  void fill_improper_types(int i);
+  int improper_check(int i);
+  int dihedral_check(int i);
+  int impropertype_findset(int i, tagint n1, tagint n2, tagint n3, int setflag);
+  int dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag);
 };
 
 }    // namespace LAMMPS_NS
