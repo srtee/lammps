@@ -123,14 +123,6 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 L = {bond1 * bond1, bond12, bond2 * bond2};
   SymMat2 diff = L - ss;
 
-  // fall back to SHAKE if constraint matrix is near-singular
-  if (diff.d00 * diff.d00 < tolerance &&
-      diff.d01*diff.d01 < tolerance &&
-      diff.d11*diff.d11 < tolerance) {
-    FixShake::shake3angle(ilist);
-    return;
-  }
-
   Mat2 SR;
   SR(0,0) = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
   SR(0,1) = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
@@ -139,14 +131,14 @@ void FixRigs::shake3angle(int ilist)
 
   // matrix coeffs and rhs for lamda equations
 
-  if (rmass) {
-    invmass0 = 1.0 / rmass[i0];
-    invmass01 = invmass0 + 1.0 / rmass[i1];
-    invmass02 = invmass0 + 1.0 / rmass[i2];
+  if (rmass) { // s/1.0/dtfsq??
+    invmass0 = dtfsq / rmass[i0];
+    invmass01 = invmass0 + dtfsq / rmass[i1];
+    invmass02 = invmass0 + dtfsq / rmass[i2];
   } else {
-    invmass0 = 1.0 / mass[type[i0]];
-    invmass01 = invmass0 + 1.0 / mass[type[i1]];
-    invmass02 = invmass0 + 1.0 / mass[type[i2]];
+    invmass0 = dtfsq / mass[type[i0]];
+    invmass01 = invmass0 + dtfsq / mass[type[i1]];
+    invmass02 = invmass0 + dtfsq / mass[type[i2]];
   }
 
   // M = (mu01 mu0; mu0 mu02)^(-1)
@@ -186,22 +178,24 @@ void FixRigs::shake3angle(int ilist)
   double skewS = phiS12 - phiS21;
 
   double Asq = skewC * skewC + skewS * skewS;
-  double A = sqrt(Asq);
-  double sinp = sqrt((A - skewChi) * (A + skewChi));
-  double sskew = (skewS * skewChi + skewC * sinp) / Asq;
-  double cskew = sqrt((1 - sskew) * (1 + sskew));
+  // double A = sqrt(Asq);
+  // double sinp = sqrt((A - skewChi) * (A + skewChi));
+  double sinp = sqrt(Asq - skewChi * skewChi);
+  double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
+  // double cskew = -sqrt((1 - sskew) * (1 + sskew));
+  double cskew = (skewS * sinp - skewChi * skewC) / Asq;
 
   // and finally!!
-  double lamda01 = chi(0,0) - cskew*phiC(0,0) - sskew*phiS11;
-  double lamda02 = chi(1,1) - cskew*phiC(1,1);
-  double lamda12 = chi(0,1) - cskew*phiC(0,1) - sskew*phiS12; 
-  double lamda21 = chi(1,0) - cskew*phiC(1,0) - sskew*phiS21;
-
+  double lamda01 = chi(0,0) + cskew*phiC(0,0) + sskew*phiS11;
+  double lamda02 = chi(1,1) + cskew*phiC(1,1);
+  double lamda12 = chi(0,1) + cskew*phiC(0,1) + sskew*phiS12; 
+  // double lamda21 = chi(1,0) + cskew*phiC(1,0) + sskew*phiS21;
+  // lamda12 = 0.5 * (lamda12 + lamda21);
   // update forces if atom is owned by this processor
 
-  lamda01 = lamda01/dtfsq;
-  lamda02 = lamda02/dtfsq;
-  lamda12 = lamda12/dtfsq;
+  //lamda01 = lamda01/dtfsq;
+  //lamda02 = lamda02/dtfsq;
+  //lamda12 = lamda12/dtfsq;
 
   if (i0 < nlocal) {
     f[i0][0] -= (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
@@ -232,9 +226,9 @@ void FixRigs::shake3angle(int ilist)
     r12[1] = r02[1] - r01[1];
     r12[2] = r02[2] - r01[2];
 
-    double lamda01_shake = lamda01 + lamda12;
-    double lamda02_shake = lamda02 + lamda12;
-    double lamda12_shake = -lamda12;
+    double lamda01_shake = - lamda01 - lamda12;
+    double lamda02_shake = - lamda02 - lamda12;
+    double lamda12_shake = lamda12;
 
     v[0] = lamda01_shake*r01[0]*r01[0] + lamda02_shake*r02[0]*r02[0] + lamda12_shake*r12[0]*r12[0];
     v[1] = lamda01_shake*r01[1]*r01[1] + lamda02_shake*r02[1]*r02[1] + lamda12_shake*r12[1]*r12[1];
