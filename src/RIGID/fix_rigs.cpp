@@ -21,6 +21,7 @@
 #include "error.h"
 #include "force.h"
 #include "mat2.h"
+#include "mat3.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -31,12 +32,17 @@ using namespace LAMMPS_NS;
 using namespace RigsMath;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
-    FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr) {}
+    FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
+    rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
+    rigs_dihedral_distance(nullptr) {}
 
 FixRigs::~FixRigs()
 {
   memory->destroy(rigs_type);
   delete[] rigs_angle;
+  delete[] rigs_angle_distance;
+  delete[] rigs_improper_distance;
+  delete[] rigs_dihedral_distance;
 }
 
 void FixRigs::post_constructor()
@@ -539,6 +545,95 @@ void FixRigs::init()
     double angle = force->angle->equilibrium_angle(i);
     rigs_angle[i] = b1 * b2 * cos(angle);
   }
+
+  // compute rigs_angle_distance: non-bond pair distances from angles
+  // for each constrained angle type, find the equilibrium angle and
+  // the two bond types it connects, then compute the endpoint distance
+
+  delete[] rigs_angle_distance;
+  rigs_angle_distance = new double[atom->nangletypes + 1];
+  for (int i = 1; i <= atom->nangletypes; i++) {
+    if (angle_flag[i] == 0) {
+      rigs_angle_distance[i] = 0.0;
+      continue;
+    }
+    if (force->angle == nullptr) {
+      rigs_angle_distance[i] = 0.0;
+      continue;
+    }
+
+    // find the two bond types for this angle type
+    // scan clusters with this angle type
+    int bond1_type = 0, bond2_type = 0;
+    for (int m = 0; m < nlocal; m++) {
+      if (shake_flag[m] == 1 && shake_type[m][2] == i) {
+        bond1_type = MIN(shake_type[m][0], shake_type[m][1]);
+        bond2_type = MAX(shake_type[m][0], shake_type[m][1]);
+        break;
+      }
+      if (shake_flag[m] == 5 && rigs_type[m][0] == i) {
+        bond1_type = MIN(shake_type[m][0], shake_type[m][1]);
+        bond2_type = MAX(shake_type[m][0], shake_type[m][1]);
+        break;
+      }
+      if (shake_flag[m] == 5 && rigs_type[m][1] == i) {
+        // need to determine which two bonds this angle connects
+        // for improper cluster, angle between partners j and k
+        // connects bond j and bond k through center
+        break;
+      }
+      if (shake_flag[m] == 6 && rigs_type[m][0] == i) {
+        bond1_type = MIN(shake_type[m][0], shake_type[m][1]);
+        bond2_type = MAX(shake_type[m][0], shake_type[m][1]);
+        break;
+      }
+      if (shake_flag[m] == 6 && rigs_type[m][1] == i) {
+        bond1_type = MIN(shake_type[m][1], shake_type[m][2]);
+        bond2_type = MAX(shake_type[m][1], shake_type[m][2]);
+        break;
+      }
+    }
+
+    int flag_all;
+    MPI_Allreduce(&bond1_type, &flag_all, 1, MPI_INT, MPI_MAX, world);
+    bond1_type = flag_all;
+    MPI_Allreduce(&bond2_type, &flag_all, 1, MPI_INT, MPI_MAX, world);
+    bond2_type = flag_all;
+
+    if (bond1_type == 0) {
+      rigs_angle_distance[i] = 0.0;
+      continue;
+    }
+
+    double b1 = bond_distance[bond1_type];
+    double b2 = bond_distance[bond2_type];
+    double ang = force->angle->equilibrium_angle(i);
+    double rsq = b1*b1 + b2*b2 - 2.0*b1*b2*cos(ang);
+    rigs_angle_distance[i] = sqrt(rsq);
+  }
+
+  // compute rigs_improper_distance: non-bond pair distance from improper type
+  // find the 3 bond types of the improper, then compute 12/13/23 distances
+  // for now we only need the distance for the pair not covered by 2 of the 3 angles
+
+  delete[] rigs_improper_distance;
+  rigs_improper_distance = new double[atom->nimpropertypes + 1];
+  // TODO: compute improper equilibrium distances
+
+  // compute rigs_dihedral_distance: end-to-end distance from dihedral type
+  // A-B-C-D chain: d(A,D) from the 3 bonds and the dihedral angle
+
+  delete[] rigs_dihedral_distance;
+  rigs_dihedral_distance = new double[atom->ndihedraltypes + 1];
+  // TODO: compute dihedral equilibrium distances
+}
+
+void FixRigs::shake4(int ilist)
+{
+  int m = list[ilist];
+  if (shake_flag[m] == 5) shake4improper(ilist);
+  else if (shake_flag[m] == 6) shake4dihedral(ilist);
+  else FixShake::shake4(ilist);
 }
 
 /* ----------------------------------------------------------------------
@@ -683,4 +778,155 @@ void FixRigs::shake3angle(int ilist)
     int pairlist[][2] = {{i0,i1}, {i0,i2}, {i1,i2}};
     v_tally(count,atomlist,3.0,v,nlocal,3,pairlist,fpairlist,dellist);
   }
+}
+
+/* ----------------------------------------------------------------------
+   calculate RIGS constraint forces for flag 5 = improper cluster
+   star topology: center atom 0 + partners 1,2,3
+   3×3 Gram matrices with r01, r02, r03 on diagonal
+   ------------------------------------------------------------------------- */
+
+void FixRigs::shake4improper(int ilist)
+{
+  int m = list[ilist];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+  int i3 = closest_list[ilist][3];
+
+  double bond1 = bond_distance[shake_type[m][0]];
+  double bond2 = bond_distance[shake_type[m][1]];
+  double bond3 = bond_distance[shake_type[m][2]];
+
+  // equilibrium non-bond distances from angles/improper
+  double dist12 = rigs_angle_distance[rigs_type[m][0]];
+  double dist13 = rigs_angle_distance[rigs_type[m][1]];
+  double dist23;
+  if (rigs_type[m][2] > 0)
+    dist23 = rigs_angle_distance[rigs_type[m][2]];
+  else
+    dist23 = rigs_improper_distance[-rigs_type[m][2]];
+
+  // current displacement vectors
+
+  double r01[3], r02[3], r03[3];
+  r01[0] = x[i0][0] - x[i1][0]; r01[1] = x[i0][1] - x[i1][1]; r01[2] = x[i0][2] - x[i1][2];
+  r02[0] = x[i0][0] - x[i2][0]; r02[1] = x[i0][1] - x[i2][1]; r02[2] = x[i0][2] - x[i2][2];
+  r03[0] = x[i0][0] - x[i3][0]; r03[1] = x[i0][1] - x[i3][1]; r03[2] = x[i0][2] - x[i3][2];
+
+  double s01[3], s02[3], s03[3];
+  s01[0] = xshake[i0][0] - xshake[i1][0]; s01[1] = xshake[i0][1] - xshake[i1][1]; s01[2] = xshake[i0][2] - xshake[i1][2];
+  s02[0] = xshake[i0][0] - xshake[i2][0]; s02[1] = xshake[i0][1] - xshake[i2][1]; s02[2] = xshake[i0][2] - xshake[i2][2];
+  s03[0] = xshake[i0][0] - xshake[i3][0]; s03[1] = xshake[i0][1] - xshake[i3][1]; s03[2] = xshake[i0][2] - xshake[i3][2];
+
+  // Gram matrices
+
+  SymMat3 rr = sym_dot(r01, r02, r03);
+  SymMat3 ss = sym_dot(s01, s02, s03);
+
+  SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
+               bond2 * bond2, bond2 * bond3, bond3 * bond3};
+
+  // add non-bond equilibrium distances to L off-diagonals
+  // L becomes the full 6-constraint target: 3 bonds on diagonal,
+  // 3 non-bond pair distances on off-diagonal
+
+  // mass matrix
+
+  double invmass0, invmass01, invmass02, invmass03, invmass12, invmass13, invmass23;
+  if (rmass) {
+    invmass0 = dtfsq / rmass[i0];
+    invmass01 = invmass0 + dtfsq / rmass[i1];
+    invmass02 = invmass0 + dtfsq / rmass[i2];
+    invmass03 = invmass0 + dtfsq / rmass[i3];
+    invmass12 = dtfsq / rmass[i1] + dtfsq / rmass[i2];
+    invmass13 = dtfsq / rmass[i1] + dtfsq / rmass[i3];
+    invmass23 = dtfsq / rmass[i2] + dtfsq / rmass[i3];
+  } else {
+    invmass0 = dtfsq / mass[type[i0]];
+    invmass01 = invmass0 + dtfsq / mass[type[i1]];
+    invmass02 = invmass0 + dtfsq / mass[type[i2]];
+    invmass03 = invmass0 + dtfsq / mass[type[i3]];
+    invmass12 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i2]];
+    invmass13 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i3]];
+    invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
+  }
+
+  // M = 3x3 inverse mass matrix for non-bond pairs (12, 13, 23)
+  // D = M (L - S^T S) M
+  // K = M (S^T R)
+
+  // orthogonal solve: chi, phiC, phiS -> cskew, sskew -> lamda
+
+  // TODO: user will implement the 3x3 orthogonal matrix solve
+
+  // force application (improper-specific)
+}
+
+/* ----------------------------------------------------------------------
+   calculate RIGS constraint forces for flag 6 = dihedral cluster
+   chain topology: atoms A-B-C-D stored as 1-0-2-3
+   3×3 Gram matrices with r10, r02, r23 on diagonal
+   ------------------------------------------------------------------------- */
+
+void FixRigs::shake4dihedral(int ilist)
+{
+  int m = list[ilist];
+  // dihedral chain A-B-C-D, shake_atom = {B, A, C, D}
+  // relabel: 0=B, 1=A, 2=C, 3=D
+  // diagonal displacements: r10 (A-B), r02 (B-C), r23 (C-D)
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+  int i3 = closest_list[ilist][3];
+
+  double bond1 = bond_distance[shake_type[m][0]];
+  double bond2 = bond_distance[shake_type[m][1]];
+  double bond3 = bond_distance[shake_type[m][2]];
+
+  double dist12 = rigs_angle_distance[rigs_type[m][0]];
+  double dist23 = rigs_angle_distance[rigs_type[m][1]];
+  double dist13 = rigs_dihedral_distance[rigs_type[m][2]];
+
+  // current displacement vectors: diagonal elements are r10, r02, r23
+
+  double r10[3], r02[3], r23[3];
+  r10[0] = x[i1][0] - x[i0][0]; r10[1] = x[i1][1] - x[i0][1]; r10[2] = x[i1][2] - x[i0][2];
+  r02[0] = x[i0][0] - x[i2][0]; r02[1] = x[i0][1] - x[i2][1]; r02[2] = x[i0][2] - x[i2][2];
+  r23[0] = x[i2][0] - x[i3][0]; r23[1] = x[i2][1] - x[i3][1]; r23[2] = x[i2][2] - x[i3][2];
+
+  double s10[3], s02[3], s23[3];
+  s10[0] = xshake[i1][0] - xshake[i0][0]; s10[1] = xshake[i1][1] - xshake[i0][1]; s10[2] = xshake[i1][2] - xshake[i0][2];
+  s02[0] = xshake[i0][0] - xshake[i2][0]; s02[1] = xshake[i0][1] - xshake[i2][1]; s02[2] = xshake[i0][2] - xshake[i2][2];
+  s23[0] = xshake[i2][0] - xshake[i3][0]; s23[1] = xshake[i2][1] - xshake[i3][1]; s23[2] = xshake[i2][2] - xshake[i3][2];
+
+  // Gram matrices
+
+  SymMat3 rr = sym_dot(r10, r02, r23);
+  SymMat3 ss = sym_dot(s10, s02, s23);
+
+  SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
+               bond2 * bond2, bond2 * bond3, bond3 * bond3};
+
+  // mass matrix: for chain A-B-C-D with atoms 0=B, 1=A, 2=C, 3=D
+  // pair 1-0 (A-B): mass_A + mass_B
+  // pair 0-2 (B-C): mass_B + mass_C
+  // pair 2-3 (C-D): mass_C + mass_D
+
+  double invmass10, invmass02, invmass23;
+  if (rmass) {
+    invmass10 = dtfsq / rmass[i1] + dtfsq / rmass[i0];
+    invmass02 = dtfsq / rmass[i0] + dtfsq / rmass[i2];
+    invmass23 = dtfsq / rmass[i2] + dtfsq / rmass[i3];
+  } else {
+    invmass10 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i0]];
+    invmass02 = dtfsq / mass[type[i0]] + dtfsq / mass[type[i2]];
+    invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
+  }
+
+  // M, D, K, chi, phiC, phiS construction
+  // orthogonal solve
+  // TODO: user will implement the 3x3 orthogonal matrix solve
+
+  // force application (dihedral-specific)
 }

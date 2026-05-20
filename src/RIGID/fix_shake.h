@@ -147,7 +147,7 @@ class FixShake : public Fix {
   void unconstrained_update_respa(int);
   void shake(int);
   void shake3(int);
-  void shake4(int);
+  virtual void shake4(int);
   virtual void shake3angle(int);
   double bond_force(int, int, double);
   virtual void stats();

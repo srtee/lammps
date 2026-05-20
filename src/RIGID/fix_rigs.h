@@ -43,7 +43,13 @@ class FixRigs : public FixShake {
  protected:
   int **rigs_type;
   double *rigs_angle;
+  double *rigs_angle_distance;
+  double *rigs_improper_distance;
+  double *rigs_dihedral_distance;
   void shake3angle(int) override;
+  void shake4(int ilist) override;
+  void shake4improper(int ilist);
+  void shake4dihedral(int ilist);
   void fill_improper_types(int i);
   int improper_check(int i);
   int bondtype_find(int i, tagint partner, int setflag);
