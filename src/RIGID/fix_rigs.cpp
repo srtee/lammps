@@ -25,6 +25,7 @@
 #include <cmath>
 
 using namespace LAMMPS_NS;
+using namespace RigsMath;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_angle(nullptr) {}

@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+namespace RigsMath {
+
 struct SymMat3 {
   double d00, d01, d02, d11, d12, d22;
 
@@ -236,6 +238,8 @@ inline void cayley_rotate(Mat3 &A, const double v[3])
     A(1, j) = col[1] + 2.0 * w * cross1[1] + 2.0 * cross2[1];
     A(2, j) = col[2] + 2.0 * w * cross1[2] + 2.0 * cross2[2];
   }
+}
+
 }
 
 #endif

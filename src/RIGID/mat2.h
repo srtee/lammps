@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+namespace RigsMath {
+
 struct SymMat2 {
   double d00, d01, d11;
 
@@ -132,5 +134,7 @@ inline Mat2 transpose(const Mat2 &A)
 }
 
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
+
+}
 
 #endif
