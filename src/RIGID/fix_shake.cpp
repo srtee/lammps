@@ -1318,7 +1318,9 @@ void FixShake::find_clusters()
     flag = 0;
     for (i = 0; i < nlocal; i++) {
       if (shake_flag[i] != 5 && shake_flag[i] != 6) continue;
-      if (nshake[i] != 3) flag++;
+      if (shake_atom[i][0] != tag[i]) continue;
+      if (shake_flag[i] == 5 && nshake[i] != 3) flag++;
+      else if (shake_flag[i] == 6 && nshake[i] != 2) flag++;
     }
     MPI_Allreduce(&flag,&flag_all,1,MPI_INT,MPI_SUM,world);
     if (flag_all)

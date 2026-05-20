@@ -64,7 +64,7 @@ void FixRigs::post_constructor()
     rigs_type[i][2] = 0;
   }
 
-  if (dihedrals_allow) {
+  if (dihedrals_allow && molecular == Atom::MOLECULAR) {
     for (i = 0; i < nlocal; i++) {
       if (!(mask_atom[i] & groupbit)) continue;
       int ndih = atom->num_dihedral[i];
@@ -143,14 +143,29 @@ void FixRigs::post_constructor()
         shake_type[b_idx][1] = bond_bc_type;
         shake_type[b_idx][2] = bond_cd;
 
-        // set rig_type for angles and dihedral
+        // set rig_type for angles and dihedral on B
         rigs_type[b_idx][0] = angletype_find(b_idx, a, c, 0);
         rigs_type[b_idx][1] = angletype_find(c_idx, b, d, 0);
         rigs_type[b_idx][2] = atom->dihedral_type[i][m];
 
-        // mark partner atoms as "don't touch" sentinels
+        // pre-assign C with same cluster data (B->C hop)
+        // so find_clusters skips C and shake_info can propagate C->D
+        if (c_idx < nlocal && shake_flag[c_idx] == 0) {
+          shake_flag[c_idx] = 6;
+          shake_atom[c_idx][0] = b;
+          shake_atom[c_idx][1] = a;
+          shake_atom[c_idx][2] = c;
+          shake_atom[c_idx][3] = d;
+          shake_type[c_idx][0] = bond_ab;
+          shake_type[c_idx][1] = bond_bc_type;
+          shake_type[c_idx][2] = bond_cd;
+          rigs_type[c_idx][0] = rigs_type[b_idx][0];
+          rigs_type[c_idx][1] = rigs_type[b_idx][1];
+          rigs_type[c_idx][2] = rigs_type[b_idx][2];
+        }
+
+        // mark end atoms A and D as "don't touch" sentinels
         if (a_idx < nlocal) shake_flag[a_idx] = -1;
-        if (c_idx < nlocal) shake_flag[c_idx] = -1;
         if (d_idx < nlocal) shake_flag[d_idx] = -1;
       }
     }
@@ -209,24 +224,25 @@ void FixRigs::post_constructor()
       if (rigs_type[i][2] > 0)
         angletype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
     } else if (shake_flag[i] == 6) {
-      // dihedral chain A-B-C-D, owner is B
-      // shake_atom[B] = {B, A, C, D}, bonds are A-B, B-C, C-D
-      int c_idx = atom->map(shake_atom[i][2]);
-      bondtype_findset(i, shake_atom[i][0], shake_atom[i][1], -1);
-      bondtype_findset(i, shake_atom[i][0], shake_atom[i][2], -1);
-      if (c_idx >= 0 && c_idx < nlocal)
-        bondtype_findset(c_idx, shake_atom[i][2], shake_atom[i][3], -1);
-      // angle A-B-C (center B, stored on B)
-      if (rigs_type[i][0] > 0)
-        angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
-      // angle B-C-D (center C, stored on C)
-      if (rigs_type[i][1] > 0) {
-        if (c_idx >= 0 && c_idx < nlocal)
-          angletype_findset(c_idx, shake_atom[i][0], shake_atom[i][3], -1);
+      // dihedral chain A-B-C-D
+      // shake_atom[i] = {B, A, C, D} for both B and C
+      // B (owner, tag == shake_atom[i][0]) handles: bonds A-B, B-C;
+      //   angle A-B-C; dihedral type
+      // C (tag == shake_atom[i][2]) handles: bond C-D; angle B-C-D
+      if (tag[i] == shake_atom[i][0]) {
+        // B's half
+        bondtype_findset(i, shake_atom[i][0], shake_atom[i][1], -1);
+        bondtype_findset(i, shake_atom[i][0], shake_atom[i][2], -1);
+        if (rigs_type[i][0] > 0)
+          angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
+        dihedraltype_findset(i, shake_atom[i][0], shake_atom[i][1],
+                             shake_atom[i][2], shake_atom[i][3], -1);
+      } else {
+        // C's half
+        bondtype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
+        if (rigs_type[i][1] > 0)
+          angletype_findset(i, shake_atom[i][0], shake_atom[i][3], -1);
       }
-      // dihedral type negation
-      dihedraltype_findset(i, shake_atom[i][0], shake_atom[i][1],
-                           shake_atom[i][2], shake_atom[i][3], -1);
     }
   }
 }
