@@ -51,10 +51,11 @@ inline SymMat2 sandwich(const SymMat2 &M, const SymMat2 &A)
 {
   double MA00 = M.d00 * A.d00 + M.d01 * A.d01;
   double MA01 = M.d00 * A.d01 + M.d01 * A.d11;
+  double MA10 = M.d01 * A.d00 + M.d11 * A.d01;
   double MA11 = M.d01 * A.d01 + M.d11 * A.d11;
-  return {M.d00 * MA00 + M.d01 * MA01,
-          M.d00 * MA01 + M.d01 * MA11,
-          M.d01 * MA01 + M.d11 * MA11};
+  return {MA00 * M.d00 + MA01 * M.d01,
+          MA00 * M.d01 + MA01 * M.d11,
+          MA10 * M.d01 + MA11 * M.d11 };
 }
 
 inline Mat2 sym_mul(const SymMat2 &A, const Mat2 &B)
@@ -80,6 +81,11 @@ inline Mat2 mul_sym(const Mat2 &A, const SymMat2 &B)
 inline SymMat2 sym_minus(const SymMat2 &A, const SymMat2 &B)
 {
   return {A.d00 - B.d00, A.d01 - B.d01, A.d11 - B.d11};
+}
+
+inline SymMat2 sym_plus(const SymMat2 &A, const SymMat2 &B)
+{
+  return {A.d00 + B.d00, A.d01 + B.d01, A.d11 + B.d11};
 }
 
 inline SymMat2 chi_KT_minus_D(const Mat2 &chi, const Mat2 &K, const SymMat2 &D)

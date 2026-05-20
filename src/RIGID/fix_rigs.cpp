@@ -166,7 +166,7 @@ void FixRigs::shake3angle(int ilist)
   // chi = K * rh
     Mat2 chi = mul_sym(K, rh);
     SymMat2 chiKT = mat_mul_tosym(chi, transpose(K));
-  SymMat2 sigma = sym_minus(chiKT, D);
+  SymMat2 sigma = sym_plus(chiKT, D);
 
   // sigma = chi K^T - D (symm)
 //  SymMat2 sigma = chi_KT_minus_D(chi, transpose(K), D);
@@ -202,12 +202,12 @@ void FixRigs::shake3angle(int ilist)
   // = (skewS skCh - skewC sqrt(A*A - skCh*skCh)) / A*A
   double Asq = skewC*skewC + skewS*skewS;
   double A = sqrt(Asq);
-  double sinp = sqrt(Asq - skewChi*skewChi);
-  // double sinp = sqrt((A-skewChi)*(A+skewChi));
+  // double sinp = sqrt(Asq - skewChi*skewChi);
+  double sinp = sqrt((A-skewChi)*(A+skewChi));
   double sskew = (skewS*skewChi + skewC*sinp)/Asq;
-  double cskew = sqrt(1-sskew*sskew);
+  double cskew = sqrt((1-sskew)*(1+sskew));
   //double cskew = (-skewS*sinp + skewC*skewChi)/Asq;
-//  printf("Asq = %8.6f, sinp = %8.6f, sskew = %8.6f, cskew = %8.6f\n", Asq, sinp, sskew, cskew);
+  //printf("Asq = %8.6f, sinp = %8.6f, sskew = %8.6f, cskew = %8.6f\n", Asq, sinp, sskew, cskew);
 
   // and finally!!
   double lamda01 = chi(0,0) - cskew*phiC(0,0) - sskew*phiS11;
@@ -215,8 +215,36 @@ void FixRigs::shake3angle(int ilist)
   double lamda12 = chi(0,1) - cskew*phiC(0,1) - sskew*phiS12; 
   double lamda21 = chi(1,0) - cskew*phiC(1,0) - sskew*phiS21;
 
-//  printf("RIGS proc=%d step=%ld ilist=%d lambda=[[%.8e, %.8e], [%.8e, %.8e]]\n",
-  //       comm->me, update->ntimestep, ilist, lamda01, lamda12, lamda21, lamda02);
+  if (ilist == 0 && comm->me == 10) {
+    printf("\n=== RIGS detailed log proc=%d step=%ld ilist=%d ===\n", comm->me, update->ntimestep, ilist);
+    printf("atoms: i0=%d i1=%d i2=%d m=%d\n", i0, i1, i2, m);
+    printf("bond1=%.8e bond2=%.8e bond12=%.8e\n", bond1, bond2, bond12);
+    printf("r01=(%.8e, %.8e, %.8e)\n", r01[0], r01[1], r01[2]);
+    printf("r02=(%.8e, %.8e, %.8e)\n", r02[0], r02[1], r02[2]);
+    printf("s01=(%.8e, %.8e, %.8e)\n", s01[0], s01[1], s01[2]);
+    printf("s02=(%.8e, %.8e, %.8e)\n", s02[0], s02[1], s02[2]);
+    printf("rr={%.8e, %.8e, %.8e}\n", rr.d00, rr.d01, rr.d11);
+    printf("ss={%.8e, %.8e, %.8e}\n", ss.d00, ss.d01, ss.d11);
+    printf("L={%.8e, %.8e, %.8e}\n", L.d00, L.d01, L.d11);
+    printf("diff={%.8e, %.8e, %.8e}\n", diff.d00, diff.d01, diff.d11);
+    printf("SR=[[%.8e, %.8e], [%.8e, %.8e]]\n", SR(0,0), SR(0,1), SR(1,0), SR(1,1));
+    printf("invmass0=%.8e invmass01=%.8e invmass02=%.8e\n", invmass0, invmass01, invmass02);
+    printf("M={%.8e, %.8e, %.8e}\n", M.d00, M.d01, M.d11);
+    printf("D={%.8e, %.8e, %.8e}\n", D.d00, D.d01, D.d11);
+    printf("K=[[%.8e, %.8e], [%.8e, %.8e]]\n", K(0,0), K(0,1), K(1,0), K(1,1));
+    printf("rh={%.8e, %.8e, %.8e}\n", rh.d00, rh.d01, rh.d11);
+    printf("chi=[[%.8e, %.8e], [%.8e, %.8e]]\n", chi(0,0), chi(0,1), chi(1,0), chi(1,1));
+    printf("sigma={%.8e, %.8e, %.8e}\n", sigma.d00, sigma.d01, sigma.d11);
+    printf("sc=[[%.8e, %.8e], [%.8e, %.8e]]\n", sc(0,0), sc(0,1), sc(1,0), sc(1,1));
+    printf("rc=[[%.8e, %.8e], [%.8e, %.8e]]\n", rc(0,0), rc(0,1), rc(1,0), rc(1,1));
+    printf("phiC=[[%.8e, %.8e], [%.8e, %.8e]]\n", phiC(0,0), phiC(0,1), phiC(1,0), phiC(1,1));
+    printf("phiS11=%.8e phiS12=%.8e phiS21=%.8e\n", phiS11, phiS12, phiS21);
+    printf("skewC=%.8e skewChi=%.8e skewS=%.8e\n", skewC, skewChi, skewS);
+    printf("Asq=%.8e A=%.8e sinp=%.8e\n", Asq, A, sinp);
+    printf("sskew=%.8e cskew=%.8e\n", sskew, cskew);
+    printf("lambda(pre-dtfsq)=[[%.8e, %.8e], [%.8e, %.8e]]\n", lamda01, lamda12, lamda21, lamda02);
+    printf("dtfsq=%.8e\n", dtfsq);
+  }
 
   // update forces if atom is owned by this processor
 
@@ -225,21 +253,21 @@ void FixRigs::shake3angle(int ilist)
   lamda12 = lamda12/dtfsq;
 
   if (i0 < nlocal) {
-    f[i0][0] += (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
-    f[i0][1] += (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1];
-    f[i0][2] += (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2];
+    f[i0][0] -= (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
+    f[i0][1] -= (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1];
+    f[i0][2] -= (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2];
   }
 
   if (i1 < nlocal) {
-    f[i1][0] -= lamda01*r01[0] + lamda12*r02[0];
-    f[i1][1] -= lamda01*r01[1] + lamda12*r02[1];
-    f[i1][2] -= lamda01*r01[2] + lamda12*r02[2];
+    f[i1][0] += lamda01*r01[0] + lamda12*r02[0];
+    f[i1][1] += lamda01*r01[1] + lamda12*r02[1];
+    f[i1][2] += lamda01*r01[2] + lamda12*r02[2];
   }
 
   if (i2 < nlocal) {
-    f[i2][0] -= lamda02*r02[0] + lamda12*r01[0];
-    f[i2][1] -= lamda02*r02[1] + lamda12*r01[1];
-    f[i2][2] -= lamda02*r02[2] + lamda12*r01[2];
+    f[i2][0] += lamda02*r02[0] + lamda12*r01[0];
+    f[i2][1] += lamda02*r02[1] + lamda12*r01[1];
+    f[i2][2] += lamda02*r02[2] + lamda12*r01[2];
   }
   
   //printf("RIGS proc=%d step=%ld ilist=%d i0_force=(%.8e, %.8e, %.8e)\n", comm->me, update->ntimestep, ilist,
