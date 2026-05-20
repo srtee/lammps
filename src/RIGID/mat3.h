@@ -37,6 +37,16 @@ struct Mat3 {
   double &operator()(int i, int j) { return d[i][j]; }
   double operator()(int i, int j) const { return d[i][j]; }
 
+  double *operator()(int i) { return d[i]; }
+  const double *operator()(int i) const { return d[i]; }
+
+  void set_row(int i, const double v[3]) {
+    d[i][0] = v[0]; d[i][1] = v[1]; d[i][2] = v[2];
+  }
+  void set_col(int j, const double v[3]) {
+    d[0][j] = v[0]; d[1][j] = v[1]; d[2][j] = v[2];
+  }
+
   Mat3 operator*(const Mat3 &B) const {
     Mat3 R;
     for (int i = 0; i < 3; i++)
@@ -66,6 +76,25 @@ inline Mat3 operator*(const SymMat3 &A, const Mat3 &B)
     R(1, j) = A.d01 * B(0, j) + A.d11 * B(1, j) + A.d12 * B(2, j);
   for (int j = 0; j < 3; j++)
     R(2, j) = A.d02 * B(0, j) + A.d12 * B(1, j) + A.d22 * B(2, j);
+  return R;
+}
+
+inline SymMat3 sym_dot(const double r0[3], const double r1[3], const double r2[3])
+{
+  return {r0[0] * r0[0] + r0[1] * r0[1] + r0[2] * r0[2],
+          r0[0] * r1[0] + r0[1] * r1[1] + r0[2] * r1[2],
+          r0[0] * r2[0] + r0[1] * r2[1] + r0[2] * r2[2],
+          r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2],
+          r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2],
+          r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
+}
+
+inline Mat3 mat_dot(const double s[][3], const double r[][3])
+{
+  Mat3 R;
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      R(i, j) = s[i][0] * r[j][0] + s[i][1] * r[j][1] + s[i][2] * r[j][2];
   return R;
 }
 
