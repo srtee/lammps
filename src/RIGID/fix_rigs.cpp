@@ -17,12 +17,16 @@
 
 #include "angle.h"
 #include "atom.h"
+#include "atom_vec.h"
 #include "comm.h"
+#include "dihedral.h"
 #include "error.h"
 #include "force.h"
+#include "improper.h"
 #include "mat2.h"
 #include "mat3.h"
 #include "memory.h"
+#include "molecule.h"
 #include "modify.h"
 #include "update.h"
 
@@ -130,9 +134,9 @@ void FixRigs::post_constructor()
 
         // check both angles are in angle_flag
         if (atom->avec->angles_allow) {
-          int angle1 = angletype_find(b_idx, a, c, 0);
+          int angle1 = angletype_findset(b_idx, a, c, 0);
           if (angle1 <= 0 || !angle_flag[angle1]) continue;
-          int angle2 = angletype_find(c_idx, b, d, 0);
+          int angle2 = angletype_findset(c_idx, b, d, 0);
           if (angle2 <= 0 || !angle_flag[angle2]) continue;
         }
 
@@ -150,8 +154,8 @@ void FixRigs::post_constructor()
         shake_type[b_idx][2] = bond_cd;
 
         // set rig_type for angles and dihedral on B
-        rigs_type[b_idx][0] = angletype_find(b_idx, a, c, 0);
-        rigs_type[b_idx][1] = angletype_find(c_idx, b, d, 0);
+        rigs_type[b_idx][0] = angletype_findset(b_idx, a, c, 0);
+        rigs_type[b_idx][1] = angletype_findset(c_idx, b, d, 0);
         rigs_type[b_idx][2] = atom->dihedral_type[i][m];
 
         // pre-assign C with same cluster data (B->C hop)
@@ -255,7 +259,7 @@ void FixRigs::post_constructor()
 
 int FixRigs::bondtype_find(int i, tagint partner, int setflag)
 {
-  return FixShake::bondtype_findset(i, tag[i], partner, setflag);
+  return FixShake::bondtype_findset(i, atom->tag[i], partner, setflag);
 }
 
 int FixRigs::improper_check(int i)
@@ -489,9 +493,10 @@ int FixRigs::pack_restart(int i, double *buf)
   return m;
 }
 
-void FixRigs::unpack_restart(int i, int ncol, double *buf)
+void FixRigs::unpack_restart(int i, int ncol)
 {
-  FixShake::unpack_restart(i, ncol, buf);
+  FixShake::unpack_restart(i, ncol);
+  // TODO: restore rigs_type from restart data
 }
 
 int FixRigs::size_restart(int i)
@@ -696,7 +701,7 @@ void FixRigs::shake3angle(int ilist)
     invmass02 = invmass0 + dtfsq / mass[type[i2]];
   }
 
-  SymMat2 M = inv_sym({invmass01, invmass0, invmass02});
+  SymMat2 M = inv_sym(SymMat2{invmass01, invmass0, invmass02});
 
   SymMat2 D = sandwich(M, diff);
 

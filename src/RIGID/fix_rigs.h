@@ -53,7 +53,7 @@ class FixRigs : public FixShake {
   void fill_improper_types(int i);
   int improper_check(int i);
   int bondtype_find(int i, tagint partner, int setflag);
-  int impropertype_findset(int i, tagint n1, tagint n2, tagint n3, int setflag);
+  int impropertype_findset(int i, tagint n0, tagint n1, tagint n2, tagint n3, int setflag);
   int dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag);
 };
 
