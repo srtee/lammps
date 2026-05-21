@@ -135,6 +135,20 @@ inline Mat2 transpose(const Mat2 &A)
 
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
 
+// M @ [v1, v2]: multiply 2x2 symmetric matrix by 2-column matrix
+// Mv1 = M.d00*v1 + M.d01*v2
+// Mv2 = M.d01*v1 + M.d11*v2
+inline void sym_mat_vec(const SymMat2 &M, const double *v1, const double *v2,
+                       double *Mv1, double *Mv2)
+{
+  Mv1[0] = M.d00 * v1[0] + M.d01 * v2[0];
+  Mv1[1] = M.d00 * v1[1] + M.d01 * v2[1];
+  Mv1[2] = M.d00 * v1[2] + M.d01 * v2[2];
+  Mv2[0] = M.d01 * v1[0] + M.d11 * v2[0];
+  Mv2[1] = M.d01 * v1[1] + M.d11 * v2[1];
+  Mv2[2] = M.d01 * v1[2] + M.d11 * v2[2];
+}
+
 }
 
 #endif
