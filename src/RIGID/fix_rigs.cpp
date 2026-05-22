@@ -74,6 +74,10 @@ void FixRigs::post_constructor()
     rigs_type[i][2] = 0;
   }
 
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] != -1 && shake_flag[i] != 6) shake_flag[i] = 0;
+  }
+
   if (dihedrals_allow && molecular == Atom::MOLECULAR) {
     for (i = 0; i < nlocal; i++) {
       if (!(mask_atom[i] & groupbit)) continue;
@@ -224,6 +228,79 @@ void FixRigs::post_constructor()
       fill_improper_types(i);
     }
   }
+
+  // propagate flag 5 to local partner atoms in upgraded clusters
+
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] != 5) continue;
+    if (shake_atom[i][0] != tag[i]) continue;
+    tagint ct = tag[i];
+    for (int k = 1; k <= 3; k++) {
+      int pidx = atom->map(shake_atom[i][k]);
+      if (pidx >= 0 && pidx < nlocal && shake_flag[pidx] == 4) {
+        shake_flag[pidx] = 5;
+        rigs_type[pidx][0] = rigs_type[i][0];
+        rigs_type[pidx][1] = rigs_type[i][1];
+        rigs_type[pidx][2] = rigs_type[i][2];
+      }
+    }
+  }
+
+  // propagate flag 5 + rigs_type to remote partner atoms
+  // gather all upgraded central-atom records, broadcast, update local atoms
+
+  int nsend = 0;
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] == 5 && shake_atom[i][0] == tag[i])
+      nsend++;
+  }
+
+  struct UpgradedCluster { tagint central; int rt0, rt1, rt2; };
+  const int sizeof_uc = sizeof(UpgradedCluster);
+  UpgradedCluster *sendbuf = new UpgradedCluster[nsend > 0 ? nsend : 1];
+  nsend = 0;
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] == 5 && shake_atom[i][0] == tag[i]) {
+      sendbuf[nsend].central = tag[i];
+      sendbuf[nsend].rt0 = rigs_type[i][0];
+      sendbuf[nsend].rt1 = rigs_type[i][1];
+      sendbuf[nsend].rt2 = rigs_type[i][2];
+      nsend++;
+    }
+  }
+
+  int nsend_bytes = nsend * sizeof_uc;
+  int *recvcounts = new int[comm->nprocs];
+  MPI_Allgather(&nsend_bytes, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+
+  int totalrecv = 0;
+  int *displs = new int[comm->nprocs];
+  for (int p = 0; p < comm->nprocs; p++) {
+    displs[p] = totalrecv;
+    totalrecv += recvcounts[p];
+  }
+
+  int totalrecv_n = totalrecv / sizeof_uc;
+  UpgradedCluster *recvbuf = new UpgradedCluster[totalrecv_n > 0 ? totalrecv_n : 1];
+  MPI_Allgatherv(sendbuf, nsend_bytes, MPI_CHAR,
+                 recvbuf, recvcounts, displs, MPI_CHAR, world);
+
+  for (int c = 0; c < totalrecv_n; c++) {
+    tagint ctag = recvbuf[c].central;
+    for (i = 0; i < nlocal; i++) {
+      if (shake_flag[i] != 4) continue;
+      if (shake_atom[i][0] != ctag) continue;
+      shake_flag[i] = 5;
+      rigs_type[i][0] = recvbuf[c].rt0;
+      rigs_type[i][1] = recvbuf[c].rt1;
+      rigs_type[i][2] = recvbuf[c].rt2;
+    }
+  }
+
+  delete[] sendbuf;
+  delete[] recvbuf;
+  delete[] recvcounts;
+  delete[] displs;
 
   for (i = 0; i < nlocal; i++) {
     if (shake_flag[i] == 5) {
@@ -636,9 +713,11 @@ void FixRigs::init()
 void FixRigs::shake4(int ilist)
 {
   int m = list[ilist];
-  if (shake_flag[m] == 5) shake4improper(ilist);
-  else if (shake_flag[m] == 6) shake4dihedral(ilist);
-  else FixShake::shake4(ilist);
+  if (shake_flag[m] == 6) {
+    error->one(FLERR,"RIGS dihedral constraint solver not yet implemented");
+  } else {
+    FixShake::shake4(ilist);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -826,8 +905,8 @@ void FixRigs::shake4improper(int ilist)
 
   // Gram matrices
 
-  SymMat3 rr = sym_dot(r01, r02, r03);
-  SymMat3 ss = sym_dot(s01, s02, s03);
+  //SymMat3 rr = sym_dot(r01, r02, r03);
+  //SymMat3 ss = sym_dot(s01, s02, s03);
 
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};
@@ -907,8 +986,8 @@ void FixRigs::shake4dihedral(int ilist)
 
   // Gram matrices
 
-  SymMat3 rr = sym_dot(r10, r02, r23);
-  SymMat3 ss = sym_dot(s10, s02, s23);
+  //SymMat3 rr = sym_dot(r10, r02, r23);
+  //SymMat3 ss = sym_dot(s10, s02, s23);
 
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};

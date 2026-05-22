@@ -1487,8 +1487,53 @@ void FixShake::find_clusters()
                    "{:>8} = # of improper clusters\n"
                    "{:>8} = # of dihedral clusters\n",
                    count2/2,count3/3,count4/4,count1/3,
-                   count5/4,count6/4);
+                    count5/4,count6/4);
   }
+
+  // log atom tags for each size 2, 3, 4 cluster (one line per cluster)
+
+  std::string cluster_str;
+  for (i = 0; i < nlocal; i++) {
+    if (shake_atom[i][0] != tag[i]) continue;
+    if (shake_flag[i] == 2)
+      cluster_str += fmt::format("  size 2 cluster: {} {}\n", shake_atom[i][0], shake_atom[i][1]);
+    else if (shake_flag[i] == 3)
+      cluster_str += fmt::format("  size 3 cluster: {} {} {}\n", shake_atom[i][0], shake_atom[i][1], shake_atom[i][2]);
+    else if (shake_flag[i] == 4)
+      cluster_str += fmt::format("  size 4 cluster: {} {} {} {}\n", shake_atom[i][0], shake_atom[i][1], shake_atom[i][2], shake_atom[i][3]);
+  }
+
+  int log_len = (int) cluster_str.size();
+  int *log_counts = new int[comm->nprocs];
+  MPI_Gather(&log_len, 1, MPI_INT, log_counts, 1, MPI_INT, 0, world);
+
+  int total_log = 0;
+  int *log_displs = nullptr;
+  char *log_recvbuf = nullptr;
+  if (comm->me == 0) {
+    log_displs = new int[comm->nprocs];
+    for (int p = 0; p < comm->nprocs; p++) {
+      log_displs[p] = total_log;
+      total_log += log_counts[p];
+    }
+    log_recvbuf = new char[total_log + 1];
+  }
+
+  char *log_sendbuf = new char[log_len + 1];
+  std::memcpy(log_sendbuf, cluster_str.c_str(), log_len);
+  MPI_Gatherv(log_sendbuf, log_len, MPI_CHAR,
+              log_recvbuf, log_counts, log_displs, MPI_CHAR, 0, world);
+
+  if (comm->me == 0) {
+    log_recvbuf[total_log] = '\0';
+    if (total_log > 0)
+      utils::logmesg(lmp, std::string(log_recvbuf, total_log));
+    delete[] log_displs;
+    delete[] log_recvbuf;
+  }
+
+  delete[] log_counts;
+  delete[] log_sendbuf;
 }
 
 /* ----------------------------------------------------------------------
