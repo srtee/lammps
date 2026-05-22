@@ -764,11 +764,11 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 L = {bond1 * bond1, bond12, bond2 * bond2};
   SymMat2 diff = L - ss;
 
-  Mat2 SR;
-  SR(0,0) = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
-  SR(0,1) = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
-  SR(1,0) = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
-  SR(1,1) = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
+  Mat2 RS;
+  RS(0,0) = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
+  RS(1,0) = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
+  RS(0,1) = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
+  RS(1,1) = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
 
   if (rmass) {
     invmass0 = dtfsq / rmass[i0];
@@ -784,23 +784,22 @@ void FixRigs::shake3angle(int ilist)
 
   SymMat2 D = sandwich(M, diff);
 
-  Mat2 K = M * SR;
+  Mat2 K = RS * M;
 
   SymMat2 rh = inv_sym(rr);
 
-  Mat2 chi = K * rh;
-  SymMat2 chiKT = mat_mul_tosym(chi, transpose(K));
-  SymMat2 sigma = chiKT + D;
+  Mat2 chi = rh * K;
+  SymMat2 sigma = mat_mul_tosym(transpose(K), chi) + D;
 
-  Mat2 sc = chol_upper(sigma);
+  Mat2 sc = chol_lower(sigma);
 
-  Mat2 rc = inv_chol_lower(rr);
+  Mat2 rc = inv_chol_upper(rr);
 
-  Mat2 phiC = sc * rc;
+  Mat2 phiC = rc * sc;
 
-  double phiS11 = sc(0,1)*rc(0,0) - sc(0,0)*rc(1,0);
-  double phiS12 = -sc(0,0)*rc(1,1);
-  double phiS21 = sc(1,1)*rc(0,0);
+  double phiS11 = rc(0,1)*sc(0,0) - rc(0,0)*sc(1,0);
+  double phiS12 = -rc(0,0)*sc(1,1);
+  double phiS21 = rc(1,1)*sc(0,0);
 
   double skewC = skew(phiC);
   double skewChi = skew(chi);

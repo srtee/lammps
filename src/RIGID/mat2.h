@@ -135,6 +135,31 @@ inline Mat2 transpose(const Mat2 &A)
 
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
 
+inline Mat2 chol_lower(const SymMat2 &A) //nonstandard!!
+{
+  double l11 = sqrt(A.d11);
+  double l10 = A.d01 / l11;
+  double l00 = sqrt(A.d00 - l10 * l10);
+  Mat2 R;
+  R(0, 0) = l00; R(0, 1) = 0.0;
+  R(1, 0) = l10; R(1, 1) = l11;
+  return R;
+}
+
+inline Mat2 inv_chol_upper(const SymMat2 &A)
+{
+  double u00 = sqrt(A.d00);
+  double u01 = A.d01 / u00;
+  double u11 = sqrt(A.d11 - u01*u01);
+  double inv00 = 1.0 / u00;
+  double inv11 = 1.0 / u11;
+  double inv01 = -u01 * inv00 * inv11;
+  Mat2 R;
+  R(0, 0) = inv00; R(0, 1) = inv01;
+  R(1, 0) = 0.0;   R(1, 1) = inv11;
+  return R;
+}
+
 // M @ [v1, v2]: multiply 2x2 symmetric matrix by 2-column matrix
 // Mv1 = M.d00*v1 + M.d01*v2
 // Mv2 = M.d01*v1 + M.d11*v2

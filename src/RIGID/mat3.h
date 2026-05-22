@@ -33,6 +33,29 @@ struct SymMat3 {
   }
 };
 
+struct LTMat3 {
+  double l00, l10, l20, l11, l21, l22;
+
+  void invert()
+  {
+    double inv00 = 1.0 / l00;
+    double inv11 = 1.0 / l11;
+    double inv22 = 1.0 / l22;
+    double inv10 = -l10 * inv00 * inv11;
+    double inv21 = -l21 * inv11 * inv22;
+    double inv20 = (l10 * l21 * inv11 - l20) * inv00 * inv22;
+    l00 = inv00; l10 = inv10; l20 = inv20;
+    l11 = inv11; l21 = inv21; l22 = inv22;
+  }
+
+  void mat_vec(const double v[3], double out[3]) const
+  {
+    out[0] = l00 * v[0];
+    out[1] = l10 * v[0] + l11 * v[1];
+    out[2] = l20 * v[0] + l21 * v[1] + l22 * v[2];
+  }
+};
+
 struct Mat3 {
   double d[3][3];
 
@@ -81,23 +104,25 @@ inline Mat3 operator*(const SymMat3 &A, const Mat3 &B)
   return R;
 }
 
-inline SymMat3 sym_dot(const double r0[3], const double r1[3], const double r2[3])
+// M^T M: multiply transpose of M by M, yielding a symmetric matrix
+inline SymMat3 sym_dot(const Mat3 &M)
 {
-  return {r0[0] * r0[0] + r0[1] * r0[1] + r0[2] * r0[2],
-          r0[0] * r1[0] + r0[1] * r1[1] + r0[2] * r1[2],
-          r0[0] * r2[0] + r0[1] * r2[1] + r0[2] * r2[2],
-          r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2],
-          r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2],
-          r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
+  return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0) + M(2, 0) * M(2, 0),
+           M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1) + M(2, 0) * M(2, 1),
+           M(0, 0) * M(0, 2) + M(1, 0) * M(1, 2) + M(2, 0) * M(2, 2),
+           M(0, 1) * M(0, 1) + M(1, 1) * M(1, 1) + M(2, 1) * M(2, 1),
+           M(0, 1) * M(0, 2) + M(1, 1) * M(1, 2) + M(2, 1) * M(2, 2),
+           M(0, 2) * M(0, 2) + M(1, 2) * M(1, 2) + M(2, 2) * M(2, 2)};
 }
 
-inline Mat3 mat_dot(const double s[][3], const double r[][3])
+// S^T R: multiply transpose of S by R
+inline Mat3 mat_dot(const Mat3 &S, const Mat3 &R)
 {
-  Mat3 R;
+  Mat3 QR;
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 3; j++)
-      R(i, j) = s[i][0] * r[j][0] + s[i][1] * r[j][1] + s[i][2] * r[j][2];
-  return R;
+      QR(i, j) = S(0, i) * R(0, j) + S(1, i) * R(1, j) + S(2, i) * R(2, j);
+  return QR;
 }
 
 inline SymMat3 mat_mul_tosym(const Mat3 &A, const Mat3 &B)
@@ -151,22 +176,7 @@ inline SymMat3 inv_sym(const SymMat3 &A)
   return {C00 / det, C01 / det, C02 / det, C11 / det, C12 / det, C22 / det};
 }
 
-inline Mat3 chol_upper(const SymMat3 &A)
-{
-  double u00 = sqrt(A.d00);
-  double u01 = A.d01 / u00;
-  double u02 = A.d02 / u00;
-  double u11 = sqrt(A.d11 - u01 * u01);
-  double u12 = (A.d12 - u01 * u02) / u11;
-  double u22 = sqrt(A.d22 - u02 * u02 - u12 * u12);
-  Mat3 R;
-  R(0, 0) = u00; R(0, 1) = u01; R(0, 2) = u02;
-  R(1, 0) = 0.0; R(1, 1) = u11; R(1, 2) = u12;
-  R(2, 0) = 0.0; R(2, 1) = 0.0; R(2, 2) = u22;
-  return R;
-}
-
-inline Mat3 inv_chol_lower(const SymMat3 &A)
+inline Mat3 chol_lower(const SymMat3 &A)
 {
   double l00 = sqrt(A.d00);
   double l10 = A.d01 / l00;
@@ -174,18 +184,33 @@ inline Mat3 inv_chol_lower(const SymMat3 &A)
   double l11 = sqrt(A.d11 - l10 * l10);
   double l21 = (A.d12 - l10 * l20) / l11;
   double l22 = sqrt(A.d22 - l20 * l20 - l21 * l21);
+  Mat3 R;
+  R(0, 0) = l00; R(0, 1) = 0.0;   R(0, 2) = 0.0;
+  R(1, 0) = l10; R(1, 1) = l11; R(1, 2) = 0.0;
+  R(2, 0) = l20; R(2, 1) = l21; R(2, 2) = l22;
+  return R;
+}
 
-  double inv00 = 1.0 / l00;
-  double inv11 = 1.0 / l11;
-  double inv22 = 1.0 / l22;
-  double inv10 = -l10 * inv00 * inv11;
-  double inv21 = -l21 * inv11 * inv22;
-  double inv20 = (l21 * l10 * inv11 - l20) * inv00 * inv22;
+inline Mat3 inv_chol_upper(const SymMat3 &A)
+{
+  double u00 = sqrt(A.d00);
+  double u01 = A.d01 / u00;
+  double u02 = A.d02 / u00;
+  double u11 = sqrt(A.d11 - u01 * u01);
+  double u12 = (A.d12 - u01 * u02) / u11;
+  double u22 = sqrt(A.d22 - u02 * u02 - u12 * u12);
+
+  double inv00 = 1.0 / u00;
+  double inv11 = 1.0 / u11;
+  double inv22 = 1.0 / u22;
+  double inv01 = -u01 * inv00 * inv11;
+  double inv12 = -u12 * inv11 * inv22;
+  double inv02 = (u01 * u12 * inv11 - u02) * inv00 * inv22;
 
   Mat3 R;
-  R(0, 0) = inv00; R(0, 1) = 0.0;   R(0, 2) = 0.0;
-  R(1, 0) = inv10; R(1, 1) = inv11; R(1, 2) = 0.0;
-  R(2, 0) = inv20; R(2, 1) = inv21; R(2, 2) = inv22;
+  R(0, 0) = inv00; R(0, 1) = inv01; R(0, 2) = inv02;
+  R(1, 0) = 0.0;   R(1, 1) = inv11; R(1, 2) = inv12;
+  R(2, 0) = 0.0;   R(2, 1) = 0.0;   R(2, 2) = inv22;
   return R;
 }
 
