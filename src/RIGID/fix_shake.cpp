@@ -1488,12 +1488,21 @@ void FixShake::find_clusters()
                    "{:>8} = # of dihedral clusters\n",
                    count2/2,count3/3,count4/4,count1/3,
                     count5/4,count6/4);
-  }
+   }
 
-  // log atom tags for each size 2, 3, 4 cluster (one line per cluster)
+  //log_clusters();
+}
+
+/* ----------------------------------------------------------------------
+   log atom tags for each size 2, 3, 4 cluster (one line per cluster)
+   ------------------------------------------------------------------------- */
+
+void FixShake::log_clusters()
+{
+  tagint *tag = atom->tag;
 
   std::string cluster_str;
-  for (i = 0; i < nlocal; i++) {
+  for (int i = 0; i < nlocal; i++) {
     if (shake_atom[i][0] != tag[i]) continue;
     if (shake_flag[i] == 2)
       cluster_str += fmt::format("  size 2 cluster: {} {}\n", shake_atom[i][0], shake_atom[i][1]);

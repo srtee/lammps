@@ -141,6 +141,7 @@ class FixShake : public Fix {
   void partner_info(int *, tagint **, int **, int **, int **, int **);
   void nshake_info(int *, tagint **, int **);
   void shake_info(int *, tagint **, int **);
+  void log_clusters();
 
   int masscheck(double);
   virtual void unconstrained_update();
