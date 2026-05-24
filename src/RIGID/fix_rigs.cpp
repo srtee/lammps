@@ -745,7 +745,6 @@ void FixRigs::shake3angle(int ilist)
 {
   int atomlist[3];
   double v[6];
-  double invmass0,invmass01,invmass02;
 
   int m = list[ilist];
   int i0 = closest_list[ilist][0];
@@ -782,11 +781,12 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 diff = L - ss;
 
   Mat2 RS;
-  RS(0,0) = s01[0]*r01[0] + s01[1]*r01[1] + s01[2]*r01[2];
-  RS(1,0) = s01[0]*r02[0] + s01[1]*r02[1] + s01[2]*r02[2];
-  RS(0,1) = s02[0]*r01[0] + s02[1]*r01[1] + s02[2]*r01[2];
-  RS(1,1) = s02[0]*r02[0] + s02[1]*r02[1] + s02[2]*r02[2];
+  RS(0, 0) = s01[0] * r01[0] + s01[1] * r01[1] + s01[2] * r01[2];
+  RS(1, 0) = s01[0] * r02[0] + s01[1] * r02[1] + s01[2] * r02[2];
+  RS(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
+  RS(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
+  double invmass0, invmass01, invmass02;
   if (rmass) {
     invmass0 = dtfsq / rmass[i0];
     invmass01 = invmass0 + dtfsq / rmass[i1];
@@ -797,26 +797,23 @@ void FixRigs::shake3angle(int ilist)
     invmass02 = invmass0 + dtfsq / mass[type[i2]];
   }
 
-  SymMat2 M = inv_sym(SymMat2{invmass01, invmass0, invmass02});
+  LTMat2 lm = chol_lower_lt(SymMat2{invmass01, invmass0, invmass02});
+  lm.invert();
 
-  SymMat2 D = sandwich(M, diff);
+  UTMat2 rc = inv_chol_upper(rr);
+  Mat2 rc_rs = rc * RS;
+  SymMat2 sigma = diff + sym_dot(rc_rs);
+  sigma = chol_sandwich(sigma, lm);
 
-  Mat2 K = RS * M;
+  LTMat2 sc = chol_lower_lt(sigma) * lm;
+  Mat2 chi = transpose(rc) * rc_rs;
+  chol_right_mult(chi, lm);
 
-  SymMat2 rh = inv_sym(rr);
+  Mat2 phiC = rc * to_mat(sc);
 
-  Mat2 chi = rh * K;
-  SymMat2 sigma = mat_mul_tosym(transpose(K), chi) + D;
-
-  Mat2 sc = chol_lower(sigma);
-
-  Mat2 rc = inv_chol_upper(rr);
-
-  Mat2 phiC = rc * sc;
-
-  double phiS11 = rc(0,1)*sc(0,0) - rc(0,0)*sc(1,0);
-  double phiS12 = -rc(0,0)*sc(1,1);
-  double phiS21 = rc(1,1)*sc(0,0);
+  double phiS11 = rc.u01 * sc.l00 - rc.u00 * sc.l10;
+  double phiS12 = -rc.u00 * sc.l11;
+  double phiS21 = rc.u11 * sc.l00;
 
   double skewC = skew(phiC);
   double skewChi = skew(chi);
@@ -827,26 +824,26 @@ void FixRigs::shake3angle(int ilist)
   double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
   double cskew = (skewS * sinp - skewChi * skewC) / Asq;
 
-  double lamda01 = chi(0,0) + cskew*phiC(0,0) + sskew*phiS11;
-  double lamda02 = chi(1,1) + cskew*phiC(1,1);
-  double lamda12 = chi(0,1) + cskew*phiC(0,1) + sskew*phiS12;
+  double lamda01 = chi(0, 0) + cskew * phiC(0, 0) + sskew * phiS11;
+  double lamda02 = chi(1, 1) + cskew * phiC(1, 1);
+  double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS12;
 
   if (i0 < nlocal) {
-    f[i0][0] -= (lamda01+lamda12)*r01[0] + (lamda02+lamda12)*r02[0];
-    f[i0][1] -= (lamda01+lamda12)*r01[1] + (lamda02+lamda12)*r02[1];
-    f[i0][2] -= (lamda01+lamda12)*r01[2] + (lamda02+lamda12)*r02[2];
+    f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
+    f[i0][1] -= (lamda01 + lamda12) * r01[1] + (lamda02 + lamda12) * r02[1];
+    f[i0][2] -= (lamda01 + lamda12) * r01[2] + (lamda02 + lamda12) * r02[2];
   }
 
   if (i1 < nlocal) {
-    f[i1][0] += lamda01*r01[0] + lamda12*r02[0];
-    f[i1][1] += lamda01*r01[1] + lamda12*r02[1];
-    f[i1][2] += lamda01*r01[2] + lamda12*r02[2];
+    f[i1][0] += lamda01 * r01[0] + lamda12 * r02[0];
+    f[i1][1] += lamda01 * r01[1] + lamda12 * r02[1];
+    f[i1][2] += lamda01 * r01[2] + lamda12 * r02[2];
   }
 
   if (i2 < nlocal) {
-    f[i2][0] += lamda02*r02[0] + lamda12*r01[0];
-    f[i2][1] += lamda02*r02[1] + lamda12*r01[1];
-    f[i2][2] += lamda02*r02[2] + lamda12*r01[2];
+    f[i2][0] += lamda02 * r02[0] + lamda12 * r01[0];
+    f[i2][1] += lamda02 * r02[1] + lamda12 * r01[1];
+    f[i2][2] += lamda02 * r02[2] + lamda12 * r01[2];
   }
 
   if (evflag) {
@@ -860,23 +857,23 @@ void FixRigs::shake3angle(int ilist)
     r12[1] = r02[1] - r01[1];
     r12[2] = r02[2] - r01[2];
 
-    double lamda01_shake = - lamda01 - lamda12;
-    double lamda02_shake = - lamda02 - lamda12;
+    double lamda01_shake = -lamda01 - lamda12;
+    double lamda02_shake = -lamda02 - lamda12;
     double lamda12_shake = lamda12;
 
-    v[0] = lamda01_shake*r01[0]*r01[0] + lamda02_shake*r02[0]*r02[0] + lamda12_shake*r12[0]*r12[0];
-    v[1] = lamda01_shake*r01[1]*r01[1] + lamda02_shake*r02[1]*r02[1] + lamda12_shake*r12[1]*r12[1];
-    v[2] = lamda01_shake*r01[2]*r01[2] + lamda02_shake*r02[2]*r02[2] + lamda12_shake*r12[2]*r12[2];
-    v[3] = lamda01_shake*r01[0]*r01[1] + lamda02_shake*r02[0]*r02[1] + lamda12_shake*r12[0]*r12[1];
-    v[4] = lamda01_shake*r01[0]*r01[2] + lamda02_shake*r02[0]*r02[2] + lamda12_shake*r12[0]*r12[2];
-    v[5] = lamda01_shake*r01[1]*r01[2] + lamda02_shake*r02[1]*r02[2] + lamda12_shake*r12[1]*r12[2];
+    v[0] = lamda01_shake * r01[0] * r01[0] + lamda02_shake * r02[0] * r02[0] + lamda12_shake * r12[0] * r12[0];
+    v[1] = lamda01_shake * r01[1] * r01[1] + lamda02_shake * r02[1] * r02[1] + lamda12_shake * r12[1] * r12[1];
+    v[2] = lamda01_shake * r01[2] * r01[2] + lamda02_shake * r02[2] * r02[2] + lamda12_shake * r12[2] * r12[2];
+    v[3] = lamda01_shake * r01[0] * r01[1] + lamda02_shake * r02[0] * r02[1] + lamda12_shake * r12[0] * r12[1];
+    v[4] = lamda01_shake * r01[0] * r01[2] + lamda02_shake * r02[0] * r02[2] + lamda12_shake * r12[0] * r12[2];
+    v[5] = lamda01_shake * r01[1] * r01[2] + lamda02_shake * r02[1] * r02[2] + lamda12_shake * r12[1] * r12[2];
 
     double fpairlist[] = {lamda01_shake, lamda02_shake, lamda12_shake};
-    double dellist[][3]  = {{r01[0], r01[1], r01[2]},
-                            {r02[0], r02[1], r02[2]},
-                            {r12[0], r12[1], r12[2]}};
-    int pairlist[][2] = {{i0,i1}, {i0,i2}, {i1,i2}};
-    v_tally(count,atomlist,3.0,v,nlocal,3,pairlist,fpairlist,dellist);
+    double dellist[][3] = {{r01[0], r01[1], r01[2]},
+                           {r02[0], r02[1], r02[2]},
+                           {r12[0], r12[1], r12[2]}};
+    int pairlist[][2] = {{i0, i1}, {i0, i2}, {i1, i2}};
+    v_tally(count, atomlist, 3.0, v, nlocal, 3, pairlist, fpairlist, dellist);
   }
 }
 
@@ -963,10 +960,12 @@ void FixRigs::shake4improper(int ilist)
     invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
   }
 
+  SymMat3 M = inv_sym(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03}); 
+
   Mat3 RS = mat_dot(R, S);
   Mat3 chi_mu = inv_sym(rr) * RS;
   SymMat3 mu_sig_mu = mat_mul_tosym(transpose(RS), chi_mu) + L - ss;
-  SymMat3 sigma = mat_mul_tosym(M, mu_sig_mu * M);
+  SymMat3 sigma = mu_sig_mu;
 
   Mat3 chi = chi_mu * M;
 

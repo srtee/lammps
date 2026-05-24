@@ -91,6 +91,13 @@ inline SymMat2 sandwich(const SymMat2 &M, const SymMat2 &A)
           MA10 * M.d01 + MA11 * M.d11 };
 }
 
+inline SymMat2 sym_dot(const Mat2 &M)
+{
+  return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0),
+          M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1),
+          M(0, 1) * M(0, 1) + M(1, 1) * M(1, 1)};
+}
+
 inline SymMat2 mat_mul_tosym(const Mat2 &A, const Mat2 &B)
 {
   return {A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0),
@@ -107,31 +114,6 @@ inline Mat2 transpose(const Mat2 &A)
 }
 
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
-
-inline Mat2 chol_lower(const SymMat2 &A) //nonstandard!!
-{
-  double l11 = sqrt(A.d11);
-  double l10 = A.d01 / l11;
-  double l00 = sqrt(A.d00 - l10 * l10);
-  Mat2 R;
-  R(0, 0) = l00; R(0, 1) = 0.0;
-  R(1, 0) = l10; R(1, 1) = l11;
-  return R;
-}
-
-inline Mat2 inv_chol_upper(const SymMat2 &A)
-{
-  double u00 = sqrt(A.d00);
-  double u01 = A.d01 / u00;
-  double u11 = sqrt(A.d11 - u01*u01);
-  double inv00 = 1.0 / u00;
-  double inv11 = 1.0 / u11;
-  double inv01 = -u01 * inv00 * inv11;
-  Mat2 R;
-  R(0, 0) = inv00; R(0, 1) = inv01;
-  R(1, 0) = 0.0;   R(1, 1) = inv11;
-  return R;
-}
 
 // M @ [v1, v2]: multiply 2x2 symmetric matrix by 2-column matrix
 // Mv1 = M.d00*v1 + M.d01*v2
@@ -165,6 +147,29 @@ struct UTMat2 {
   }
 };
 
+struct LTMat2 {
+  double l00, l10, l11;
+
+  void invert()
+  {
+    double inv00 = 1.0 / l00;
+    double inv11 = 1.0 / l11;
+    double inv10 = -l10 * inv00 * inv11;
+    l00 = inv00; l10 = inv10; l11 = inv11;
+  }
+
+  void mat_vec(const double v[2], double out[2]) const
+  {
+    out[0] = l00 * v[0];
+    out[1] = l10 * v[0] + l11 * v[1];
+  }
+};
+
+inline UTMat2 operator*(const UTMat2 &U, const UTMat2 &V)
+{
+  return {U.u00 * V.u00, U.u00 * V.u01 + U.u01 * V.u11, U.u11 * V.u11};
+}
+
 inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
 {
   Mat2 R;
@@ -173,6 +178,68 @@ inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
   R(1, 0) = U.u11 * B(1, 0);
   R(1, 1) = U.u11 * B(1, 1);
   return R;
+}
+
+inline Mat2 transpose(const UTMat2 &U)
+{
+  Mat2 R;
+  R(0, 0) = U.u00; R(0, 1) = 0.0;
+  R(1, 0) = U.u01; R(1, 1) = U.u11;
+  return R;
+}
+
+inline UTMat2 chol_upper(const SymMat2 &A)
+{
+  double u00 = sqrt(A.d00);
+  double u01 = A.d01 / u00;
+  double u11 = sqrt(A.d11 - u01 * u01);
+  return {u00, u01, u11};
+}
+
+inline UTMat2 inv_chol_upper(const SymMat2 &A)
+{
+  double u00 = sqrt(A.d00);
+  double u01 = A.d01 / u00;
+  double u11 = sqrt(A.d11 - u01 * u01);
+  return {1.0 / u00, -u01 / (u00 * u11), 1.0 / u11};
+}
+
+inline LTMat2 chol_lower_lt(const SymMat2 &A)
+{
+  double l11 = sqrt(A.d11);
+  double l10 = A.d01 / l11;
+  double l00 = sqrt(A.d00 - l10 * l10);
+  return {l00, l10, l11};
+}
+
+inline LTMat2 operator*(const LTMat2 &A, const LTMat2 &B)
+{
+  return {A.l00 * B.l00,
+          A.l10 * B.l00 + A.l11 * B.l10,
+          A.l11 * B.l11};
+}
+
+inline Mat2 to_mat(const LTMat2 &L)
+{
+  Mat2 R;
+  R(0, 0) = L.l00; R(0, 1) = 0.0;
+  R(1, 0) = L.l10; R(1, 1) = L.l11;
+  return R;
+}
+
+inline Mat2 transpose(const LTMat2 &L)
+{
+  Mat2 R;
+  R(0, 0) = L.l00; R(0, 1) = L.l10;
+  R(1, 0) = 0.0;   R(1, 1) = L.l11;
+  return R;
+}
+
+inline SymMat2 chol_sandwich(const SymMat2 &S, const LTMat2 &L)
+{
+  return {L.l00 * L.l00 * S.d00 + 2.0 * L.l00 * L.l10 * S.d01 + L.l10 * L.l10 * S.d11,
+          L.l11 * (L.l00 * S.d01 + L.l10 * S.d11),
+          L.l11 * L.l11 * S.d11};
 }
 
 // S <- U S U^T  where U is upper-triangular Cholesky factor
@@ -196,6 +263,28 @@ inline void chol_left_invmult(const UTMat2 &U, Mat2 &M)
   for (int j = 0; j < 2; j++) {
     M(1, j) /= U.u11;
     M(0, j) = (M(0, j) - U.u01 * M(1, j)) / U.u00;
+  }
+}
+
+// M <- M L^T L  (right-multiply by nonstandard lower Cholesky product)
+inline void chol_right_mult(Mat2 &M, const LTMat2 &L)
+{
+  for (int i = 0; i < 2; i++) {
+    double t0 = M(i, 0) * L.l00 + M(i, 1) * L.l10;
+    double t1 = M(i, 1) * L.l11;
+    M(i, 0) = t0 * L.l00 + t1 * L.l10;
+    M(i, 1) = t1 * L.l11;
+  }
+}
+
+// M <- M U^T U  (right-multiply by Cholesky product)
+inline void chol_right_mult(Mat2 &M, const UTMat2 &U)
+{
+  for (int i = 0; i < 2; i++) {
+    double t0 = M(i, 0) * U.u00 + M(i, 1) * U.u01;
+    double t1 = M(i, 1) * U.u11;
+    M(i, 0) = t0 * U.u00;
+    M(i, 1) = t0 * U.u01 + t1 * U.u11;
   }
 }
 
