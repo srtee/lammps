@@ -797,8 +797,8 @@ void FixRigs::shake3angle(int ilist)
     invmass02 = invmass0 + dtfsq / mass[type[i2]];
   }
 
-  LTMat2 lm = chol_lower_lt(SymMat2{invmass01, invmass0, invmass02});
-  lm.invert();
+  UTMat2 mu = inv_chol_upper(SymMat2{invmass01, invmass0, invmass02});
+  LTMat2 lm = {mu.u00, mu.u01, mu.u11};
 
   UTMat2 rc = inv_chol_upper(rr);
   Mat2 rc_rs = rc * RS;
@@ -811,22 +811,23 @@ void FixRigs::shake3angle(int ilist)
 
   Mat2 phiC = rc * to_mat(sc);
 
-  double phiS11 = rc.u01 * sc.l00 - rc.u00 * sc.l10;
-  double phiS12 = -rc.u00 * sc.l11;
-  double phiS21 = rc.u11 * sc.l00;
+  Mat2 J;
+  J(0, 0) = 0.0;  J(0, 1) = -1.0;
+  J(1, 0) = 1.0;  J(1, 1) = 0.0;
+  Mat2 phiS = rc * J * to_mat(sc);
 
   double skewC = skew(phiC);
   double skewChi = skew(chi);
-  double skewS = phiS12 - phiS21;
+  double skewS = skew(phiS);
 
   double Asq = skewC * skewC + skewS * skewS;
   double sinp = sqrt(Asq - skewChi * skewChi);
   double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
   double cskew = (skewS * sinp - skewChi * skewC) / Asq;
 
-  double lamda01 = chi(0, 0) + cskew * phiC(0, 0) + sskew * phiS11;
+  double lamda01 = chi(0, 0) + cskew * phiC(0, 0) + sskew * phiS(0, 0);
   double lamda02 = chi(1, 1) + cskew * phiC(1, 1);
-  double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS12;
+  double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS(0, 1);
 
   if (i0 < nlocal) {
     f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
