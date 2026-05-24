@@ -235,11 +235,12 @@ inline Mat2 transpose(const LTMat2 &L)
   return R;
 }
 
+// L S L^T  (left- and right-multiply by lower triangular L and its transpose)
 inline SymMat2 chol_sandwich(const SymMat2 &S, const LTMat2 &L)
 {
-  return {L.l00 * L.l00 * S.d00 + 2.0 * L.l00 * L.l10 * S.d01 + L.l10 * L.l10 * S.d11,
-          L.l11 * (L.l00 * S.d01 + L.l10 * S.d11),
-          L.l11 * L.l11 * S.d11};
+  return {L.l00 * L.l00 * S.d00,
+           L.l00 * L.l10 * S.d00 + L.l00 * L.l11 * S.d01,
+           L.l10 * L.l10 * S.d00 + 2.0 * L.l10 * L.l11 * S.d01 + L.l11 * L.l11 * S.d11};
 }
 
 // S <- U S U^T  where U is upper-triangular Cholesky factor
@@ -266,12 +267,12 @@ inline void chol_left_invmult(const UTMat2 &U, Mat2 &M)
   }
 }
 
-// M <- M L^T L  (right-multiply by nonstandard lower Cholesky product)
+// M <- M L^T L  (right-multiply by product mu * mu^T where L = mu^T)
 inline void chol_right_mult(Mat2 &M, const LTMat2 &L)
 {
   for (int i = 0; i < 2; i++) {
-    double t0 = M(i, 0) * L.l00 + M(i, 1) * L.l10;
-    double t1 = M(i, 1) * L.l11;
+    double t0 = M(i, 0) * L.l00;
+    double t1 = M(i, 0) * L.l10 + M(i, 1) * L.l11;
     M(i, 0) = t0 * L.l00 + t1 * L.l10;
     M(i, 1) = t1 * L.l11;
   }
