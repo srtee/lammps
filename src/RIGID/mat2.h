@@ -137,7 +137,7 @@ inline Mat2 inv_chol_upper(const SymMat2 &A)
 // Mv1 = M.d00*v1 + M.d01*v2
 // Mv2 = M.d01*v1 + M.d11*v2
 inline void sym_mat_vec(const SymMat2 &M, const double *v1, const double *v2,
-                       double *Mv1, double *Mv2)
+                        double *Mv1, double *Mv2)
 {
   Mv1[0] = M.d00 * v1[0] + M.d01 * v2[0];
   Mv1[1] = M.d00 * v1[1] + M.d01 * v2[1];
@@ -145,6 +145,71 @@ inline void sym_mat_vec(const SymMat2 &M, const double *v1, const double *v2,
   Mv2[0] = M.d01 * v1[0] + M.d11 * v2[0];
   Mv2[1] = M.d01 * v1[1] + M.d11 * v2[1];
   Mv2[2] = M.d01 * v1[2] + M.d11 * v2[2];
+}
+
+struct UTMat2 {
+  double u00, u01, u11;
+
+  void invert()
+  {
+    double inv00 = 1.0 / u00;
+    double inv11 = 1.0 / u11;
+    double inv01 = -u01 * inv00 * inv11;
+    u00 = inv00; u01 = inv01; u11 = inv11;
+  }
+
+  void mat_vec(const double v[2], double out[2]) const
+  {
+    out[0] = u00 * v[0] + u01 * v[1];
+    out[1] = u11 * v[1];
+  }
+};
+
+inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = U.u00 * B(0, 0) + U.u01 * B(1, 0);
+  R(0, 1) = U.u00 * B(0, 1) + U.u01 * B(1, 1);
+  R(1, 0) = U.u11 * B(1, 0);
+  R(1, 1) = U.u11 * B(1, 1);
+  return R;
+}
+
+// S <- U S U^T  where U is upper-triangular Cholesky factor
+inline void chol_sandwich(const UTMat2 &U, SymMat2 &S)
+{
+  double d00 = U.u00 * U.u00 * S.d00 + 2.0 * U.u00 * U.u01 * S.d01 + U.u01 * U.u01 * S.d11;
+  double d01 = U.u11 * (U.u00 * S.d01 + U.u01 * S.d11);
+  double d11 = U.u11 * U.u11 * S.d11;
+  S.d00 = d00;
+  S.d01 = d01;
+  S.d11 = d11;
+}
+
+// M <- (U^T U)^{-1} M  via forward/back substitution with U
+inline void chol_left_invmult(const UTMat2 &U, Mat2 &M)
+{
+  for (int j = 0; j < 2; j++) {
+    M(0, j) /= U.u00;
+    M(1, j) = (M(1, j) - U.u01 * M(0, j)) / U.u11;
+  }
+  for (int j = 0; j < 2; j++) {
+    M(1, j) /= U.u11;
+    M(0, j) = (M(0, j) - U.u01 * M(1, j)) / U.u00;
+  }
+}
+
+// M <- M (U^T U)^{-1}  via back/forward substitution with U
+inline void chol_right_invmult(Mat2 &M, const UTMat2 &U)
+{
+  for (int i = 0; i < 2; i++) {
+    M(i, 0) /= U.u00;
+    M(i, 1) = (M(i, 1) - M(i, 0) * U.u01) / U.u11;
+  }
+  for (int i = 0; i < 2; i++) {
+    M(i, 1) /= U.u11;
+    M(i, 0) = (M(i, 0) - M(i, 1) * U.u01) / U.u00;
+  }
 }
 
 }
