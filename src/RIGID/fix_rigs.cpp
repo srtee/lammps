@@ -800,13 +800,13 @@ void FixRigs::shake3angle(int ilist)
   UTMat2 mu = inv_chol_upper(SymMat2{invmass01, invmass0, invmass02});
   LTMat2 lm = {mu.u00, mu.u01, mu.u11};
 
-  UTMat2 rc = inv_chol_upper(rr);
-  Mat2 rc_rs = rc * RS;
-  SymMat2 sigma = diff + sym_dot(rc_rs);
+  UTMat2 rc = chol_upper(rr);
+  Mat2 chi = RS;
+  chol_left_invmult(rc, RS);
+  SymMat2 sigma = diff + mat_mul_tosym(transpose(RS), chi);
   sigma = chol_sandwich(sigma, lm);
 
   LTMat2 sc = chol_lower_lt(sigma) * lm;
-  Mat2 chi = transpose(rc) * rc_rs;
   chol_right_mult(chi, lm);
 
   Mat2 phiC = rc * to_mat(sc);
