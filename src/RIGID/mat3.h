@@ -309,9 +309,14 @@ inline void ut_mat_mul_to(const UTMat3 &A, const Mat3 &B, Mat3 &C)
   }
 }
 
-inline Mat3 cayley_converge(const UTMat3 &rc, Mat3 &sc, const Mat3 &chi,
+inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc_lt, const Mat3 &chi,
                             int max_iters = 10, double tol = 1e-6)
 {
+  Mat3 sc;
+  sc(0, 0) = sc_lt.l00; sc(0, 1) = 0.0;       sc(0, 2) = 0.0;
+  sc(1, 0) = sc_lt.l10; sc(1, 1) = sc_lt.l11;  sc(1, 2) = 0.0;
+  sc(2, 0) = sc_lt.l20; sc(2, 1) = sc_lt.l21;  sc(2, 2) = sc_lt.l22;
+
   LTMat3 G;
   G.l00 = 2.0 * (rc.u11 * sc(2, 2) + rc.u22 * sc(1, 1));
   G.l10 = 2.0 * (-rc.u22 * sc(1, 0) - rc.u01 * sc(2, 2));

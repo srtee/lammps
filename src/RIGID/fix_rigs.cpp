@@ -38,10 +38,15 @@ using namespace RigsMath;
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
-    rigs_dihedral_distance(nullptr) {}
+    rigs_dihedral_distance(nullptr)
+{
+  restart_peratom = 1;
+  atom->add_callback(Atom::RESTART);
+}
 
 FixRigs::~FixRigs()
 {
+  if (modify->get_fix_by_id(id)) atom->delete_callback(id, Atom::RESTART);
   memory->destroy(rigs_type);
   delete[] rigs_angle;
   delete[] rigs_angle_distance;
@@ -561,31 +566,43 @@ int FixRigs::unpack_exchange(int nlocal, double *buf)
 
 int FixRigs::pack_restart(int i, double *buf)
 {
-  int m = FixShake::pack_restart(i, buf);
+  int m = 0;
   if (shake_flag[i] == 5 || shake_flag[i] == 6) {
+    buf[m++] = 4;
     buf[m++] = rigs_type[i][0];
     buf[m++] = rigs_type[i][1];
     buf[m++] = rigs_type[i][2];
+  } else {
+    buf[m++] = 1;
   }
   return m;
 }
 
-void FixRigs::unpack_restart(int i, int ncol)
+void FixRigs::unpack_restart(int i, int nth)
 {
-  FixShake::unpack_restart(i, ncol);
-  // TODO: restore rigs_type from restart data
+  double **extra = atom->extra;
+
+  int m = 0;
+  for (int j = 0; j < nth; j++) m += static_cast<int>(extra[i][m]);
+  m++;
+
+  int count = static_cast<int>(extra[i][m++]);
+  if (count == 4) {
+    rigs_type[i][0] = static_cast<int>(extra[i][m++]);
+    rigs_type[i][1] = static_cast<int>(extra[i][m++]);
+    rigs_type[i][2] = static_cast<int>(extra[i][m++]);
+  }
 }
 
 int FixRigs::size_restart(int i)
 {
-  int n = FixShake::size_restart(i);
-  if (shake_flag[i] == 5 || shake_flag[i] == 6) n += 3;
-  return n;
+  if (shake_flag[i] == 5 || shake_flag[i] == 6) return 4;
+  return 1;
 }
 
 int FixRigs::maxsize_restart()
 {
-  return FixShake::maxsize_restart() + 3;
+  return 4;
 }
 
 void FixRigs::init()
@@ -956,12 +973,7 @@ void FixRigs::shake4improper(int ilist)
   LTMat3 sc = chol_lower(sigma);
   UTMat3 rc = inv_chol_upper(rr);
 
-  Mat3 sc_mat;
-  sc_mat(0, 0) = sc.l00; sc_mat(0, 1) = 0.0;    sc_mat(0, 2) = 0.0;
-  sc_mat(1, 0) = sc.l10; sc_mat(1, 1) = sc.l11;   sc_mat(1, 2) = 0.0;
-  sc_mat(2, 0) = sc.l20; sc_mat(2, 1) = sc.l21;   sc_mat(2, 2) = sc.l22;
-
-  Mat3 gamma = cayley_converge(rc, sc_mat, chi, 11, tolerance);
+  Mat3 gamma = cayley_converge(rc, sc, chi, 11, tolerance);
   // M = 3x3 inverse mass matrix for non-bond pairs (12, 13, 23)
   // D = M (L - S^T S) M
   // K = M (S^T R)

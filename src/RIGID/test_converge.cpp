@@ -68,21 +68,21 @@ int main()
     for (int t = 0; t < ntrials; t++) {
       UTMat3 rc = make_ut_rc();
       LTMat3 sc_lt = make_lt_sc();
-      Mat3 sc = lt_to_mat(sc_lt);
 
       double rv[3] = {eps*randn(), eps*randn(), eps*randn()};
-      cayley_rotate(sc, rv);
+      Mat3 sc_target = lt_to_mat(sc_lt);
+      cayley_rotate(sc_target, rv);
 
+      Mat3 rc_mat = ut_to_mat(rc);
       Mat3 chi;
       for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++) {
           double s = 0.0;
-          for (int k = 0; k < 3; k++) s += ut_to_mat(rc)(i,k) * sc(k,j);
+          for (int k = 0; k < 3; k++) s += rc_mat(i,k) * sc_target(k,j);
           chi(i,j) = -s;
         }
 
-      Mat3 sc_init = lt_to_mat(sc_lt);
-      Mat3 gamma = cayley_converge(rc, sc_init, chi, 200, tol);
+      Mat3 gamma = cayley_converge(rc, sc_lt, chi, 200, tol);
 
       double skewChi[3], skewGamma[3];
       skew(chi, skewChi);
