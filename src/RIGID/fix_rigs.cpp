@@ -891,21 +891,32 @@ void FixRigs::shake4improper(int ilist)
     dist23 = rigs_improper_distance[-rigs_type[m][2]];
 
   // current displacement vectors
+  
+  Mat3 R, S;
+  R(0, 0) = x[i0][0] - x[i1][0];
+  R(0, 1) = x[i0][1] - x[i1][1];
+  R(0, 2) = x[i0][2] - x[i1][2];
+  R(1, 0) = x[i0][0] - x[i2][0];
+  R(1, 1) = x[i0][1] - x[i2][1];
+  R(1, 2) = x[i0][2] - x[i2][2];
+  R(2, 0) = x[i0][0] - x[i3][0];
+  R(2, 1) = x[i0][1] - x[i3][1];
+  R(2, 2) = x[i0][2] - x[i3][2];
 
-  double r01[3], r02[3], r03[3];
-  r01[0] = x[i0][0] - x[i1][0]; r01[1] = x[i0][1] - x[i1][1]; r01[2] = x[i0][2] - x[i1][2];
-  r02[0] = x[i0][0] - x[i2][0]; r02[1] = x[i0][1] - x[i2][1]; r02[2] = x[i0][2] - x[i2][2];
-  r03[0] = x[i0][0] - x[i3][0]; r03[1] = x[i0][1] - x[i3][1]; r03[2] = x[i0][2] - x[i3][2];
-
-  double s01[3], s02[3], s03[3];
-  s01[0] = xshake[i0][0] - xshake[i1][0]; s01[1] = xshake[i0][1] - xshake[i1][1]; s01[2] = xshake[i0][2] - xshake[i1][2];
-  s02[0] = xshake[i0][0] - xshake[i2][0]; s02[1] = xshake[i0][1] - xshake[i2][1]; s02[2] = xshake[i0][2] - xshake[i2][2];
-  s03[0] = xshake[i0][0] - xshake[i3][0]; s03[1] = xshake[i0][1] - xshake[i3][1]; s03[2] = xshake[i0][2] - xshake[i3][2];
+  S(0, 0) = xshake[i0][0] - xshake[i1][0];
+  S(0, 1) = xshake[i0][1] - xshake[i1][1];
+  S(0, 2) = xshake[i0][2] - xshake[i1][2];
+  S(1, 0) = xshake[i0][0] - xshake[i2][0];
+  S(1, 1) = xshake[i0][1] - xshake[i2][1];
+  S(1, 2) = xshake[i0][2] - xshake[i2][2];
+  S(2, 0) = xshake[i0][0] - xshake[i3][0];
+  S(2, 1) = xshake[i0][1] - xshake[i3][1]; 
+  S(2, 2) = xshake[i0][2] - xshake[i3][2];
 
   // Gram matrices
 
-  //SymMat3 rr = sym_dot(r01, r02, r03);
-  //SymMat3 ss = sym_dot(s01, s02, s03);
+  SymMat3 rr = sym_dot(R);
+  SymMat3 ss = sym_dot(S); 
 
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};
@@ -935,6 +946,22 @@ void FixRigs::shake4improper(int ilist)
     invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
   }
 
+  Mat3 RS = mat_dot(R, S);
+  Mat3 chi_mu = inv_sym(rr) * RS;
+  SymMat3 mu_sig_mu = mat_mul_tosym(transpose(RS), chi_mu) + L - ss;
+  SymMat3 sigma = mat_mul_tosym(M, mu_sig_mu * M);
+
+  Mat3 chi = chi_mu * M;
+
+  LTMat3 sc = chol_lower(sigma);
+  UTMat3 rc = inv_chol_upper(rr);
+
+  Mat3 sc_mat;
+  sc_mat(0, 0) = sc.l00; sc_mat(0, 1) = 0.0;    sc_mat(0, 2) = 0.0;
+  sc_mat(1, 0) = sc.l10; sc_mat(1, 1) = sc.l11;   sc_mat(1, 2) = 0.0;
+  sc_mat(2, 0) = sc.l20; sc_mat(2, 1) = sc.l21;   sc_mat(2, 2) = sc.l22;
+
+  Mat3 gamma = cayley_converge(rc, sc_mat, chi, 11, tolerance);
   // M = 3x3 inverse mass matrix for non-bond pairs (12, 13, 23)
   // D = M (L - S^T S) M
   // K = M (S^T R)
