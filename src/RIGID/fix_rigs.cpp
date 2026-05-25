@@ -753,6 +753,17 @@ void FixRigs::shake3angle(int ilist)
   double bond1 = bond_distance[shake_type[m][0]];
   double bond2 = bond_distance[shake_type[m][1]];
   double bond12 = rigs_angle[shake_type[m][2]];
+  
+  double invmass0, invmass01, invmass02;
+  if (rmass) {
+    invmass0 = dtfsq / rmass[i0];
+    invmass01 = invmass0 + dtfsq / rmass[i1];
+    invmass02 = invmass0 + dtfsq / rmass[i2];
+  } else {
+    invmass0 = dtfsq / mass[type[i0]];
+    invmass01 = invmass0 + dtfsq / mass[type[i1]];
+    invmass02 = invmass0 + dtfsq / mass[type[i2]];
+  }
 
   double r01[3];
   r01[0] = x[i0][0] - x[i1][0];
@@ -786,36 +797,21 @@ void FixRigs::shake3angle(int ilist)
   RS(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
   RS(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
-  double invmass0, invmass01, invmass02;
-  if (rmass) {
-    invmass0 = dtfsq / rmass[i0];
-    invmass01 = invmass0 + dtfsq / rmass[i1];
-    invmass02 = invmass0 + dtfsq / rmass[i2];
-  } else {
-    invmass0 = dtfsq / mass[type[i0]];
-    invmass01 = invmass0 + dtfsq / mass[type[i1]];
-    invmass02 = invmass0 + dtfsq / mass[type[i2]];
-  }
+  LTMat2 lm = trans_inv_chol_upper(SymMat2{invmass01, invmass0, invmass02});
 
-  UTMat2 mu = inv_chol_upper(SymMat2{invmass01, invmass0, invmass02});
-  LTMat2 lm = {mu.u00, mu.u01, mu.u11};
-
-  UTMat2 rc = chol_upper(rr);
-  Mat2 chi = RS;
-  chi /= rc;
+  UTMat2 rc = inv_chol_upper(rr);
+  Mat2 chi = uut_mul(rc, RS);
   SymMat2 sigma = diff + mat_mul_tosym(transpose(RS), chi);
-  sigma *= lm;
+  lslt_mul(sigma, lm);
 
-  rc.invert();
-  LTMat2 sc = chol_lower_lt(sigma) * lm;
-  chi *= mu;
-  chi *= lm;
-  Mat2 phiC = rc * to_mat(sc);
+  LTMat2 sc = chol_lower(sigma) * lm;
+  mul_ltl(chi, lm);
+  Mat2 phiC = rc * sc;
 
   Mat2 J;
   J(0, 0) = 0.0;  J(0, 1) = -1.0;
   J(1, 0) = 1.0;  J(1, 1) = 0.0;
-  Mat2 phiS = rc * J * to_mat(sc);
+  Mat2 phiS = rc * J * sc;
 
   double skewC = skew(phiC);
   double skewChi = skew(chi);
