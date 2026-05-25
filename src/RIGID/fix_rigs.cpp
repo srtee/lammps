@@ -791,22 +791,23 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 L = {bond1 * bond1, bond12, bond2 * bond2};
   SymMat2 diff = L - ss;
 
-  Mat2 RS;
-  RS(0, 0) = s01[0] * r01[0] + s01[1] * r01[1] + s01[2] * r01[2];
-  RS(1, 0) = s01[0] * r02[0] + s01[1] * r02[1] + s01[2] * r02[2];
-  RS(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
-  RS(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
+  Mat2 chi;
+  chi(0, 0) = s01[0] * r01[0] + s01[1] * r01[1] + s01[2] * r01[2];
+  chi(1, 0) = s01[0] * r02[0] + s01[1] * r02[1] + s01[2] * r02[2];
+  chi(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
+  chi(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
-  DChol2 lm = dchol(SymMat2{invmass01, invmass0, invmass02});
-  invert(lm);
+  DChol2 lm = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
 
   UTMat2 rc = inv_chol_upper(rr);
-  Mat2 chi = uut_mul(rc, RS);
-  SymMat2 sigma = diff + mat_mul_tosym(transpose(RS), chi);
+  ut_mul(rc, chi);
+  SymMat2 sigma = diff + mtm(chi);
+  u_mul(rc, chi);
+  
   lslt_mul(sigma, lm);
-
   LTMat2 sc = mul_dl(chol_lower(sigma),lm);
   mul_ltdl(chi, lm);
+  
   Mat2 phiC = rc * sc;
 
   Mat2 J;

@@ -39,18 +39,18 @@ struct SymMat2 {
   }
 };
 
-inline void lslt_mul(SymMat2 &S, const LTMat2 &L)
-{
-  // S <- S * L^T
-  double t01 = S.d01;
-  S.d01 = S.d00 * L.l10 + S.d01 * L.l11;
-  S.d00 *= L.l00;
-  S.d11 = t01 * L.l10 + S.d11 * L.l11;
-  // <- L * S * L^T
-  S.d11 = S.d01 * L.l10 + S.d11 * L.l11;
-  S.d00 *= L.l00;
-  S.d01 *= L.l00;
-}
+//inline void lslt_mul(SymMat2 &S, const LTMat2 &L)
+//{
+//  // S <- S * L^T
+//  double t01 = S.d01;
+//  S.d01 = S.d00 * L.l10 + S.d01 * L.l11;
+//  S.d00 *= L.l00;
+//  S.d11 = t01 * L.l10 + S.d11 * L.l11;
+//  // <- L * S * L^T
+//  S.d11 = S.d01 * L.l10 + S.d11 * L.l11;
+//  S.d00 *= L.l00;
+//  S.d01 *= L.l00;
+//}
 
 struct Mat2 {
   double d[2][2];
@@ -77,30 +77,20 @@ struct Mat2 {
   }
 };
 
-inline Mat2 uut_mul(const UTMat2 &U, const Mat2 &M) // used
+inline void ut_mul(const UTMat2 &U, Mat2 &M) // used
 {
-  Mat2 R;
-  R(0, 0) = U.u00 * M(0, 0);
-  R(0, 1) = U.u00 * M(0, 1);
-  R(1, 0) = U.u01 * M(0, 0) + U.u11 * M(1, 0);
-  R(1, 1) = U.u01 * M(0, 1) + U.u11 * M(1, 1);
-  R(0, 0) = U.u00 * R(0, 0) + U.u01 * R(1, 0);
-  R(0, 1) = U.u00 * R(0, 1) + U.u01 * R(1, 1);
-  R(1, 0) *= U.u11;
-  R(1, 1) *= U.u11;
-  return R;
+  M(1, 0) = U.u11 * M(1, 0) + U.u01 * M(0, 0);
+  M(1, 1) = U.u11 * M(1, 1) + U.u01 * M(0, 1);
+  M(0, 0) *= U.u00;
+  M(0, 1) *= U.u00;
 }
 
-inline void mul_ltl(Mat2 &M, const LTMat2 &L) // used
+inline void u_mul(const UTMat2 &U, Mat2 &M) // used
 {
-  M(0, 1) = M(0, 0) * L.l10 + M(0, 1) * L.l11;
-  M(1, 1) = M(1, 0) * L.l10 + M(1, 1) * L.l11;
-  M(0, 0) *= L.l00;
-  M(1, 0) *= L.l00;
-  M(0, 0) = M(0, 0) * L.l00 + M(0, 1) * L.l10;
-  M(1, 0) = M(1, 0) * L.l00 + M(1, 1) * L.l10;
-  M(0, 1) *= L.l11;
-  M(1, 1) *= L.l11;
+  M(0, 0) = U.u00 * M(0, 0) + U.u01 * M(1, 0);
+  M(0, 1) = U.u00 * M(0, 1) + U.u01 * M(1, 1);
+  M(1, 0) *= U.u11;
+  M(1, 1) *= U.u11;
 }
 
 // r1·r1, r1·r2, r2·r2
@@ -111,19 +101,11 @@ inline SymMat2 sym_dot(const double r1[3], const double r2[3]) // used
           r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
 }
 
-inline SymMat2 mat_mul_tosym(const Mat2 &A, const Mat2 &B) // used
+inline SymMat2 mtm(const Mat2 &M) // used
 {
-  return {A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0),
-          A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1),
-          A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1)};
-}
-
-inline Mat2 transpose(const Mat2 &A) // used
-{
-  Mat2 R;
-  R(0, 0) = A(0, 0); R(0, 1) = A(1, 0);
-  R(1, 0) = A(0, 1); R(1, 1) = A(1, 1);
-  return R;
+  return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0),
+	  M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1),
+	  M(0, 1) * M(0, 1) + M(1, 1) * M(1, 1)};
 }
 
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
@@ -156,14 +138,6 @@ inline UTMat2 inv_chol_upper(const SymMat2 &A) // used
   return {1.0 / u00, -u01 / (u00 * u11), 1.0 / u11};
 }
 
-inline LTMat2 trans_inv_chol_upper(const SymMat2 &A) // used
-{
-  double u00 = sqrt(A.d00);
-  double u01 = A.d01 / u00;
-  double u11 = sqrt(A.d11 - u01 * u01);
-  return {1.0 / u00, -u01 / (u00 * u11), 1.0 / u11};
-}
-
 inline LTMat2 chol_lower(const SymMat2 &A) // used
 {
   double l11 = sqrt(A.d11);
@@ -176,18 +150,11 @@ struct DChol2 {
   double d0, d1, m01;
 };
 
-inline DChol2 dchol(const SymMat2 &A)
+inline DChol2 inv_dchol(const SymMat2 &A)
 {
   double m01 = A.d01 / A.d00;
   double d1 = A.d11 - m01 * A.d01;
-  return {A.d00, d1, m01};
-}
-
-inline void invert(DChol2 &U)
-{
-  U.d0 = 1.0 / U.d0;
-  U.m01 = -U.m01;
-  U.d1 = 1.0 / U.d1;
+  return {1/A.d00, 1/d1, -m01};
 }
 
 inline void lslt_mul(SymMat2 &S, const DChol2 &L)
