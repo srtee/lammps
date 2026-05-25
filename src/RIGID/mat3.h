@@ -199,6 +199,30 @@ inline SymMat3 inv_sym(const SymMat3 &A)
   return {C00 / det, C01 / det, C02 / det, C11 / det, C12 / det, C22 / det};
 }
 
+struct DChol3 {
+  double d0, d1, d2, m01, m02, m12;
+
+  void invert()
+  {
+    d0 = 1.0 / d0;
+    d1 = 1.0 / d1;
+    d2 = 1.0 / d2;
+    m02 = -m02 - m01 * m12;
+    m01 = -m01;
+    m12 = -m12;
+  }
+};
+
+inline DChol3 dchol(const SymMat3 &A)
+{
+  double m01 = A.d01 / A.d00;
+  double m02 = A.d02 / A.d00;
+  double m12 = (A.d12 - m01 * A.d02) / (A.d11 - m01 * A.d01);
+  double d1 = A.d11 - m01 * A.d01;
+  double d2 = A.d22 - m02 * A.d02 - m12 * (A.d12 - m01 * A.d02);
+  return {A.d00, d1, d2, m01, m02, m12};
+}
+
 inline LTMat3 chol_lower(const SymMat3 &A)
 {
   double l22 = sqrt(A.d22);

@@ -172,12 +172,61 @@ inline LTMat2 chol_lower(const SymMat2 &A) // used
   return {l00, l10, l11};
 }
 
+struct DChol2 {
+  double d0, d1, m01;
+};
+
+inline DChol2 dchol(const SymMat2 &A)
+{
+  double m01 = A.d01 / A.d00;
+  double d1 = A.d11 - m01 * A.d01;
+  return {A.d00, d1, m01};
+}
+
+inline void invert(DChol2 &U)
+{
+  U.d0 = 1.0 / U.d0;
+  U.m01 = -U.m01;
+  U.d1 = 1.0 / U.d1;
+}
+
+inline void lslt_mul(SymMat2 &S, const DChol2 &L)
+{
+  // S <- S * L^T
+  S.d11 += S.d01 * L.m01;
+  S.d01 += S.d00 * L.m01;
+  // <- L * S * L^T
+  S.d11 += S.d01 * L.m01;
+}
+
+inline LTMat2 mul_dl(const LTMat2 &A, const DChol2 &L)
+{
+  double l00 = A.l00 * L.d0;
+  double l11 = A.l11 * L.d1;
+  double l10 = A.l10 * L.d0 + l11 * L.m01;
+  return {l00, l10, l11};
+}
+
+
 inline LTMat2 operator*(const LTMat2 &A, const LTMat2 &B)
 {
   return {A.l00 * B.l00,
           A.l10 * B.l00 + A.l11 * B.l10,
           A.l11 * B.l11};
 }
+
+inline void mul_ltdl(Mat2 &M, const DChol2 &L) // used
+{
+  M(0, 1) += M(0, 0) * L.m01;
+  M(1, 1) += M(1, 0) * L.m01;
+  M(0, 0) *= L.d0;
+  M(1, 0) *= L.d0;
+  M(0, 1) *= L.d1;
+  M(1, 1) *= L.d1;
+  M(0, 0) += M(0, 1) * L.m01;
+  M(1, 0) += M(1, 1) * L.m01;
+}
+
 }
 
 #endif
