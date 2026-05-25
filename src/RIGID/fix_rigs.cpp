@@ -813,7 +813,7 @@ void FixRigs::shake3angle(int ilist)
   Mat2 J;
   J(0, 0) = 0.0;  J(0, 1) = -1.0;
   J(1, 0) = 1.0;  J(1, 1) = 0.0;
-  Mat2 phiS = rc * J * sc;
+  Mat2 phiS = rc * (J * sc);
 
   double skewC = skew(phiC);
   double skewChi = skew(chi);
@@ -960,26 +960,20 @@ void FixRigs::shake4improper(int ilist)
     invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
   }
 
-  SymMat3 M = inv_sym(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03}); 
+  DChol3 lm = inv_dchol(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03}); // TODO: inv_dchol 
 
-  Mat3 RS = mat_dot(R, S);
-  Mat3 chi_mu = inv_sym(rr) * RS;
-  SymMat3 mu_sig_mu = mat_mul_tosym(transpose(RS), chi_mu) + L - ss;
-  SymMat3 sigma = mu_sig_mu;
-
-  Mat3 chi = chi_mu * M;
-
-  LTMat3 sc = chol_lower(sigma);
-  UTMat3 rc = inv_chol_upper(rr);
+  Mat3 chi = mat_dot(R, S); // TODO?
+  UTMat3 rc = inv_chol_upper(rr); // TODO?
+  ut_mul(rc, chi);
+  SymMat3 sigma = diff + sym_dot(chi);
+  u_mul(rc, chi);
+  
+  lslt_mul(sigma, lm); // TODO?
+  LTMat3 sc = mul_dl(chol_lower(sigma),lm);
+  mul_ltdl(chi, lm); // TODO?
+// end pasted section here
 
   Mat3 gamma = cayley_converge(rc, sc, chi, 11, tolerance);
-  // M = 3x3 inverse mass matrix for non-bond pairs (12, 13, 23)
-  // D = M (L - S^T S) M
-  // K = M (S^T R)
-
-  // orthogonal solve: chi, phiC, phiS -> cskew, sskew -> lamda
-
-  // TODO: user will implement the 3x3 orthogonal matrix solve
 
   // force application (improper-specific)
 }

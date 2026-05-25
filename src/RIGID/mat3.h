@@ -115,6 +115,33 @@ struct Mat3 {
   }
 };
 
+
+inline void ut_mul(const UTMat3 &U, Mat3 &M)
+{
+  M(2, 0) = U.u02 * M(0, 0) + U.u12 * M(1, 0) + U.u22 * M(2, 0);
+  M(2, 1) = U.u02 * M(0, 1) + U.u12 * M(1, 1) + U.u22 * M(2, 1);
+  M(2, 2) = U.u02 * M(0, 2) + U.u12 * M(1, 2) + U.u22 * M(2, 2);
+  M(1, 0) = U.u01 * M(0, 0) + U.u11 * M(1, 0);
+  M(1, 1) = U.u01 * M(0, 1) + U.u11 * M(1, 1);
+  M(1, 2) = U.u01 * M(0, 2) + U.u11 * M(1, 2);
+  M(0, 0) *= U.u00;
+  M(0, 1) *= U.u00;
+  M(0, 2) *= U.u00;
+}
+
+inline void u_mul(const UTMat3 &U, Mat3 &M)
+{
+  M(0, 0) = U.u00 * M(0, 0) + U.u01 * M(1, 0) + U.u02 * M(2, 0);
+  M(0, 1) = U.u00 * M(0, 1) + U.u01 * M(1, 1) + U.u02 * M(2, 1);
+  M(0, 2) = U.u00 * M(0, 2) + U.u01 * M(1, 2) + U.u02 * M(2, 2);
+  M(1, 0) = U.u11 * M(1, 0) + U.u12 * M(2, 0);
+  M(1, 1) = U.u11 * M(1, 1) + U.u12 * M(2, 1);
+  M(1, 2) = U.u11 * M(1, 2) + U.u12 * M(2, 2);
+  M(2, 0) *= U.u22;
+  M(2, 1) *= U.u22;
+  M(2, 2) *= U.u22;
+}
+
 inline Mat3 operator*(const SymMat3 &A, const Mat3 &B)
 {
   Mat3 R;

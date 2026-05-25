@@ -39,19 +39,6 @@ struct SymMat2 {
   }
 };
 
-//inline void lslt_mul(SymMat2 &S, const LTMat2 &L)
-//{
-//  // S <- S * L^T
-//  double t01 = S.d01;
-//  S.d01 = S.d00 * L.l10 + S.d01 * L.l11;
-//  S.d00 *= L.l00;
-//  S.d11 = t01 * L.l10 + S.d11 * L.l11;
-//  // <- L * S * L^T
-//  S.d11 = S.d01 * L.l10 + S.d11 * L.l11;
-//  S.d00 *= L.l00;
-//  S.d01 *= L.l00;
-//}
-
 struct Mat2 {
   double d[2][2];
 
