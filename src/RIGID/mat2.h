@@ -20,6 +20,42 @@
 
 namespace RigsMath {
 
+struct LTMat2 {
+  double l00, l10, l11;
+
+  void invert()
+  {
+    double inv00 = 1.0 / l00;
+    double inv11 = 1.0 / l11;
+    double inv10 = -l10 * inv00 * inv11;
+    l00 = inv00; l10 = inv10; l11 = inv11;
+  }
+
+  void mat_vec(const double v[2], double out[2]) const
+  {
+    out[0] = l00 * v[0];
+    out[1] = l10 * v[0] + l11 * v[1];
+  }
+};
+
+struct UTMat2 {
+  double u00, u01, u11;
+
+  void invert()
+  {
+    double inv00 = 1.0 / u00;
+    double inv11 = 1.0 / u11;
+    double inv01 = -u01 * inv00 * inv11;
+    u00 = inv00; u01 = inv01; u11 = inv11;
+  }
+
+  void mat_vec(const double v[2], double out[2]) const
+  {
+    out[0] = u00 * v[0] + u01 * v[1];
+    out[1] = u11 * v[1];
+  }
+};
+
 struct SymMat2 {
   double d00, d01, d11;
 
@@ -28,6 +64,19 @@ struct SymMat2 {
   }
   SymMat2 operator-(const SymMat2 &B) const {
     return {d00 - B.d00, d01 - B.d01, d11 - B.d11};
+  }
+
+  SymMat2& operator*=(const LTMat2 &L)
+  {
+    // S <- S * L^T
+    double i00 = d00 * L.l00;
+    double i01 = d00 * L.l10 + d01 * L.l11;
+    double i11 = d01 * L.l10 + d11 * L.l11;
+    // <- L * S * L^T
+    d00 = L.l00 * i00;
+    d01 = L.l00 * i01;
+    d11 = L.l10 * i01 + L.l11 * i11;
+    return *this;
   }
 };
 
@@ -54,7 +103,55 @@ struct Mat2 {
     R(1, 1) = d[1][0] * B.d01 + d[1][1] * B.d11;
     return R;
   }
+
+  Mat2& operator*=(const LTMat2 &L)
+  {
+    // M <- M * L
+    d[0][0] = d[0][0] * L.l00 + d[0][1] * L.l10;
+    d[0][1] *= L.l11;
+    d[1][0] = d[1][0] * L.l00 + d[1][1] * L.l10;
+    d[1][1] *= L.l11;
+    return *this;
+  }
+
+  Mat2& operator*=(const UTMat2 &U)
+  {
+    // M <- M * U
+    d[0][1] = d[0][0] * U.u01 + d[0][1] * U.u11;
+    d[0][0] *= U.u00;
+    d[1][1] = d[1][0] * U.u01 + d[1][1] * U.u11;
+    d[1][0] *= U.u00;
+    return *this;
+  }
+  
+  // M <- (U^T U)^{-1} M  via forward/back substitution with U:
+  Mat2& operator/=(const UTMat2 &U) { // 
+    for (int j = 0; j < 2; j++) {
+      d[0][j] /= U.u00;
+      d[1][j] -= U.u01 * d[0][j];
+      d[1][j] /= U.u11;
+    }
+    for (int j = 0; j < 2; j++) {
+      d[1][j] /= U.u11;
+      d[0][j] -= U.u01 * d[1][j];
+      d[0][j] /= U.u00;
+    }
+    return *this;
+  }
 };
+
+inline void chol_left_invmult(const UTMat2 &U, Mat2 &M)
+{
+  for (int j = 0; j < 2; j++) {
+    M(0, j) /= U.u00;
+    M(1, j) = (M(1, j) - U.u01 * M(0, j)) / U.u11;
+  }
+  for (int j = 0; j < 2; j++) {
+    M(1, j) /= U.u11;
+    M(0, j) = (M(0, j) - U.u01 * M(1, j)) / U.u00;
+  }
+}
+
 
 inline Mat2 operator*(const SymMat2 &A, const Mat2 &B)
 {
@@ -128,42 +225,6 @@ inline void sym_mat_vec(const SymMat2 &M, const double *v1, const double *v2,
   Mv2[1] = M.d01 * v1[1] + M.d11 * v2[1];
   Mv2[2] = M.d01 * v1[2] + M.d11 * v2[2];
 }
-
-struct UTMat2 {
-  double u00, u01, u11;
-
-  void invert()
-  {
-    double inv00 = 1.0 / u00;
-    double inv11 = 1.0 / u11;
-    double inv01 = -u01 * inv00 * inv11;
-    u00 = inv00; u01 = inv01; u11 = inv11;
-  }
-
-  void mat_vec(const double v[2], double out[2]) const
-  {
-    out[0] = u00 * v[0] + u01 * v[1];
-    out[1] = u11 * v[1];
-  }
-};
-
-struct LTMat2 {
-  double l00, l10, l11;
-
-  void invert()
-  {
-    double inv00 = 1.0 / l00;
-    double inv11 = 1.0 / l11;
-    double inv10 = -l10 * inv00 * inv11;
-    l00 = inv00; l10 = inv10; l11 = inv11;
-  }
-
-  void mat_vec(const double v[2], double out[2]) const
-  {
-    out[0] = l00 * v[0];
-    out[1] = l10 * v[0] + l11 * v[1];
-  }
-};
 
 inline UTMat2 operator*(const UTMat2 &U, const UTMat2 &V)
 {
@@ -252,19 +313,6 @@ inline void chol_sandwich(const UTMat2 &U, SymMat2 &S)
   S.d00 = d00;
   S.d01 = d01;
   S.d11 = d11;
-}
-
-// M <- (U^T U)^{-1} M  via forward/back substitution with U
-inline void chol_left_invmult(const UTMat2 &U, Mat2 &M)
-{
-  for (int j = 0; j < 2; j++) {
-    M(0, j) /= U.u00;
-    M(1, j) = (M(1, j) - U.u01 * M(0, j)) / U.u11;
-  }
-  for (int j = 0; j < 2; j++) {
-    M(1, j) /= U.u11;
-    M(0, j) = (M(0, j) - U.u01 * M(1, j)) / U.u00;
-  }
 }
 
 // M <- M L^T L  (right-multiply by product mu * mu^T where L = mu^T)
