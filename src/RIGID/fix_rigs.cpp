@@ -968,6 +968,18 @@ void FixRigs::shake4improper(int ilist)
   lamda += chi;
 
   // force application (improper-specific)
+  Mat43 L_lam = improper_L_lambda(lamda);
+  L_lam *= R;
+
+  if (i0 < nlocal)
+    for (int i = 0; i < 3; i++) f[i0][i] += L_lam(0, i); 
+  if (i1 < nlocal)
+    for (int i = 0; i < 3; i++) f[i1][i] += L_lam(1, i); 
+  if (i2 < nlocal)
+    for (int i = 0; i < 3; i++) f[i2][i] += L_lam(2, i); 
+  if (i3 < nlocal)
+    for (int i = 0; i < 3; i++) f[i3][i] += L_lam(3, i); 
+
 }
 
 /* ----------------------------------------------------------------------
@@ -1053,4 +1065,15 @@ void FixRigs::shake4dihedral(int ilist)
   lamda += chi;
 
   // force application (dihedral-specific)
+  Mat43 L_lam = dihedral_L_lambda(lamda);
+  L_lam *= R;
+
+  if (i0 < nlocal)
+    for (int i = 0; i < 3; i++) f[i0][i] += L_lam(0, i); 
+  if (i1 < nlocal)
+    for (int i = 0; i < 3; i++) f[i1][i] += L_lam(1, i); 
+  if (i2 < nlocal)
+    for (int i = 0; i < 3; i++) f[i2][i] += L_lam(2, i); 
+  if (i3 < nlocal)
+    for (int i = 0; i < 3; i++) f[i3][i] += L_lam(3, i); 
 }

@@ -314,6 +314,48 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
   return gamma;
 }
 
+struct Mat43 {
+  double d[4][3];
+
+  double &operator()(int i, int j) { return d[i][j]; }
+  double operator()(int i, int j) const { return d[i][j]; }
+
+  double *operator()(int i) { return d[i]; }
+  const double *operator()(int i) const { return d[i]; }
+
+  Mat43 &operator*=(const Mat3 &B) {
+    for (int i = 0; i < 4; i++) {
+      double row[3] = {d[i][0], d[i][1], d[i][2]};
+      for (int j = 0; j < 3; j++) {
+        d[i][j] = row[0] * B(0, j) + row[1] * B(1, j) + row[2] * B(2, j);
+      }
+    }
+    return *this;
+  }
+};
+
+Mat43 improper_L_lambda(const Mat3 &lam) {
+  Mat43 L;
+  L(0,0) = L(0,1) = L(0,2) = 0.0;
+  for (int i = 0; i < 3; i++) {
+    L(0,0) += lam(i,0); L(0,1) += lam(i,1); L(0,2) += lam(i,2);
+    L(i+1,0) = -lam(i,0);
+    L(i+1,1) = -lam(i,1);
+    L(i+1,2) = -lam(i,2);
+  }
+  return L;
+}
+
+Mat43 dihedral_L_lambda(const Mat3 &lam) {
+  Mat43 L;
+  L(0,0) = L(0,1) = 1.0;  L(0,2) =  0.0;
+  L(1,0) = -1.0; L(1,1) = L(1,2) =  0.0;
+  L(2,0) = 0.0;  L(2,1) = L(2,2) = -1.0;
+  L(3,0) = L(3,1) = 0.0;  L(3,2) =  1.0;
+  L *= lam;
+  return L;
+}
+
 }
 
 #endif
