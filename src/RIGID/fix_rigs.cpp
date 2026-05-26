@@ -24,6 +24,8 @@
 #include "error.h"
 #include "force.h"
 #include "improper.h"
+#include "mat2.h"
+#include "mat3.h"
 #include "math_const.h"
 #include "memory.h"
 #include "molecule.h"
@@ -41,8 +43,7 @@ FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
     rigs_dihedral_distance(nullptr),
-    rigs_L2(nullptr), rigs_lm2(nullptr), rigs_L3(nullptr), rigs_lm3(nullptr),
-    rigs_maxlist(0)
+    rigs_L(nullptr), rigs_lm(nullptr), rigs_maxlist(0)
 {
   restart_peratom = 1;
   atom->add_callback(Atom::RESTART);
@@ -56,10 +57,8 @@ FixRigs::~FixRigs()
   delete[] rigs_angle_distance;
   delete[] rigs_improper_distance;
   delete[] rigs_dihedral_distance;
-  memory->destroy(rigs_L2);
-  memory->destroy(rigs_lm2);
-  memory->destroy(rigs_L3);
-  memory->destroy(rigs_lm3);
+  memory->destroy(rigs_L);
+  memory->destroy(rigs_lm);
 }
 
 void FixRigs::post_constructor()
@@ -769,26 +768,26 @@ void FixRigs::pre_neighbor()
 void FixRigs::prebuild_matrices()
 {
   if (nlist > rigs_maxlist) {
-    memory->destroy(rigs_L2);
-    memory->destroy(rigs_lm2);
-    memory->destroy(rigs_L3);
-    memory->destroy(rigs_lm3);
+    memory->destroy(rigs_L);
+    memory->destroy(rigs_lm);
     rigs_maxlist = nlist;
-    memory->create(rigs_L2, rigs_maxlist, "rigs:rigs_L2");
-    memory->create(rigs_lm2, rigs_maxlist, "rigs:rigs_lm2");
-    memory->create(rigs_L3, rigs_maxlist, "rigs:rigs_L3");
-    memory->create(rigs_lm3, rigs_maxlist, "rigs:rigs_lm3");
+    memory->create(rigs_L, rigs_maxlist, 6, "rigs:rigs_L");
+    memory->create(rigs_lm, rigs_maxlist, 6, "rigs:rigs_lm");
   }
 
   for (int ilist = 0; ilist < nlist; ilist++) {
     int m = list[ilist];
+    double *L = rigs_L[ilist];
+    double *lm = rigs_lm[ilist];
 
     if (shake_flag[m] == 1) {
       double bond1 = bond_distance[shake_type[m][0]];
       double bond2 = bond_distance[shake_type[m][1]];
       double bond12 = rigs_angle[shake_type[m][2]];
 
-      rigs_L2[ilist] = {bond1 * bond1, bond12, bond2 * bond2};
+      L[0] = bond1 * bond1;
+      L[1] = bond12;
+      L[2] = bond2 * bond2;
 
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
@@ -803,18 +802,22 @@ void FixRigs::prebuild_matrices()
         invmass01 = invmass0 + 1.0 / mass[type[i1]];
         invmass02 = invmass0 + 1.0 / mass[type[i2]];
       }
-      rigs_lm2[ilist] = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+      DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+      lm[0] = dc.d0;
+      lm[1] = dc.d1;
+      lm[2] = dc.m01;
 
     } else if (shake_flag[m] == 5) {
       double bond1 = bond_distance[shake_type[m][0]];
       double bond2 = bond_distance[shake_type[m][1]];
       double bond3 = bond_distance[shake_type[m][2]];
-      double L01 = rigs_angle[rigs_type[m][0]];
-      double L02 = rigs_angle[rigs_type[m][1]];
-      double L12 = rigs_angle[rigs_type[m][2]];
 
-      rigs_L3[ilist] = {bond1 * bond1, L01, L02,
-                        bond2 * bond2, L12, bond3 * bond3};
+      L[0] = bond1 * bond1;
+      L[1] = rigs_angle[rigs_type[m][0]];
+      L[2] = rigs_angle[rigs_type[m][1]];
+      L[3] = bond2 * bond2;
+      L[4] = rigs_angle[rigs_type[m][2]];
+      L[5] = bond3 * bond3;
 
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
@@ -832,15 +835,25 @@ void FixRigs::prebuild_matrices()
         mu02 = mu0 + 1.0 / mass[type[i2]];
         mu03 = mu0 + 1.0 / mass[type[i3]];
       }
-      rigs_lm3[ilist] = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+      DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+      lm[0] = dc.d0;
+      lm[1] = dc.d1;
+      lm[2] = dc.d2;
+      lm[3] = dc.m01;
+      lm[4] = dc.m02;
+      lm[5] = dc.m12;
 
     } else if (shake_flag[m] == 6) {
       double bond1 = bond_distance[shake_type[m][0]];
       double bond2 = bond_distance[shake_type[m][1]];
       double bond3 = bond_distance[shake_type[m][2]];
 
-      rigs_L3[ilist] = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
-                        bond2 * bond2, bond2 * bond3, bond3 * bond3};
+      L[0] = bond1 * bond1;
+      L[1] = bond1 * bond2;
+      L[2] = bond1 * bond3;
+      L[3] = bond2 * bond2;
+      L[4] = bond2 * bond3;
+      L[5] = bond3 * bond3;
 
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
@@ -860,7 +873,13 @@ void FixRigs::prebuild_matrices()
         mu02 = mu0 + mu2;
         mu23 = mu2 + 1.0 / mass[type[i3]];
       }
-      rigs_lm3[ilist] = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+      DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+      lm[0] = dc.d0;
+      lm[1] = dc.d1;
+      lm[2] = dc.d2;
+      lm[3] = dc.m01;
+      lm[4] = dc.m02;
+      lm[5] = dc.m12;
     }
   }
 }
@@ -914,7 +933,7 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
 
-  SymMat2 L = rigs_L2[ilist];
+  SymMat2 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2]};
   SymMat2 diff = L - ss;
 
   Mat2 chi;
@@ -923,7 +942,7 @@ void FixRigs::shake3angle(int ilist)
   chi(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
   chi(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
-  DChol2 lm = rigs_lm2[ilist];
+  DChol2 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2]};
 
   UTMat2 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
@@ -1053,10 +1072,12 @@ void FixRigs::shake4improper(int ilist)
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S); 
 
-  SymMat3 L = rigs_L3[ilist];
+  SymMat3 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2],
+               rigs_L[ilist][3], rigs_L[ilist][4], rigs_L[ilist][5]};
   SymMat3 diff = L - ss;
 
-  DChol3 lm = rigs_lm3[ilist];
+  DChol3 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2],
+               rigs_lm[ilist][3], rigs_lm[ilist][4], rigs_lm[ilist][5]};
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
@@ -1066,10 +1087,10 @@ void FixRigs::shake4improper(int ilist)
   lslt_mul(sigma, lm);
   LTMat3 sc = mul_dl(chol_lower(sigma),lm);
   mul_ltdl(chi, lm);
+
   Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
   lamda += chi;
 
-  // force application (improper-specific)
   Mat43 L_lam = improper_L_lambda(lamda);
   L_lam *= R;
 
@@ -1114,10 +1135,12 @@ void FixRigs::shake4dihedral(int ilist)
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
 
-  SymMat3 L = rigs_L3[ilist];
+  SymMat3 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2],
+               rigs_L[ilist][3], rigs_L[ilist][4], rigs_L[ilist][5]};
   SymMat3 diff = L - ss;
 
-  DChol3 lm = rigs_lm3[ilist];
+  DChol3 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2],
+               rigs_lm[ilist][3], rigs_lm[ilist][4], rigs_lm[ilist][5]};
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
