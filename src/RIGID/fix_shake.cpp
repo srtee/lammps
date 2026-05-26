@@ -3043,20 +3043,22 @@ void FixShake::stats()
   double delx,dely,delz;
   double r,r1,r2,r3,angle;
 
-  // zero out accumulators
+  // zero out accumulators (skip if called from FixRigs, which does its own zeroing)
 
   int nb = atom->nbondtypes + 1;
   int na = atom->nangletypes + 1;
 
-  for (int i = 0; i < nb; i++) {
-    b_count[i] = 0;
-    b_ave[i] = b_max[i] = 0.0;
-    b_min[i] = BIG;
-  }
-  for (int i = 0; i < na; i++) {
-    a_count[i] = 0;
-    a_ave[i] = a_max[i] = 0.0;
-    a_min[i] = BIG;
+  if (!rigsflag) {
+    for (int i = 0; i < nb; i++) {
+      b_count[i] = 0;
+      b_ave[i] = b_max[i] = 0.0;
+      b_min[i] = BIG;
+    }
+    for (int i = 0; i < na; i++) {
+      a_count[i] = 0;
+      a_ave[i] = a_max[i] = 0.0;
+      a_min[i] = BIG;
+    }
   }
 
   // log stats for each bond & angle

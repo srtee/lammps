@@ -20,20 +20,24 @@
 #include "atom_vec.h"
 #include "comm.h"
 #include "dihedral.h"
+#include "domain.h"
 #include "error.h"
 #include "force.h"
 #include "improper.h"
 #include "mat2.h"
 #include "mat3.h"
+#include "math_const.h"
 #include "memory.h"
 #include "molecule.h"
 #include "modify.h"
 #include "update.h"
 
 #include <cmath>
+#include <cstdio>
 
 using namespace LAMMPS_NS;
 using namespace RigsMath;
+using namespace MathConst;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
@@ -209,12 +213,12 @@ void FixRigs::post_constructor()
       tagint a1 = shake_atom[i][1];
       tagint a2 = shake_atom[i][2];
       tagint a3_atom = shake_atom[i][3];
-      int n = angletype_findset(i, a1, a2, 0);
-      if (n > 0 && angle_flag[n]) nangle_found++;
-      n = angletype_findset(i, a1, a3_atom, 0);
-      if (n > 0 && angle_flag[n]) nangle_found++;
-      n = angletype_findset(i, a2, a3_atom, 0);
-      if (n > 0 && angle_flag[n]) nangle_found++;
+      int n1 = angletype_findset(i, a1, a2, 0);
+      int n2 = angletype_findset(i, a1, a3_atom, 0);
+      int n3 = angletype_findset(i, a2, a3_atom, 0);
+      if (n1 > 0 && angle_flag[n1]) nangle_found++;
+      if (n2 > 0 && angle_flag[n2]) nangle_found++;
+      if (n3 > 0 && angle_flag[n3]) nangle_found++;
     }
     if (nangle_found == 3) {
       shake_flag[i] = 5;
@@ -232,6 +236,22 @@ void FixRigs::post_constructor()
     if (shake_flag[i] == 5) {
       fill_improper_types(i);
     }
+  }
+
+  // print updated cluster counts after improper upgrade
+  {
+    bigint count4 = 0, count5 = 0;
+    for (i = 0; i < nlocal; i++) {
+      if (shake_flag[i] == 4 && shake_atom[i][0] == tag[i]) count4++;
+      if (shake_flag[i] == 5 && shake_atom[i][0] == tag[i]) count5++;
+    }
+    bigint tmp4, tmp5;
+    MPI_Allreduce(&count4, &tmp4, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    MPI_Allreduce(&count5, &tmp5, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0)
+      utils::logmesg(lmp, "  {:>8} = # of remaining size 4 clusters\n"
+                     "  {:>8} = # of upgraded improper clusters\n",
+                     tmp4, tmp5);
   }
 
   // propagate flag 5 to local partner atoms in upgraded clusters
@@ -676,9 +696,17 @@ void FixRigs::init()
         break;
       }
       if (shake_flag[m] == 5 && rigs_type[m][1] == i) {
-        // need to determine which two bonds this angle connects
-        // for improper cluster, angle between partners j and k
-        // connects bond j and bond k through center
+        // angle between partner 1 and partner 3
+        // connects bond 0 (center-partner1) and bond 2 (center-partner3)
+        bond1_type = MIN(shake_type[m][0], shake_type[m][2]);
+        bond2_type = MAX(shake_type[m][0], shake_type[m][2]);
+        break;
+      }
+      if (shake_flag[m] == 5 && rigs_type[m][2] == i) {
+        // angle between partner 2 and partner 3
+        // connects bond 1 (center-partner2) and bond 2 (center-partner3)
+        bond1_type = MIN(shake_type[m][1], shake_type[m][2]);
+        bond2_type = MAX(shake_type[m][1], shake_type[m][2]);
         break;
       }
       if (shake_flag[m] == 6 && rigs_type[m][0] == i) {
@@ -709,6 +737,7 @@ void FixRigs::init()
     double ang = force->angle->equilibrium_angle(i);
     double rsq = b1*b1 + b2*b2 - 2.0*b1*b2*cos(ang);
     rigs_angle_distance[i] = sqrt(rsq);
+    rigs_angle[i] = b1 * b2 * cos(ang);
   }
 
   // compute rigs_improper_distance: non-bond pair distance from improper type
@@ -730,7 +759,9 @@ void FixRigs::init()
 void FixRigs::shake4(int ilist)
 {
   int m = list[ilist];
-  if (shake_flag[m] == 6) {
+  if (shake_flag[m] == 5) {
+    shake4improper(ilist);
+  } else if (shake_flag[m] == 6) {
     error->one(FLERR,"RIGS dihedral constraint solver not yet implemented");
   } else {
     FixShake::shake4(ilist);
@@ -756,13 +787,13 @@ void FixRigs::shake3angle(int ilist)
   
   double invmass0, invmass01, invmass02;
   if (rmass) {
-    invmass0 = dtfsq / rmass[i0];
-    invmass01 = invmass0 + dtfsq / rmass[i1];
-    invmass02 = invmass0 + dtfsq / rmass[i2];
+    invmass0 = 1.0 / rmass[i0];
+    invmass01 = invmass0 + 1.0 / rmass[i1];
+    invmass02 = invmass0 + 1.0 / rmass[i2];
   } else {
-    invmass0 = dtfsq / mass[type[i0]];
-    invmass01 = invmass0 + dtfsq / mass[type[i1]];
-    invmass02 = invmass0 + dtfsq / mass[type[i2]];
+    invmass0 = 1.0 / mass[type[i0]];
+    invmass01 = invmass0 + 1.0 / mass[type[i1]];
+    invmass02 = invmass0 + 1.0 / mass[type[i2]];
   }
 
   double r01[3];
@@ -827,6 +858,10 @@ void FixRigs::shake3angle(int ilist)
   double lamda01 = chi(0, 0) + cskew * phiC(0, 0) + sskew * phiS(0, 0);
   double lamda02 = chi(1, 1) + cskew * phiC(1, 1);
   double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS(0, 1);
+
+  lamda01 /= dtfsq;
+  lamda02 /= dtfsq;
+  lamda12 /= dtfsq;
 
   if (i0 < nlocal) {
     f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
@@ -929,27 +964,32 @@ void FixRigs::shake4improper(int ilist)
 
   // Gram matrices
 
-  SymMat3 rr = sym_dot(R);
-  SymMat3 ss = sym_dot(S); 
+  SymMat3 rr = mmt(R);
+  SymMat3 ss = mmt(S); 
 
-  SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
-               bond2 * bond2, bond2 * bond3, bond3 * bond3};
+  double L00 = bond1 * bond1;
+  double L11 = bond2 * bond2;
+  double L22 = bond3 * bond3;
+  double L01 = rigs_angle[rigs_type[m][0]];
+  double L02 = rigs_angle[rigs_type[m][1]];
+  double L12 = rigs_angle[rigs_type[m][2]];
 
+  SymMat3 L = {L00, L01, L02, L11, L12, L22};
   SymMat3 diff = L - ss;
 
   // mass matrix
 
   double mu0, mu01, mu02, mu03;
   if (rmass) {
-    mu0 = dtfsq / rmass[i0];
-    mu01 = mu0 + dtfsq / rmass[i1];
-    mu02 = mu0 + dtfsq / rmass[i2];
-    mu03 = mu0 + dtfsq / rmass[i3];
+    mu0 = 1.0 / rmass[i0];
+    mu01 = mu0 + 1.0 / rmass[i1];
+    mu02 = mu0 + 1.0 / rmass[i2];
+    mu03 = mu0 + 1.0 / rmass[i3];
   } else {
-    mu0 = dtfsq / mass[type[i0]];
-    mu01 = mu0 + dtfsq / mass[type[i1]];
-    mu02 = mu0 + dtfsq / mass[type[i2]];
-    mu03 = mu0 + dtfsq / mass[type[i3]];
+    mu0 = 1.0 / mass[type[i0]];
+    mu01 = mu0 + 1.0 / mass[type[i1]];
+    mu02 = mu0 + 1.0 / mass[type[i2]];
+    mu03 = mu0 + 1.0 / mass[type[i3]];
   }
 
   DChol3 lm = inv_dchol(SymMat3 {mu01, mu0, mu0, mu02, mu0, mu03});
@@ -957,14 +997,12 @@ void FixRigs::shake4improper(int ilist)
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
-  SymMat3 sigma = diff + sym_dot(chi);
+  SymMat3 sigma = diff + mtm(chi);
   u_mul(rc, chi);
-  
   lslt_mul(sigma, lm);
   LTMat3 sc = mul_dl(chol_lower(sigma),lm);
   mul_ltdl(chi, lm);
-
-  Mat3 lamda = cayley_converge(rc, sc, chi, 11, tolerance);
+  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
   lamda += chi;
 
   // force application (improper-specific)
@@ -972,14 +1010,13 @@ void FixRigs::shake4improper(int ilist)
   L_lam *= R;
 
   if (i0 < nlocal)
-    for (int i = 0; i < 3; i++) f[i0][i] += L_lam(0, i); 
+    for (int i = 0; i < 3; i++) f[i0][i] -= L_lam(0, i) / dtfsq;  
   if (i1 < nlocal)
-    for (int i = 0; i < 3; i++) f[i1][i] += L_lam(1, i); 
+    for (int i = 0; i < 3; i++) f[i1][i] -= L_lam(1, i) / dtfsq;  
   if (i2 < nlocal)
-    for (int i = 0; i < 3; i++) f[i2][i] += L_lam(2, i); 
+    for (int i = 0; i < 3; i++) f[i2][i] -= L_lam(2, i) / dtfsq;  
   if (i3 < nlocal)
-    for (int i = 0; i < 3; i++) f[i3][i] += L_lam(3, i); 
-
+    for (int i = 0; i < 3; i++) f[i3][i] -= L_lam(3, i) / dtfsq;
 }
 
 /* ----------------------------------------------------------------------
@@ -1021,8 +1058,8 @@ void FixRigs::shake4dihedral(int ilist)
 
   // Gram matrices
 
-  SymMat3 rr = sym_dot(R);
-  SymMat3 ss = sym_dot(S);
+  SymMat3 rr = mmt(R);
+  SymMat3 ss = mmt(S);
 
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};
@@ -1036,17 +1073,17 @@ void FixRigs::shake4dihedral(int ilist)
 
   double mu0, mu2, mu10, mu02, mu23;
   if (rmass) {
-    mu0 = dtfsq / rmass[i0];
-    mu2 = dtfsq / rmass[i2];
-    mu10 = dtfsq / rmass[i1] + mu0;
+    mu0 = 1.0 / rmass[i0];
+    mu2 = 1.0 / rmass[i2];
+    mu10 = 1.0 / rmass[i1] + mu0;
     mu02 = mu0 + mu2;
-    mu23 = mu2 + dtfsq / rmass[i3];
+    mu23 = mu2 + 1.0 / rmass[i3];
   } else {
-    mu0 = dtfsq / mass[type[i0]];
-    mu2 = dtfsq / mass[type[i2]];
-    mu10 = dtfsq / mass[type[i1]] + mu0;
+    mu0 = 1.0 / mass[type[i0]];
+    mu2 = 1.0 / mass[type[i2]];
+    mu10 = 1.0 / mass[type[i1]] + mu0;
     mu02 = mu0 + mu2;
-    mu23 = mu2 + dtfsq / mass[type[i3]];
+    mu23 = mu2 + 1.0 / mass[type[i3]];
   }
 
   DChol3 lm = inv_dchol(SymMat3 {mu10, mu0, 0, mu02, mu2, mu23});
@@ -1054,14 +1091,14 @@ void FixRigs::shake4dihedral(int ilist)
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
-  SymMat3 sigma = diff + sym_dot(chi);
+  SymMat3 sigma = diff + mtm(chi);
   u_mul(rc, chi);
   
   lslt_mul(sigma, lm);
   LTMat3 sc = mul_dl(chol_lower(sigma),lm);
   mul_ltdl(chi, lm);
 
-  Mat3 lamda = cayley_converge(rc, sc, chi, 11, tolerance);
+  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
   lamda += chi;
 
   // force application (dihedral-specific)
@@ -1069,11 +1106,152 @@ void FixRigs::shake4dihedral(int ilist)
   L_lam *= R;
 
   if (i0 < nlocal)
-    for (int i = 0; i < 3; i++) f[i0][i] += L_lam(0, i); 
+    for (int i = 0; i < 3; i++) f[i0][i] += dtfsq * L_lam(0, i); 
   if (i1 < nlocal)
-    for (int i = 0; i < 3; i++) f[i1][i] += L_lam(1, i); 
+    for (int i = 0; i < 3; i++) f[i1][i] += dtfsq * L_lam(1, i); 
   if (i2 < nlocal)
-    for (int i = 0; i < 3; i++) f[i2][i] += L_lam(2, i); 
+    for (int i = 0; i < 3; i++) f[i2][i] += dtfsq * L_lam(2, i); 
   if (i3 < nlocal)
-    for (int i = 0; i < 3; i++) f[i3][i] += L_lam(3, i); 
+    for (int i = 0; i < 3; i++) f[i3][i] += dtfsq * L_lam(3, i); 
+}
+
+void FixRigs::min_post_force(int vflag)
+{
+  FixShake::min_post_force(vflag);
+
+  int atom2, atom3, atom4;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (shake_flag[i] != 5) continue;
+    if (shake_atom[i][0] != atom->tag[i]) continue;
+
+    atom2 = atom->map(shake_atom[i][1]);
+    atom3 = atom->map(shake_atom[i][2]);
+    atom4 = atom->map(shake_atom[i][3]);
+    if (atom2 == -1 || atom3 == -1 || atom4 == -1)
+      error->one(FLERR, "RIGS atoms {} {} {} missing on proc {} at step {}{}",
+                 shake_atom[i][1], shake_atom[i][2], shake_atom[i][3],
+                 comm->me, update->ntimestep, utils::errorurl(5));
+    atom2 = domain->closest_image(i, atom2);
+    atom3 = domain->closest_image(i, atom3);
+    atom4 = domain->closest_image(i, atom4);
+
+    if (rigs_type[i][0] > 0)
+      bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
+    if (rigs_type[i][1] > 0)
+      bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
+    if (rigs_type[i][2] > 0)
+      bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
+  }
+}
+
+void FixRigs::stats()
+{
+  // zero out accumulators here so FixShake::stats() can skip zeroing
+  int nb = atom->nbondtypes + 1;
+  int na = atom->nangletypes + 1;
+  static constexpr double BIG = 1.0e20;
+  for (int i = 0; i < nb; i++) {
+    b_count[i] = 0;
+    b_ave[i] = b_max[i] = 0.0;
+    b_min[i] = BIG;
+  }
+  for (int i = 0; i < na; i++) {
+    a_count[i] = 0;
+    a_ave[i] = a_max[i] = 0.0;
+    a_min[i] = BIG;
+  }
+
+  // accumulate angle stats for improper clusters (flag 5)
+  // rigs_type[m][0] = angle between partners 1-2
+  // rigs_type[m][1] = angle between partners 1-3
+  // rigs_type[m][2] = angle between partners 2-3
+
+  double **x = atom->x;
+  int nlocal = atom->nlocal;
+
+  for (int ii = 0; ii < nlist; ++ii) {
+    int i = list[ii];
+    if (shake_flag[i] != 5) continue;
+
+    int i0 = closest_list[ii][0];
+    int i1 = closest_list[ii][1];
+    int i2 = closest_list[ii][2];
+    int i3 = closest_list[ii][3];
+
+    // angle between partners 1 and 2 (centered on atom 0)
+    if (rigs_type[i][0] > 0) {
+      double r01 = 0.0, r02 = 0.0, r12 = 0.0;
+      for (int d = 0; d < 3; d++) {
+        double d01 = x[i0][d] - x[i1][d];
+        double d02 = x[i0][d] - x[i2][d];
+        double d12 = x[i1][d] - x[i2][d];
+        r01 += d01 * d01;
+        r02 += d02 * d02;
+        r12 += d12 * d12;
+      }
+      r01 = sqrt(r01); r02 = sqrt(r02); r12 = sqrt(r12);
+      double ang = acos((r01*r01 + r02*r02 - r12*r12) / (2.0*r01*r02)) * (180.0/MY_PI);
+      int m = rigs_type[i][0];
+      int n = 0;
+      if (i0 < nlocal) n++;
+      if (i1 < nlocal) n++;
+      if (i2 < nlocal) n++;
+      a_count[m] += n;
+      a_ave[m] += n * ang;
+      a_max[m] = MAX(a_max[m], ang);
+      a_min[m] = MIN(a_min[m], ang);
+    }
+
+    // angle between partners 1 and 3
+    if (rigs_type[i][1] > 0) {
+      double r01 = 0.0, r03 = 0.0, r13 = 0.0;
+      for (int d = 0; d < 3; d++) {
+        double d01 = x[i0][d] - x[i1][d];
+        double d03 = x[i0][d] - x[i3][d];
+        double d13 = x[i1][d] - x[i3][d];
+        r01 += d01 * d01;
+        r03 += d03 * d03;
+        r13 += d13 * d13;
+      }
+      r01 = sqrt(r01); r03 = sqrt(r03); r13 = sqrt(r13);
+      double ang = acos((r01*r01 + r03*r03 - r13*r13) / (2.0*r01*r03)) * (180.0/MY_PI);
+      int m = rigs_type[i][1];
+      int n = 0;
+      if (i0 < nlocal) n++;
+      if (i1 < nlocal) n++;
+      if (i3 < nlocal) n++;
+      a_count[m] += n;
+      a_ave[m] += n * ang;
+      a_max[m] = MAX(a_max[m], ang);
+      a_min[m] = MIN(a_min[m], ang);
+    }
+
+    // angle between partners 2 and 3
+    if (rigs_type[i][2] > 0) {
+      double r02 = 0.0, r03 = 0.0, r23 = 0.0;
+      for (int d = 0; d < 3; d++) {
+        double d02 = x[i0][d] - x[i2][d];
+        double d03 = x[i0][d] - x[i3][d];
+        double d23 = x[i2][d] - x[i3][d];
+        r02 += d02 * d02;
+        r03 += d03 * d03;
+        r23 += d23 * d23;
+      }
+      r02 = sqrt(r02); r03 = sqrt(r03); r23 = sqrt(r23);
+      double ang = acos((r02*r02 + r03*r03 - r23*r23) / (2.0*r02*r03)) * (180.0/MY_PI);
+      int m = rigs_type[i][2];
+      int n = 0;
+      if (i0 < nlocal) n++;
+      if (i2 < nlocal) n++;
+      if (i3 < nlocal) n++;
+      a_count[m] += n;
+      a_ave[m] += n * ang;
+      a_max[m] = MAX(a_max[m], ang);
+      a_min[m] = MIN(a_min[m], ang);
+    }
+  }
+
+  // call base class which will accumulate bond/flag-1 angle stats, reduce, and print
+  FixShake::stats();
 }

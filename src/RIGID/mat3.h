@@ -107,7 +107,7 @@ inline void ut_mul(const UTMat3 &U, Mat3 &M)
   for (int j = 0; j < 3; j++) {
     M(2, j) = U.u02 * M(0, j) + U.u12 * M(1, j) + U.u22 * M(2, j);
     M(1, j) = U.u01 * M(0, j) + U.u11 * M(1, j);
-    M(0, j) *= U.u00;
+    M(0, j) = U.u00 * M(0, j);
   }
 }
 
@@ -116,7 +116,7 @@ inline void u_mul(const UTMat3 &U, Mat3 &M)
   for (int j = 0; j < 3; j++) {
     M(0, j) = U.u00 * M(0, j) + U.u01 * M(1, j) + U.u02 * M(2, j);
     M(1, j) = U.u11 * M(1, j) + U.u12 * M(2, j);
-    M(2, j) *= U.u22;
+    M(2, j) = U.u22 * M(2, j);
   }
 }
 
@@ -124,7 +124,7 @@ struct DChol3 {
   double d0, d1, d2, m01, m02, m12;
 };
 
-inline SymMat3 sym_dot(const Mat3 &M) // M^T M
+inline SymMat3 mtm(const Mat3 &M) // M^T M
 {
   return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0) + M(2, 0) * M(2, 0),
            M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1) + M(2, 0) * M(2, 1),
@@ -134,12 +134,22 @@ inline SymMat3 sym_dot(const Mat3 &M) // M^T M
            M(0, 2) * M(0, 2) + M(1, 2) * M(1, 2) + M(2, 2) * M(2, 2)};
 }
 
-inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R^T S
+inline SymMat3 mmt(const Mat3 &M) // M M^T
+{
+  return {M(0, 0) * M(0, 0) + M(0, 1) * M(0, 1) + M(0, 2) * M(0, 2),
+           M(0, 0) * M(1, 0) + M(0, 1) * M(1, 1) + M(0, 2) * M(1, 2),
+           M(0, 0) * M(2, 0) + M(0, 1) * M(2, 1) + M(0, 2) * M(2, 2),
+           M(1, 0) * M(1, 0) + M(1, 1) * M(1, 1) + M(1, 2) * M(1, 2),
+           M(1, 0) * M(2, 0) + M(1, 1) * M(2, 1) + M(1, 2) * M(2, 2),
+           M(2, 0) * M(2, 0) + M(2, 1) * M(2, 1) + M(2, 2) * M(2, 2)};
+}
+
+inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R S^T
 {
   Mat3 QR;
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 3; j++)
-      QR(i, j) = R(0, i) * S(0, j) + R(1, i) * S(1, j) + R(2, i) * S(2, j);
+      QR(i, j) = R(i, 0) * S(j, 0) + R(i, 1) * S(j, 1) + R(i, 2) * S(j, 2);
   return QR;
 }
 
@@ -197,7 +207,7 @@ inline DChol3 inv_dchol(const SymMat3 &A)
   double m02 = A.d02 / A.d00;
   double d1 = A.d11 - m01 * A.d01;
   double d2 = A.d22 - m02 * A.d02 - m12 * (A.d12 - m01 * A.d02);
-  m02 += m01 * m12; // for inverting
+  m02 -= m01 * m12; // U^{-1}_{02} = u01*u12 - u02
   return {1.0/A.d00, 1.0/d1, 1.0/d2, -m01, -m02, -m12};
 }
 
@@ -306,6 +316,13 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
     negSkewGam[2] -= skewChi[2];
     if (normsq(negSkewGam) < tol_sq) break;
     G.mat_vec(negSkewGam, rotvec);
+    double rvsq = normsq(rotvec);
+    if (rvsq > 1.0) {
+      double rv = 1.001*sqrt(rvsq);
+      rotvec[0] /= rv;
+      rotvec[1] /= rv;
+      rotvec[2] /= rv;
+    }
     cayley_rotate(rotvec, scm);
   }
 

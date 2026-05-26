@@ -55,6 +55,8 @@ class FixRigs : public FixShake {
   int bondtype_find(int i, tagint partner, int setflag);
   int impropertype_findset(int i, tagint n0, tagint n1, tagint n2, tagint n3, int setflag);
   int dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag);
+  void min_post_force(int vflag) override;
+  void stats() override;
 };
 
 }    // namespace LAMMPS_NS
