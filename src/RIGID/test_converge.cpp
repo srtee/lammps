@@ -56,6 +56,21 @@ static Mat3 ut_to_mat(const UTMat3 &rc)
   return m;
 }
 
+static void cayley_rotate(const double v[3], Mat3 &A)
+{
+  double w = sqrt(1.0 - normsq(v));
+
+  for (int j = 0; j < 3; j++) {
+    double col[3] = {A(0, j), A(1, j), A(2, j)};
+    double cross1[3], cross2[3];
+    cross(v, col, cross1);
+    cross(v, cross1, cross2);
+    A(0, j) += 2.0 * w * cross1[0] + 2.0 * cross2[0];
+    A(1, j) += 2.0 * w * cross1[1] + 2.0 * cross2[1];
+    A(2, j) += 2.0 * w * cross1[2] + 2.0 * cross2[2];
+  }
+}
+
 int main()
 {
   srand(42);
@@ -71,7 +86,7 @@ int main()
 
       double rv[3] = {eps*randn(), eps*randn(), eps*randn()};
       Mat3 sc_target = lt_to_mat(sc_lt);
-      cayley_rotate(sc_target, rv);
+      cayley_rotate(rv, sc_target);
 
       Mat3 rc_mat = ut_to_mat(rc);
       Mat3 chi;

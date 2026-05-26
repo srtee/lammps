@@ -35,31 +35,40 @@ struct SymMat3 {
 
 struct UTMat3 {
   double u00, u01, u02, u11, u12, u22;
+};
 
-  void invert()
-  {
-    double inv00 = 1.0 / u00;
-    double inv11 = 1.0 / u11;
-    double inv22 = 1.0 / u22;
-    double inv01 = -u01 * inv00 * inv11;
-    double inv12 = -u12 * inv11 * inv22;
-    double inv02 = (u01 * u12 * inv11 - u02) * inv00 * inv22;
-    u00 = inv00; u01 = inv01; u02 = inv02;
-    u11 = inv11; u12 = inv12; u22 = inv22;
-  }
+struct Mat3 {
+  double d[3][3];
 
-  void mat_vec(const double v[3], double out[3]) const
-  {
-    out[0] = u00 * v[0] + u01 * v[1] + u02 * v[2];
-    out[1] = u11 * v[1] + u12 * v[2];
-    out[2] = u22 * v[2];
+  double &operator()(int i, int j) { return d[i][j]; }
+  double operator()(int i, int j) const { return d[i][j]; }
+
+  double *operator()(int i) { return d[i]; }
+  const double *operator()(int i) const { return d[i]; }
+};
+
+struct ColMat3 {
+  double d[3][3];
+
+  double &operator()(int i, int j) { return d[j][i]; }
+  double operator()(int i, int j) const { return d[j][i]; }
+
+  double *operator()(int i) { return d[i]; }
+  const double *operator()(int i) const { return d[i]; }
+
+  operator Mat3() const {
+    Mat3 M;
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        M(i, j) = d[j][i];
+    return M;
   }
 };
 
 struct LTMat3 {
   double l00, l10, l20, l11, l21, l22;
 
-  void invert()
+  void invert() // used: cayley
   {
     double inv00 = 1.0 / l00;
     double inv11 = 1.0 / l11;
@@ -72,90 +81,43 @@ struct LTMat3 {
   }
 
   void mat_vec(const double v[3], double out[3]) const
-  {
+  { // used: cayley
     out[0] = l00 * v[0];
     out[1] = l10 * v[0] + l11 * v[1];
     out[2] = l20 * v[0] + l21 * v[1] + l22 * v[2];
   }
-};
-
-struct Mat3 {
-  double d[3][3];
-
-  double &operator()(int i, int j) { return d[i][j]; }
-  double operator()(int i, int j) const { return d[i][j]; }
-
-  double *operator()(int i) { return d[i]; }
-  const double *operator()(int i) const { return d[i]; }
-
-  void set_row(int i, const double v[3]) {
-    d[i][0] = v[0]; d[i][1] = v[1]; d[i][2] = v[2];
-  }
-  void set_col(int j, const double v[3]) {
-    d[0][j] = v[0]; d[1][j] = v[1]; d[2][j] = v[2];
-  }
-
-  Mat3 operator*(const Mat3 &B) const {
-    Mat3 R;
-    for (int i = 0; i < 3; i++)
-      for (int j = 0; j < 3; j++)
-        R(i, j) = d[i][0] * B(0, j) + d[i][1] * B(1, j) + d[i][2] * B(2, j);
-    return R;
-  }
-
-  Mat3 operator*(const SymMat3 &B) const {
-    Mat3 R;
-    double b[3][3] = {{B.d00, B.d01, B.d02},
-                      {B.d01, B.d11, B.d12},
-                      {B.d02, B.d12, B.d22}};
-    for (int i = 0; i < 3; i++)
-      for (int j = 0; j < 3; j++)
-        R(i, j) = d[i][0] * b[0][j] + d[i][1] * b[1][j] + d[i][2] * b[2][j];
-    return R;
+  operator ColMat3() const {
+    ColMat3 M;
+    M(0, 0) = l00; M(1, 0) = l10; M(2, 0) = l20;
+    M(0, 1) = 0.0; M(1, 1) = l11; M(2, 1) = l21;
+    M(0, 2) = 0.0; M(1, 2) = 0.0; M(2, 2) = l22;
+    return M;
   }
 };
 
-
-inline void ut_mul(const UTMat3 &U, Mat3 &M)
+inline void ut_mul(const UTMat3 &U, Mat3 &M) // used
 {
-  M(2, 0) = U.u02 * M(0, 0) + U.u12 * M(1, 0) + U.u22 * M(2, 0);
-  M(2, 1) = U.u02 * M(0, 1) + U.u12 * M(1, 1) + U.u22 * M(2, 1);
-  M(2, 2) = U.u02 * M(0, 2) + U.u12 * M(1, 2) + U.u22 * M(2, 2);
-  M(1, 0) = U.u01 * M(0, 0) + U.u11 * M(1, 0);
-  M(1, 1) = U.u01 * M(0, 1) + U.u11 * M(1, 1);
-  M(1, 2) = U.u01 * M(0, 2) + U.u11 * M(1, 2);
-  M(0, 0) *= U.u00;
-  M(0, 1) *= U.u00;
-  M(0, 2) *= U.u00;
+  for (int j = 0; j < 3; j++) {
+    M(2, j) = U.u02 * M(0, j) + U.u12 * M(1, j) + U.u22 * M(2, j);
+    M(1, j) = U.u01 * M(0, j) + U.u11 * M(1, j);
+    M(0, j) *= U.u00;
+  }
 }
 
-inline void u_mul(const UTMat3 &U, Mat3 &M)
+inline void u_mul(const UTMat3 &U, Mat3 &M) // used
 {
-  M(0, 0) = U.u00 * M(0, 0) + U.u01 * M(1, 0) + U.u02 * M(2, 0);
-  M(0, 1) = U.u00 * M(0, 1) + U.u01 * M(1, 1) + U.u02 * M(2, 1);
-  M(0, 2) = U.u00 * M(0, 2) + U.u01 * M(1, 2) + U.u02 * M(2, 2);
-  M(1, 0) = U.u11 * M(1, 0) + U.u12 * M(2, 0);
-  M(1, 1) = U.u11 * M(1, 1) + U.u12 * M(2, 1);
-  M(1, 2) = U.u11 * M(1, 2) + U.u12 * M(2, 2);
-  M(2, 0) *= U.u22;
-  M(2, 1) *= U.u22;
-  M(2, 2) *= U.u22;
+  for (int j = 0; j < 3; j++) {
+    M(0, j) = U.u00 * M(0, j) + U.u01 * M(1, j) + U.u02 * M(2, j);
+    M(1, j) = U.u11 * M(1, j) + U.u12 * M(2, j);
+    M(2, j) *= U.u22;
+  }
 }
 
-inline Mat3 operator*(const SymMat3 &A, const Mat3 &B)
-{
-  Mat3 R;
-  for (int j = 0; j < 3; j++)
-    R(0, j) = A.d00 * B(0, j) + A.d01 * B(1, j) + A.d02 * B(2, j);
-  for (int j = 0; j < 3; j++)
-    R(1, j) = A.d01 * B(0, j) + A.d11 * B(1, j) + A.d12 * B(2, j);
-  for (int j = 0; j < 3; j++)
-    R(2, j) = A.d02 * B(0, j) + A.d12 * B(1, j) + A.d22 * B(2, j);
-  return R;
-}
+struct DChol3 {
+  double d0, d1, d2, m01, m02, m12;
+};
 
-// M^T M: multiply transpose of M by M, yielding a symmetric matrix
-inline SymMat3 sym_dot(const Mat3 &M)
+inline SymMat3 sym_dot(const Mat3 &M) // M^T M
 {
   return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0) + M(2, 0) * M(2, 0),
            M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1) + M(2, 0) * M(2, 1),
@@ -165,89 +127,71 @@ inline SymMat3 sym_dot(const Mat3 &M)
            M(0, 2) * M(0, 2) + M(1, 2) * M(1, 2) + M(2, 2) * M(2, 2)};
 }
 
-// S^T R: multiply transpose of S by R
-inline Mat3 mat_dot(const Mat3 &S, const Mat3 &R)
+inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R^T S
 {
   Mat3 QR;
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 3; j++)
-      QR(i, j) = S(0, i) * R(0, j) + S(1, i) * R(1, j) + S(2, i) * R(2, j);
+      QR(i, j) = R(0, i) * S(0, j) + R(1, i) * S(1, j) + R(2, i) * S(2, j);
   return QR;
 }
 
-inline SymMat3 mat_mul_tosym(const Mat3 &A, const Mat3 &B)
+inline void lslt_mul(SymMat3 &S, const DChol3 &L) // used
 {
-  return {A(0, 0) * B(0, 0) + A(0, 1) * B(1, 0) + A(0, 2) * B(2, 0),
-          A(0, 0) * B(0, 1) + A(0, 1) * B(1, 1) + A(0, 2) * B(2, 1),
-          A(0, 0) * B(0, 2) + A(0, 1) * B(1, 2) + A(0, 2) * B(2, 2),
-          A(1, 0) * B(0, 1) + A(1, 1) * B(1, 1) + A(1, 2) * B(2, 1),
-          A(1, 0) * B(0, 2) + A(1, 1) * B(1, 2) + A(1, 2) * B(2, 2),
-          A(2, 0) * B(0, 2) + A(2, 1) * B(1, 2) + A(2, 2) * B(2, 2)};
+  // S <- S L^T
+  S.d02 += S.d01 * L.m12 + S.d00 * L.m02;
+  S.d12 += S.d11 * L.m12 + S.d01 * L.m02;
+  S.d22 += S.d12 * L.m12 + S.d02 * L.m02;
+  S.d01 += S.d00 * L.m01; 
+  S.d11 += S.d01 * L.m01; 
+  S.d12 += S.d02 * L.m01; 
+  // <- L S L^T
+  S.d22 += L.m02 * S.d02 + L.m12 * S.d12;
+  S.d12 += L.m01 * S.d02;
+  S.d11 += L.m01 * S.d01;
 }
 
-inline Mat3 inv(const Mat3 &A)
+LTMat3 mul_dl(const LTMat3 &L, const DChol3 &DL)
 {
-  double a = A(0, 0), b = A(0, 1), c = A(0, 2);
-  double d = A(1, 0), e = A(1, 1), f = A(1, 2);
-  double g = A(2, 0), h = A(2, 1), i = A(2, 2);
-
-  double C00 =  e * i - f * h;
-  double C01 =  f * g - d * i;
-  double C02 =  d * h - e * g;
-  double C10 =  c * h - b * i;
-  double C11 =  a * i - c * g;
-  double C12 =  b * g - a * h;
-  double C20 =  b * f - c * e;
-  double C21 =  c * d - a * f;
-  double C22 =  a * e - b * d;
-
-  double det = a * C00 + b * C01 + c * C02;
-
-  Mat3 R;
-  R(0, 0) = C00 / det; R(0, 1) = C10 / det; R(0, 2) = C20 / det;
-  R(1, 0) = C01 / det; R(1, 1) = C11 / det; R(1, 2) = C21 / det;
-  R(2, 0) = C02 / det; R(2, 1) = C12 / det; R(2, 2) = C22 / det;
-  return R;
+  LTMat3 M = L;
+  M.l10 += DL.m01 * M.l11;
+  M.l20 += DL.m01 * M.l21 + DL.m02 * M.l22;
+  M.l21 += DL.m12 * M.l22;
+  M.l22 *= DL.d2;
+  M.l11 *= DL.d1;
+  M.l21 *= DL.d1;
+  M.l20 *= DL.d0;
+  M.l10 *= DL.d0;
+  M.l00 *= DL.d0;
+  return M;
 }
 
-inline SymMat3 inv_sym(const SymMat3 &A)
+inline void mul_ltdl(Mat3 &M, const DChol3 &L)
 {
-  double a = A.d00, b = A.d01, c = A.d02;
-  double d = A.d11, e = A.d12, f = A.d22;
-
-  double C00 = d * f - e * e;
-  double C01 = c * e - b * f;
-  double C02 = b * e - c * d;
-  double C11 = a * f - c * c;
-  double C12 = b * c - a * e;
-  double C22 = a * d - b * b;
-
-  double det = a * C00 + b * C01 + c * C02;
-  return {C00 / det, C01 / det, C02 / det, C11 / det, C12 / det, C22 / det};
-}
-
-struct DChol3 {
-  double d0, d1, d2, m01, m02, m12;
-
-  void invert()
-  {
-    d0 = 1.0 / d0;
-    d1 = 1.0 / d1;
-    d2 = 1.0 / d2;
-    m02 = -m02 - m01 * m12;
-    m01 = -m01;
-    m12 = -m12;
+  // M <- M L^T <- M L^T D
+  for (int i = 0; i < 3; i++) {
+    M(i, 2) += M(i, 1) * L.m12 + M(i, 0) * L.m02;
+    M(i, 2) *= L.d2;
+    M(i, 1) += M(i, 0) * L.m01; 
+    M(i, 1) *= L.d1;
+    M(i, 0) *= L.d0;
   }
-};
+  // <- M L^T D L
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) += L.m01 * M(i, 1) + L.m02 * M(i, 2);
+    M(i, 1) += L.m12 * M(i, 2);
+  }
+}
 
-inline DChol3 dchol(const SymMat3 &A)
+inline DChol3 inv_dchol(const SymMat3 &A)
 {
   double m01 = A.d01 / A.d00;
-  double m02 = A.d02 / A.d00;
   double m12 = (A.d12 - m01 * A.d02) / (A.d11 - m01 * A.d01);
+  double m02 = A.d02 / A.d00;
   double d1 = A.d11 - m01 * A.d01;
   double d2 = A.d22 - m02 * A.d02 - m12 * (A.d12 - m01 * A.d02);
-  return {A.d00, d1, d2, m01, m02, m12};
+  m02 += m01 * m12; // for inverting
+  return {1.0/A.d00, 1.0/d1, 1.0/d2, -m01, -m02, -m12};
 }
 
 inline LTMat3 chol_lower(const SymMat3 &A)
@@ -280,32 +224,11 @@ inline UTMat3 inv_chol_upper(const SymMat3 &A)
   return {inv00, inv01, inv02, inv11, inv12, inv22};
 }
 
-inline Mat3 transpose(const Mat3 &A)
-{
-  Mat3 R;
-  R(0, 0) = A(0, 0); R(0, 1) = A(1, 0); R(0, 2) = A(2, 0);
-  R(1, 0) = A(0, 1); R(1, 1) = A(1, 1); R(1, 2) = A(2, 1);
-  R(2, 0) = A(0, 2); R(2, 1) = A(1, 2); R(2, 2) = A(2, 2);
-  return R;
-}
-
-inline void mat_vec(const Mat3 &A, const double v[3], double out[3])
-{
-  out[0] = A(0, 0) * v[0] + A(0, 1) * v[1] + A(0, 2) * v[2];
-  out[1] = A(1, 0) * v[0] + A(1, 1) * v[1] + A(1, 2) * v[2];
-  out[2] = A(2, 0) * v[0] + A(2, 1) * v[1] + A(2, 2) * v[2];
-}
-
 inline void cross(const double a[3], const double b[3], double out[3])
 {
   out[0] = a[1] * b[2] - a[2] * b[1];
   out[1] = a[2] * b[0] - a[0] * b[2];
   out[2] = a[0] * b[1] - a[1] * b[0];
-}
-
-inline void get_col(const Mat3 &A, int j, double out[3])
-{
-  out[0] = A(0, j); out[1] = A(1, j); out[2] = A(2, j);
 }
 
 inline void skew(const Mat3 &A, double out[3])
@@ -315,30 +238,27 @@ inline void skew(const Mat3 &A, double out[3])
   out[2] = A(1, 0) - A(0, 1);
 }
 
-inline void matmul_to(const Mat3 &A, const Mat3 &B, Mat3 &C)
-{
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++)
-      C(i, j) = A(i, 0) * B(0, j) + A(i, 1) * B(1, j) + A(i, 2) * B(2, j);
+inline double normsq(const double v[3]) {
+  return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 }
 
-inline void cayley_rotate(Mat3 &A, const double v[3])
+inline void cayley_rotate(const double v[3], ColMat3 &A)
 {
-  double v_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-  double w = sqrt(1.0 - v_sq);
+  double w = sqrt(1.0 - normsq(v));
 
   for (int j = 0; j < 3; j++) {
-    double col[3] = {A(0, j), A(1, j), A(2, j)};
+    double* col = A(j);
     double cross1[3], cross2[3];
     cross(v, col, cross1);
     cross(v, cross1, cross2);
-    A(0, j) = col[0] + 2.0 * w * cross1[0] + 2.0 * cross2[0];
-    A(1, j) = col[1] + 2.0 * w * cross1[1] + 2.0 * cross2[1];
-    A(2, j) = col[2] + 2.0 * w * cross1[2] + 2.0 * cross2[2];
+    col[0] += 2.0 * w * cross1[0] + 2.0 * cross2[0];
+    col[1] += 2.0 * w * cross1[1] + 2.0 * cross2[1];
+    col[2] += 2.0 * w * cross1[2] + 2.0 * cross2[2];
   }
 }
 
-inline void skew_ut_mul(const UTMat3 &rc, const Mat3 &sc, double out[3])
+inline void negskew_ut_mul(const UTMat3 &rc, const ColMat3 &sc, double out[3])
+// return -skew(rc * sc) 
 {
   double g10 = rc.u11 * sc(1, 0) + rc.u12 * sc(2, 0);
   double g01 = rc.u00 * sc(0, 1) + rc.u01 * sc(1, 1) + rc.u02 * sc(2, 1);
@@ -346,69 +266,44 @@ inline void skew_ut_mul(const UTMat3 &rc, const Mat3 &sc, double out[3])
   double g20 = rc.u22 * sc(2, 0);
   double g21 = rc.u22 * sc(2, 1);
   double g12 = rc.u11 * sc(1, 2) + rc.u12 * sc(2, 2);
-  out[0] = g21 - g12;
-  out[1] = g02 - g20;
-  out[2] = g10 - g01;
+  out[0] = g12 - g21;
+  out[1] = g20 - g02;
+  out[2] = g01 - g10;
 }
 
-inline void ut_mat_mul_to(const UTMat3 &A, const Mat3 &B, Mat3 &C)
-{
-  for (int j = 0; j < 3; j++) {
-    C(0, j) = A.u00 * B(0, j) + A.u01 * B(1, j) + A.u02 * B(2, j);
-    C(1, j) = A.u11 * B(1, j) + A.u12 * B(2, j);
-    C(2, j) = A.u22 * B(2, j);
-  }
-}
-
-inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc_lt, const Mat3 &chi,
+inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
                             int max_iters = 10, double tol = 1e-6)
 {
-  Mat3 sc;
-  sc(0, 0) = sc_lt.l00; sc(0, 1) = 0.0;       sc(0, 2) = 0.0;
-  sc(1, 0) = sc_lt.l10; sc(1, 1) = sc_lt.l11;  sc(1, 2) = 0.0;
-  sc(2, 0) = sc_lt.l20; sc(2, 1) = sc_lt.l21;  sc(2, 2) = sc_lt.l22;
-
   LTMat3 G;
-  G.l00 = 2.0 * (rc.u11 * sc(2, 2) + rc.u22 * sc(1, 1));
-  G.l10 = 2.0 * (-rc.u22 * sc(1, 0) - rc.u01 * sc(2, 2));
-  G.l11 = 2.0 * (rc.u22 * sc(0, 0) + rc.u00 * sc(2, 2));
-  G.l20 = 2.0 * (rc.u01 * sc(2, 1) - rc.u02 * sc(1, 1) - (rc.u11 * sc(2, 0) - rc.u12 * sc(1, 0)));
-  G.l21 = 2.0 * (-rc.u00 * sc(2, 1) - rc.u12 * sc(0, 0));
-  G.l22 = 2.0 * (rc.u00 * sc(1, 1) + rc.u11 * sc(0, 0));
+  G.l00 = 2.0 * (rc.u11 * sc.l22 + rc.u22 * sc.l11);
+  G.l10 = 2.0 * (-rc.u22 * sc.l10 - rc.u01 * sc.l22);
+  G.l11 = 2.0 * (rc.u22 * sc.l00 + rc.u00 * sc.l22);
+  G.l20 = 2.0 * (rc.u01 * sc.l21 - rc.u02 * sc.l11 - (rc.u11 * sc.l20 - rc.u12 * sc.l10));
+  G.l21 = 2.0 * (-rc.u00 * sc.l21 - rc.u12 * sc.l00);
+  G.l22 = 2.0 * (rc.u00 * sc.l11 + rc.u11 * sc.l00);
 
   G.invert();
+  
+  ColMat3 scm = sc;
 
   double skewChi[3];
   skew(chi, skewChi);
 
-  double negSkewChi[3] = {-skewChi[0], -skewChi[1], -skewChi[2]};
-  double neg_Gchi[3];
-  G.mat_vec(negSkewChi, neg_Gchi);
-
   double tol_sq = 3.0 * tol * tol;
 
-  Mat3 gamma;
-  double skewGam[3], negSkewGam[3], rotvec[3];
+  double negSkewGam[3], rotvec[3];
   for (int niter = 0; niter < max_iters; niter++) {
-    skew_ut_mul(rc, sc, skewGam);
-    double r0 = skewChi[0] + skewGam[0];
-    double r1 = skewChi[1] + skewGam[1];
-    double r2 = skewChi[2] + skewGam[2];
-    if (r0*r0 + r1*r1 + r2*r2 < tol_sq) {
-      ut_mat_mul_to(rc, sc, gamma);
-      break;
-    }
-    negSkewGam[0] = -skewGam[0];
-    negSkewGam[1] = -skewGam[1];
-    negSkewGam[2] = -skewGam[2];
+    negskew_ut_mul(rc, scm, negSkewGam);
+    negSkewGam[0] -= skewChi[0];
+    negSkewGam[1] -= skewChi[1];
+    negSkewGam[2] -= skewChi[2];
+    if (normsq(negSkewGam) < tol_sq) break;
     G.mat_vec(negSkewGam, rotvec);
-    rotvec[0] += neg_Gchi[0];
-    rotvec[1] += neg_Gchi[1];
-    rotvec[2] += neg_Gchi[2];
-    cayley_rotate(sc, rotvec);
+    cayley_rotate(rotvec, scm);
   }
-  ut_mat_mul_to(rc, sc, gamma);
 
+  Mat3 gamma = scm;
+  u_mul(rc, gamma);
   return gamma;
 }
 

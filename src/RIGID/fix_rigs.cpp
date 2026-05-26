@@ -935,6 +935,8 @@ void FixRigs::shake4improper(int ilist)
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};
 
+  SymMat3 diff = L - ss;
+
   // add non-bond equilibrium distances to L off-diagonals
   // L becomes the full 6-constraint target: 3 bonds on diagonal,
   // 3 non-bond pair distances on off-diagonal
@@ -960,17 +962,17 @@ void FixRigs::shake4improper(int ilist)
     invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
   }
 
-  DChol3 lm = inv_dchol(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03}); // TODO: inv_dchol 
+  DChol3 lm = inv_dchol(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03});
 
-  Mat3 chi = mat_dot(R, S); // TODO?
-  UTMat3 rc = inv_chol_upper(rr); // TODO?
+  Mat3 chi = mat_dot(R, S);
+  UTMat3 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
   SymMat3 sigma = diff + sym_dot(chi);
   u_mul(rc, chi);
   
-  lslt_mul(sigma, lm); // TODO?
+  lslt_mul(sigma, lm);
   LTMat3 sc = mul_dl(chol_lower(sigma),lm);
-  mul_ltdl(chi, lm); // TODO?
+  mul_ltdl(chi, lm);
 // end pasted section here
 
   Mat3 gamma = cayley_converge(rc, sc, chi, 11, tolerance);
