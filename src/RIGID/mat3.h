@@ -45,6 +45,13 @@ struct Mat3 {
 
   double *operator()(int i) { return d[i]; }
   const double *operator()(int i) const { return d[i]; }
+
+  Mat3 &operator+=(const Mat3 &B) {
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        d[i][j] += B(i, j);
+    return *this;
+  }
 };
 
 struct ColMat3 {
@@ -68,7 +75,7 @@ struct ColMat3 {
 struct LTMat3 {
   double l00, l10, l20, l11, l21, l22;
 
-  void invert() // used: cayley
+  void invert()
   {
     double inv00 = 1.0 / l00;
     double inv11 = 1.0 / l11;
@@ -81,7 +88,7 @@ struct LTMat3 {
   }
 
   void mat_vec(const double v[3], double out[3]) const
-  { // used: cayley
+  {
     out[0] = l00 * v[0];
     out[1] = l10 * v[0] + l11 * v[1];
     out[2] = l20 * v[0] + l21 * v[1] + l22 * v[2];
@@ -95,7 +102,7 @@ struct LTMat3 {
   }
 };
 
-inline void ut_mul(const UTMat3 &U, Mat3 &M) // used
+inline void ut_mul(const UTMat3 &U, Mat3 &M)
 {
   for (int j = 0; j < 3; j++) {
     M(2, j) = U.u02 * M(0, j) + U.u12 * M(1, j) + U.u22 * M(2, j);
@@ -104,7 +111,7 @@ inline void ut_mul(const UTMat3 &U, Mat3 &M) // used
   }
 }
 
-inline void u_mul(const UTMat3 &U, Mat3 &M) // used
+inline void u_mul(const UTMat3 &U, Mat3 &M)
 {
   for (int j = 0; j < 3; j++) {
     M(0, j) = U.u00 * M(0, j) + U.u01 * M(1, j) + U.u02 * M(2, j);
@@ -136,7 +143,7 @@ inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R^T S
   return QR;
 }
 
-inline void lslt_mul(SymMat3 &S, const DChol3 &L) // used
+inline void lslt_mul(SymMat3 &S, const DChol3 &L)
 {
   // S <- S L^T
   S.d02 += S.d01 * L.m12 + S.d00 * L.m02;

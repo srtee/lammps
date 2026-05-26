@@ -31,10 +31,10 @@ struct UTMat2 {
 struct SymMat2 {
   double d00, d01, d11;
 
-  SymMat2 operator+(const SymMat2 &B) const { // used, make in-place?
+  SymMat2 operator+(const SymMat2 &B) const {
     return {d00 + B.d00, d01 + B.d01, d11 + B.d11};
   }
-  SymMat2 operator-(const SymMat2 &B) const { // used
+  SymMat2 operator-(const SymMat2 &B) const {
     return {d00 - B.d00, d01 - B.d01, d11 - B.d11};
   }
 };
@@ -64,7 +64,7 @@ struct Mat2 {
   }
 };
 
-inline void ut_mul(const UTMat2 &U, Mat2 &M) // used
+inline void ut_mul(const UTMat2 &U, Mat2 &M)
 {
   M(1, 0) = U.u11 * M(1, 0) + U.u01 * M(0, 0);
   M(1, 1) = U.u11 * M(1, 1) + U.u01 * M(0, 1);
@@ -72,7 +72,7 @@ inline void ut_mul(const UTMat2 &U, Mat2 &M) // used
   M(0, 1) *= U.u00;
 }
 
-inline void u_mul(const UTMat2 &U, Mat2 &M) // used
+inline void u_mul(const UTMat2 &U, Mat2 &M)
 {
   M(0, 0) = U.u00 * M(0, 0) + U.u01 * M(1, 0);
   M(0, 1) = U.u00 * M(0, 1) + U.u01 * M(1, 1);
@@ -81,14 +81,14 @@ inline void u_mul(const UTMat2 &U, Mat2 &M) // used
 }
 
 // r1·r1, r1·r2, r2·r2
-inline SymMat2 sym_dot(const double r1[3], const double r2[3]) // used
+inline SymMat2 sym_dot(const double r1[3], const double r2[3])
 {
   return {r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2],
           r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2],
           r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
 }
 
-inline SymMat2 mtm(const Mat2 &M) // used
+inline SymMat2 mtm(const Mat2 &M)
 {
   return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0),
 	  M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1),
@@ -117,7 +117,7 @@ inline Mat2 operator*(const UTMat2 &U, const LTMat2 &L)
   return R;
 }
 
-inline UTMat2 inv_chol_upper(const SymMat2 &A) // used
+inline UTMat2 inv_chol_upper(const SymMat2 &A)
 {
   double u00 = sqrt(A.d00);
   double u01 = A.d01 / u00;
@@ -125,7 +125,7 @@ inline UTMat2 inv_chol_upper(const SymMat2 &A) // used
   return {1.0 / u00, -u01 / (u00 * u11), 1.0 / u11};
 }
 
-inline LTMat2 chol_lower(const SymMat2 &A) // used
+inline LTMat2 chol_lower(const SymMat2 &A)
 {
   double l11 = sqrt(A.d11);
   double l10 = A.d01 / l11;
@@ -169,7 +169,7 @@ inline LTMat2 operator*(const LTMat2 &A, const LTMat2 &B)
           A.l11 * B.l11};
 }
 
-inline void mul_ltdl(Mat2 &M, const DChol2 &L) // used
+inline void mul_ltdl(Mat2 &M, const DChol2 &L)
 {
   M(0, 1) += M(0, 0) * L.m01;
   M(1, 1) += M(1, 0) * L.m01;

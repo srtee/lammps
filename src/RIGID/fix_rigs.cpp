@@ -937,32 +937,22 @@ void FixRigs::shake4improper(int ilist)
 
   SymMat3 diff = L - ss;
 
-  // add non-bond equilibrium distances to L off-diagonals
-  // L becomes the full 6-constraint target: 3 bonds on diagonal,
-  // 3 non-bond pair distances on off-diagonal
-
   // mass matrix
 
-  double invmass0, invmass01, invmass02, invmass03, invmass12, invmass13, invmass23;
+  double mu0, mu01, mu02, mu03;
   if (rmass) {
-    invmass0 = dtfsq / rmass[i0];
-    invmass01 = invmass0 + dtfsq / rmass[i1];
-    invmass02 = invmass0 + dtfsq / rmass[i2];
-    invmass03 = invmass0 + dtfsq / rmass[i3];
-    invmass12 = dtfsq / rmass[i1] + dtfsq / rmass[i2];
-    invmass13 = dtfsq / rmass[i1] + dtfsq / rmass[i3];
-    invmass23 = dtfsq / rmass[i2] + dtfsq / rmass[i3];
+    mu0 = dtfsq / rmass[i0];
+    mu01 = mu0 + dtfsq / rmass[i1];
+    mu02 = mu0 + dtfsq / rmass[i2];
+    mu03 = mu0 + dtfsq / rmass[i3];
   } else {
-    invmass0 = dtfsq / mass[type[i0]];
-    invmass01 = invmass0 + dtfsq / mass[type[i1]];
-    invmass02 = invmass0 + dtfsq / mass[type[i2]];
-    invmass03 = invmass0 + dtfsq / mass[type[i3]];
-    invmass12 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i2]];
-    invmass13 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i3]];
-    invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
+    mu0 = dtfsq / mass[type[i0]];
+    mu01 = mu0 + dtfsq / mass[type[i1]];
+    mu02 = mu0 + dtfsq / mass[type[i2]];
+    mu03 = mu0 + dtfsq / mass[type[i3]];
   }
 
-  DChol3 lm = inv_dchol(SymMat3 {invmass01, invmass12, invmass13, invmass02,invmass23, invmass03});
+  DChol3 lm = inv_dchol(SymMat3 {mu01, mu0, mu0, mu02, mu0, mu03});
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
@@ -973,9 +963,9 @@ void FixRigs::shake4improper(int ilist)
   lslt_mul(sigma, lm);
   LTMat3 sc = mul_dl(chol_lower(sigma),lm);
   mul_ltdl(chi, lm);
-// end pasted section here
 
-  Mat3 gamma = cayley_converge(rc, sc, chi, 11, tolerance);
+  Mat3 lamda = cayley_converge(rc, sc, chi, 11, tolerance);
+  lamda += chi;
 
   // force application (improper-specific)
 }
@@ -1007,43 +997,60 @@ void FixRigs::shake4dihedral(int ilist)
 
   // current displacement vectors: diagonal elements are r10, r02, r23
 
-  double r10[3], r02[3], r23[3];
-  r10[0] = x[i1][0] - x[i0][0]; r10[1] = x[i1][1] - x[i0][1]; r10[2] = x[i1][2] - x[i0][2];
-  r02[0] = x[i0][0] - x[i2][0]; r02[1] = x[i0][1] - x[i2][1]; r02[2] = x[i0][2] - x[i2][2];
-  r23[0] = x[i2][0] - x[i3][0]; r23[1] = x[i2][1] - x[i3][1]; r23[2] = x[i2][2] - x[i3][2];
+  Mat3 R;
+  R(0,0) = x[i1][0] - x[i0][0]; R(0,1) = x[i1][1] - x[i0][1]; R(0,2) = x[i1][2] - x[i0][2];
+  R(1,0) = x[i0][0] - x[i2][0]; R(1,1) = x[i0][1] - x[i2][1]; R(1,2) = x[i0][2] - x[i2][2];
+  R(2,0) = x[i2][0] - x[i3][0]; R(2,1) = x[i2][1] - x[i3][1]; R(2,2) = x[i2][2] - x[i3][2];
 
-  double s10[3], s02[3], s23[3];
-  s10[0] = xshake[i1][0] - xshake[i0][0]; s10[1] = xshake[i1][1] - xshake[i0][1]; s10[2] = xshake[i1][2] - xshake[i0][2];
-  s02[0] = xshake[i0][0] - xshake[i2][0]; s02[1] = xshake[i0][1] - xshake[i2][1]; s02[2] = xshake[i0][2] - xshake[i2][2];
-  s23[0] = xshake[i2][0] - xshake[i3][0]; s23[1] = xshake[i2][1] - xshake[i3][1]; s23[2] = xshake[i2][2] - xshake[i3][2];
+  Mat3 S;
+  S(0,0) = xshake[i1][0] - xshake[i0][0]; S(0,1) = xshake[i1][1] - xshake[i0][1]; S(0,2) = xshake[i1][2] - xshake[i0][2];
+  S(1,0) = xshake[i0][0] - xshake[i2][0]; S(1,1) = xshake[i0][1] - xshake[i2][1]; S(1,2) = xshake[i0][2] - xshake[i2][2];
+  S(2,0) = xshake[i2][0] - xshake[i3][0]; S(2,1) = xshake[i2][1] - xshake[i3][1]; S(2,2) = xshake[i2][2] - xshake[i3][2];
 
   // Gram matrices
 
-  //SymMat3 rr = sym_dot(r10, r02, r23);
-  //SymMat3 ss = sym_dot(s10, s02, s23);
+  SymMat3 rr = sym_dot(R);
+  SymMat3 ss = sym_dot(S);
 
   SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
                bond2 * bond2, bond2 * bond3, bond3 * bond3};
+
+  SymMat3 diff = L - ss;
 
   // mass matrix: for chain A-B-C-D with atoms 0=B, 1=A, 2=C, 3=D
   // pair 1-0 (A-B): mass_A + mass_B
   // pair 0-2 (B-C): mass_B + mass_C
   // pair 2-3 (C-D): mass_C + mass_D
 
-  double invmass10, invmass02, invmass23;
+  double mu0, mu2, mu10, mu02, mu23;
   if (rmass) {
-    invmass10 = dtfsq / rmass[i1] + dtfsq / rmass[i0];
-    invmass02 = dtfsq / rmass[i0] + dtfsq / rmass[i2];
-    invmass23 = dtfsq / rmass[i2] + dtfsq / rmass[i3];
+    mu0 = dtfsq / rmass[i0];
+    mu2 = dtfsq / rmass[i2];
+    mu10 = dtfsq / rmass[i1] + mu0;
+    mu02 = mu0 + mu2;
+    mu23 = mu2 + dtfsq / rmass[i3];
   } else {
-    invmass10 = dtfsq / mass[type[i1]] + dtfsq / mass[type[i0]];
-    invmass02 = dtfsq / mass[type[i0]] + dtfsq / mass[type[i2]];
-    invmass23 = dtfsq / mass[type[i2]] + dtfsq / mass[type[i3]];
+    mu0 = dtfsq / mass[type[i0]];
+    mu2 = dtfsq / mass[type[i2]];
+    mu10 = dtfsq / mass[type[i1]] + mu0;
+    mu02 = mu0 + mu2;
+    mu23 = mu2 + dtfsq / mass[type[i3]];
   }
 
-  // M, D, K, chi, phiC, phiS construction
-  // orthogonal solve
-  // TODO: user will implement the 3x3 orthogonal matrix solve
+  DChol3 lm = inv_dchol(SymMat3 {mu10, mu0, 0, mu02, mu2, mu23});
+
+  Mat3 chi = mat_dot(R, S);
+  UTMat3 rc = inv_chol_upper(rr);
+  ut_mul(rc, chi);
+  SymMat3 sigma = diff + sym_dot(chi);
+  u_mul(rc, chi);
+  
+  lslt_mul(sigma, lm);
+  LTMat3 sc = mul_dl(chol_lower(sigma),lm);
+  mul_ltdl(chi, lm);
+
+  Mat3 lamda = cayley_converge(rc, sc, chi, 11, tolerance);
+  lamda += chi;
 
   // force application (dihedral-specific)
 }
