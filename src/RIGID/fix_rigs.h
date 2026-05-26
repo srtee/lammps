@@ -23,6 +23,8 @@ FixStyle(rigs,FixRigs);
 #define LMP_FIX_RIGS_H
 
 #include "fix_shake.h"
+#include "mat2.h"
+#include "mat3.h"
 
 namespace LAMMPS_NS {
 
@@ -32,6 +34,7 @@ class FixRigs : public FixShake {
   ~FixRigs() override;
   void post_constructor() override;
   void init() override;
+  void pre_neighbor() override;
   void grow_arrays(int) override;
   void copy_arrays(int, int, int) override;
   int pack_exchange(int, double *) override;
@@ -46,6 +49,14 @@ class FixRigs : public FixShake {
   double *rigs_angle_distance;
   double *rigs_improper_distance;
   double *rigs_dihedral_distance;
+
+  RigsMath::SymMat2 *rigs_L2;
+  RigsMath::DChol2 *rigs_lm2;
+  RigsMath::SymMat3 *rigs_L3;
+  RigsMath::DChol3 *rigs_lm3;
+  int rigs_maxlist;
+
+  void prebuild_matrices();
   void shake3angle(int) override;
   void shake4(int ilist) override;
   void shake4improper(int ilist);

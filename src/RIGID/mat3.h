@@ -168,7 +168,7 @@ inline void lslt_mul(SymMat3 &S, const DChol3 &L)
   S.d11 += L.m01 * S.d01;
 }
 
-LTMat3 mul_dl(const LTMat3 &L, const DChol3 &DL)
+inline LTMat3 mul_dl(const LTMat3 &L, const DChol3 &DL)
 {
   LTMat3 M = L;
   M.l10 += DL.m01 * M.l11;
@@ -351,7 +351,7 @@ struct Mat43 {
   }
 };
 
-Mat43 improper_L_lambda(const Mat3 &lam) {
+inline Mat43 improper_L_lambda(const Mat3 &lam) {
   Mat43 L;
   L(0,0) = L(0,1) = L(0,2) = 0.0;
   for (int i = 0; i < 3; i++) {
@@ -363,7 +363,7 @@ Mat43 improper_L_lambda(const Mat3 &lam) {
   return L;
 }
 
-Mat43 dihedral_L_lambda(const Mat3 &lam) {
+inline Mat43 dihedral_L_lambda(const Mat3 &lam) {
   Mat43 L;
   L(0,0) = L(0,1) = 1.0;  L(0,2) =  0.0;
   L(1,0) = -1.0; L(1,1) = L(1,2) =  0.0;

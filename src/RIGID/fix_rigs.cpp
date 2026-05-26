@@ -24,8 +24,6 @@
 #include "error.h"
 #include "force.h"
 #include "improper.h"
-#include "mat2.h"
-#include "mat3.h"
 #include "math_const.h"
 #include "memory.h"
 #include "molecule.h"
@@ -42,7 +40,9 @@ using namespace MathConst;
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
-    rigs_dihedral_distance(nullptr)
+    rigs_dihedral_distance(nullptr),
+    rigs_L2(nullptr), rigs_lm2(nullptr), rigs_L3(nullptr), rigs_lm3(nullptr),
+    rigs_maxlist(0)
 {
   restart_peratom = 1;
   atom->add_callback(Atom::RESTART);
@@ -56,6 +56,10 @@ FixRigs::~FixRigs()
   delete[] rigs_angle_distance;
   delete[] rigs_improper_distance;
   delete[] rigs_dihedral_distance;
+  memory->destroy(rigs_L2);
+  memory->destroy(rigs_lm2);
+  memory->destroy(rigs_L3);
+  memory->destroy(rigs_lm3);
 }
 
 void FixRigs::post_constructor()
@@ -756,6 +760,111 @@ void FixRigs::init()
   // TODO: compute dihedral equilibrium distances
 }
 
+void FixRigs::pre_neighbor()
+{
+  FixShake::pre_neighbor();
+  prebuild_matrices();
+}
+
+void FixRigs::prebuild_matrices()
+{
+  if (nlist > rigs_maxlist) {
+    memory->destroy(rigs_L2);
+    memory->destroy(rigs_lm2);
+    memory->destroy(rigs_L3);
+    memory->destroy(rigs_lm3);
+    rigs_maxlist = nlist;
+    memory->create(rigs_L2, rigs_maxlist, "rigs:rigs_L2");
+    memory->create(rigs_lm2, rigs_maxlist, "rigs:rigs_lm2");
+    memory->create(rigs_L3, rigs_maxlist, "rigs:rigs_L3");
+    memory->create(rigs_lm3, rigs_maxlist, "rigs:rigs_lm3");
+  }
+
+  for (int ilist = 0; ilist < nlist; ilist++) {
+    int m = list[ilist];
+
+    if (shake_flag[m] == 1) {
+      double bond1 = bond_distance[shake_type[m][0]];
+      double bond2 = bond_distance[shake_type[m][1]];
+      double bond12 = rigs_angle[shake_type[m][2]];
+
+      rigs_L2[ilist] = {bond1 * bond1, bond12, bond2 * bond2};
+
+      int i0 = closest_list[ilist][0];
+      int i1 = closest_list[ilist][1];
+      int i2 = closest_list[ilist][2];
+      double invmass0, invmass01, invmass02;
+      if (rmass) {
+        invmass0 = 1.0 / rmass[i0];
+        invmass01 = invmass0 + 1.0 / rmass[i1];
+        invmass02 = invmass0 + 1.0 / rmass[i2];
+      } else {
+        invmass0 = 1.0 / mass[type[i0]];
+        invmass01 = invmass0 + 1.0 / mass[type[i1]];
+        invmass02 = invmass0 + 1.0 / mass[type[i2]];
+      }
+      rigs_lm2[ilist] = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+
+    } else if (shake_flag[m] == 5) {
+      double bond1 = bond_distance[shake_type[m][0]];
+      double bond2 = bond_distance[shake_type[m][1]];
+      double bond3 = bond_distance[shake_type[m][2]];
+      double L01 = rigs_angle[rigs_type[m][0]];
+      double L02 = rigs_angle[rigs_type[m][1]];
+      double L12 = rigs_angle[rigs_type[m][2]];
+
+      rigs_L3[ilist] = {bond1 * bond1, L01, L02,
+                        bond2 * bond2, L12, bond3 * bond3};
+
+      int i0 = closest_list[ilist][0];
+      int i1 = closest_list[ilist][1];
+      int i2 = closest_list[ilist][2];
+      int i3 = closest_list[ilist][3];
+      double mu0, mu01, mu02, mu03;
+      if (rmass) {
+        mu0 = 1.0 / rmass[i0];
+        mu01 = mu0 + 1.0 / rmass[i1];
+        mu02 = mu0 + 1.0 / rmass[i2];
+        mu03 = mu0 + 1.0 / rmass[i3];
+      } else {
+        mu0 = 1.0 / mass[type[i0]];
+        mu01 = mu0 + 1.0 / mass[type[i1]];
+        mu02 = mu0 + 1.0 / mass[type[i2]];
+        mu03 = mu0 + 1.0 / mass[type[i3]];
+      }
+      rigs_lm3[ilist] = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+
+    } else if (shake_flag[m] == 6) {
+      double bond1 = bond_distance[shake_type[m][0]];
+      double bond2 = bond_distance[shake_type[m][1]];
+      double bond3 = bond_distance[shake_type[m][2]];
+
+      rigs_L3[ilist] = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
+                        bond2 * bond2, bond2 * bond3, bond3 * bond3};
+
+      int i0 = closest_list[ilist][0];
+      int i1 = closest_list[ilist][1];
+      int i2 = closest_list[ilist][2];
+      int i3 = closest_list[ilist][3];
+      double mu0, mu2, mu10, mu02, mu23;
+      if (rmass) {
+        mu0 = 1.0 / rmass[i0];
+        mu2 = 1.0 / rmass[i2];
+        mu10 = 1.0 / rmass[i1] + mu0;
+        mu02 = mu0 + mu2;
+        mu23 = mu2 + 1.0 / rmass[i3];
+      } else {
+        mu0 = 1.0 / mass[type[i0]];
+        mu2 = 1.0 / mass[type[i2]];
+        mu10 = 1.0 / mass[type[i1]] + mu0;
+        mu02 = mu0 + mu2;
+        mu23 = mu2 + 1.0 / mass[type[i3]];
+      }
+      rigs_lm3[ilist] = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+    }
+  }
+}
+
 void FixRigs::shake4(int ilist)
 {
   int m = list[ilist];
@@ -781,20 +890,6 @@ void FixRigs::shake3angle(int ilist)
   int i0 = closest_list[ilist][0];
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
-  double bond1 = bond_distance[shake_type[m][0]];
-  double bond2 = bond_distance[shake_type[m][1]];
-  double bond12 = rigs_angle[shake_type[m][2]];
-  
-  double invmass0, invmass01, invmass02;
-  if (rmass) {
-    invmass0 = 1.0 / rmass[i0];
-    invmass01 = invmass0 + 1.0 / rmass[i1];
-    invmass02 = invmass0 + 1.0 / rmass[i2];
-  } else {
-    invmass0 = 1.0 / mass[type[i0]];
-    invmass01 = invmass0 + 1.0 / mass[type[i1]];
-    invmass02 = invmass0 + 1.0 / mass[type[i2]];
-  }
 
   double r01[3];
   r01[0] = x[i0][0] - x[i1][0];
@@ -819,7 +914,7 @@ void FixRigs::shake3angle(int ilist)
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
 
-  SymMat2 L = {bond1 * bond1, bond12, bond2 * bond2};
+  SymMat2 L = rigs_L2[ilist];
   SymMat2 diff = L - ss;
 
   Mat2 chi;
@@ -828,7 +923,7 @@ void FixRigs::shake3angle(int ilist)
   chi(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
   chi(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
-  DChol2 lm = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+  DChol2 lm = rigs_lm2[ilist];
 
   UTMat2 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
@@ -926,11 +1021,6 @@ void FixRigs::shake4improper(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double bond1 = bond_distance[shake_type[m][0]];
-  double bond2 = bond_distance[shake_type[m][1]];
-  double bond3 = bond_distance[shake_type[m][2]];
-
-  // equilibrium non-bond distances from angles/improper
   double dist12 = rigs_angle_distance[rigs_type[m][0]];
   double dist13 = rigs_angle_distance[rigs_type[m][1]];
   double dist23;
@@ -939,8 +1029,6 @@ void FixRigs::shake4improper(int ilist)
   else
     dist23 = rigs_improper_distance[-rigs_type[m][2]];
 
-  // current displacement vectors
-  
   Mat3 R, S;
   R(0, 0) = x[i0][0] - x[i1][0];
   R(0, 1) = x[i0][1] - x[i1][1];
@@ -962,37 +1050,13 @@ void FixRigs::shake4improper(int ilist)
   S(2, 1) = xshake[i0][1] - xshake[i3][1]; 
   S(2, 2) = xshake[i0][2] - xshake[i3][2];
 
-  // Gram matrices
-
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S); 
 
-  double L00 = bond1 * bond1;
-  double L11 = bond2 * bond2;
-  double L22 = bond3 * bond3;
-  double L01 = rigs_angle[rigs_type[m][0]];
-  double L02 = rigs_angle[rigs_type[m][1]];
-  double L12 = rigs_angle[rigs_type[m][2]];
-
-  SymMat3 L = {L00, L01, L02, L11, L12, L22};
+  SymMat3 L = rigs_L3[ilist];
   SymMat3 diff = L - ss;
 
-  // mass matrix
-
-  double mu0, mu01, mu02, mu03;
-  if (rmass) {
-    mu0 = 1.0 / rmass[i0];
-    mu01 = mu0 + 1.0 / rmass[i1];
-    mu02 = mu0 + 1.0 / rmass[i2];
-    mu03 = mu0 + 1.0 / rmass[i3];
-  } else {
-    mu0 = 1.0 / mass[type[i0]];
-    mu01 = mu0 + 1.0 / mass[type[i1]];
-    mu02 = mu0 + 1.0 / mass[type[i2]];
-    mu03 = mu0 + 1.0 / mass[type[i3]];
-  }
-
-  DChol3 lm = inv_dchol(SymMat3 {mu01, mu0, mu0, mu02, mu0, mu03});
+  DChol3 lm = rigs_lm3[ilist];
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
@@ -1028,23 +1092,14 @@ void FixRigs::shake4improper(int ilist)
 void FixRigs::shake4dihedral(int ilist)
 {
   int m = list[ilist];
-  // dihedral chain A-B-C-D, shake_atom = {B, A, C, D}
-  // relabel: 0=B, 1=A, 2=C, 3=D
-  // diagonal displacements: r10 (A-B), r02 (B-C), r23 (C-D)
   int i0 = closest_list[ilist][0];
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double bond1 = bond_distance[shake_type[m][0]];
-  double bond2 = bond_distance[shake_type[m][1]];
-  double bond3 = bond_distance[shake_type[m][2]];
-
   double dist12 = rigs_angle_distance[rigs_type[m][0]];
   double dist23 = rigs_angle_distance[rigs_type[m][1]];
   double dist13 = rigs_dihedral_distance[rigs_type[m][2]];
-
-  // current displacement vectors: diagonal elements are r10, r02, r23
 
   Mat3 R;
   R(0,0) = x[i1][0] - x[i0][0]; R(0,1) = x[i1][1] - x[i0][1]; R(0,2) = x[i1][2] - x[i0][2];
@@ -1056,37 +1111,13 @@ void FixRigs::shake4dihedral(int ilist)
   S(1,0) = xshake[i0][0] - xshake[i2][0]; S(1,1) = xshake[i0][1] - xshake[i2][1]; S(1,2) = xshake[i0][2] - xshake[i2][2];
   S(2,0) = xshake[i2][0] - xshake[i3][0]; S(2,1) = xshake[i2][1] - xshake[i3][1]; S(2,2) = xshake[i2][2] - xshake[i3][2];
 
-  // Gram matrices
-
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
 
-  SymMat3 L = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
-               bond2 * bond2, bond2 * bond3, bond3 * bond3};
-
+  SymMat3 L = rigs_L3[ilist];
   SymMat3 diff = L - ss;
 
-  // mass matrix: for chain A-B-C-D with atoms 0=B, 1=A, 2=C, 3=D
-  // pair 1-0 (A-B): mass_A + mass_B
-  // pair 0-2 (B-C): mass_B + mass_C
-  // pair 2-3 (C-D): mass_C + mass_D
-
-  double mu0, mu2, mu10, mu02, mu23;
-  if (rmass) {
-    mu0 = 1.0 / rmass[i0];
-    mu2 = 1.0 / rmass[i2];
-    mu10 = 1.0 / rmass[i1] + mu0;
-    mu02 = mu0 + mu2;
-    mu23 = mu2 + 1.0 / rmass[i3];
-  } else {
-    mu0 = 1.0 / mass[type[i0]];
-    mu2 = 1.0 / mass[type[i2]];
-    mu10 = 1.0 / mass[type[i1]] + mu0;
-    mu02 = mu0 + mu2;
-    mu23 = mu2 + 1.0 / mass[type[i3]];
-  }
-
-  DChol3 lm = inv_dchol(SymMat3 {mu10, mu0, 0, mu02, mu2, mu23});
+  DChol3 lm = rigs_lm3[ilist];
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
