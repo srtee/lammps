@@ -22,8 +22,10 @@
 #include "mat3.h"
 #include "memory.h"
 
+#include <cmath>
 #include <cstring>
 #include <set>
+#include <utils.h>
 
 using namespace LAMMPS_NS;
 using namespace RigsMath;
@@ -183,7 +185,6 @@ void FixRigs::prebuild_matrices()
                     bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
       std::string skey(key);
       auto it = rigs_cache.find(skey);
-      bool demoted = false;
       if (it == rigs_cache.end()) {
         RigCache c;
         double mu0 = 1.0 / mass[t0];
@@ -226,14 +227,13 @@ void FixRigs::prebuild_matrices()
         dchol_diag.insert(dc_MLM.d2);
 
         double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
-        c.ratio_d2d0 = ratio_d2d0;
-        demoted = (ratio_d2d0 < 1e-3);
-
-        if (demoted) {
+        constexpr double demote_threshold = 1e-3; // TODO: relate to tolerance
+        if (ratio_d2d0 < demote_threshold) {
           SymMat3 Lref = {c.L[0], c.L[1], c.L[2], c.L[3], c.L[4], c.L[5]};
           int permL[3];
           DChol3 dcL = dchol_pivot(Lref, permL);
-          int pd = permL[2] + 1;
+          c.demote_pos = permL[2] + 1;
+	  int pd = c.demote_pos;
 
           int tmp = closest_list[ilist][3];
           closest_list[ilist][3] = closest_list[ilist][pd];
@@ -256,46 +256,40 @@ void FixRigs::prebuild_matrices()
             tri_at = rigs_type[m][0];
           }
 
-          shake_flag[m] = -5;
+          shake_flag[m] = -5; // TODO: propaagate this!!
 
           bt0 = shake_type[m][0];
           bt1 = shake_type[m][1];
           double b0 = bond_distance[bt0];
           double b1 = bond_distance[bt1];
-          L[0] = b0 * b0;
-          L[1] = rigs_angle[tri_at];
-          L[2] = b1 * b1;
+          c.L[0] = b0 * b0;
+          c.L[1] = rigs_angle[tri_at];
+          c.L[2] = b1 * b1;
 
           int i1a = closest_list[ilist][1];
           int i2a = closest_list[ilist][2];
-          double im0 = 1.0 / mass[i0];
-          double im1a = 1.0 / mass[i1a];
-          double im2a = 1.0 / mass[i2a];
+          double im0 = 1.0 / mass[type[i0]];
+          double im1a = 1.0 / mass[type[i1a]];
+          double im2a = 1.0 / mass[type[i2a]];
           DChol2 dc3 = inv_dchol(SymMat2{im0 + im1a, im0, im0 + im2a});
-          lm[0] = dc3.d0;
-          lm[1] = dc3.d1;
-          lm[2] = dc3.m01;
+          c.lm[0] = dc3.d0;
+          c.lm[1] = dc3.d1;
+          c.lm[2] = dc3.m01;
 
-          double l00 = sqrt(dcL.d0);
-          double l11 = sqrt(dcL.d1);
-          L[3] = dcL.m02 * l00;
-          L[4] = dcL.m12 * l11;
-          L[5] = sqrt(dcL.d2);
-          lm[3] = l00;
-          lm[4] = dcL.m01;
-          lm[5] = l11;
+          double l00_1 = sqrt(dcL.d0);
+          double l11_1 = sqrt(dcL.d1);
+          c.L[3] = dcL.m02 * l00_1;
+          c.L[4] = dcL.m12 * l11_1;
+          c.L[5] = sqrt(dcL.d2);
+          c.lm[3] = l00_1;
+          c.lm[4] = dcL.m01;
+          c.lm[5] = l11_1;
         }
-
         it = rigs_cache.insert({skey, c}).first;
       } else {
-        demoted = (it->second.ratio_d2d0 < 1e-3);
-        if (demoted) {
-          int pd;
-          SymMat3 Lref = {it->second.L[0], it->second.L[1], it->second.L[2],
-                          it->second.L[3], it->second.L[4], it->second.L[5]};
-          int permL[3];
-          DChol3 dcL = dchol_pivot(Lref, permL);
-          pd = permL[2] + 1;
+        int pd = (it->second.demote_pos);
+        if (pd) {
+          shake_flag[m] = -5;
 
           int tmp = closest_list[ilist][3];
           closest_list[ilist][3] = closest_list[ilist][pd];
@@ -313,44 +307,11 @@ void FixRigs::prebuild_matrices()
             int tri_at = rigs_type[m][1];
             rigs_type[m][1] = rigs_type[m][0];
             rigs_type[m][0] = tri_at;
-          }
-
-          shake_flag[m] = -5;
-
-          int bt0n = shake_type[m][0];
-          int bt1n = shake_type[m][1];
-          double b0 = bond_distance[bt0n];
-          double b1 = bond_distance[bt1n];
-          L[0] = b0 * b0;
-          L[1] = rigs_angle[rigs_type[m][0]];
-          L[2] = b1 * b1;
-
-          int i1a = closest_list[ilist][1];
-          int i2a = closest_list[ilist][2];
-          double im0 = 1.0 / mass[i0];
-          double im1a = 1.0 / mass[i1a];
-          double im2a = 1.0 / mass[i2a];
-          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1a, im0, im0 + im2a});
-          lm[0] = dc3.d0;
-          lm[1] = dc3.d1;
-          lm[2] = dc3.m01;
-
-          double l00 = sqrt(dcL.d0);
-          double l11 = sqrt(dcL.d1);
-          L[3] = dcL.m02 * l00;
-          L[4] = dcL.m12 * l11;
-          L[5] = sqrt(dcL.d2);
-          lm[3] = l00;
-          lm[4] = dcL.m01;
-          lm[5] = l11;
+	  }
         }
       }
-
-      if (!demoted) {
-        std::memcpy(L, it->second.L, 6 * sizeof(double));
-        std::memcpy(lm, it->second.lm, 6 * sizeof(double));
-      }
-
+      std::memcpy(L, it->second.L, 6 * sizeof(double));
+      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
     } else if (shake_flag[m] == 6) {
       int bt0 = shake_type[m][0];
       int bt1 = shake_type[m][1];
@@ -395,14 +356,6 @@ void FixRigs::prebuild_matrices()
       std::memcpy(lm, it->second.lm, 6 * sizeof(double));
     }
   }
-
-  if (comm->me == 0 && !dchol_diag.empty()) {
-    auto mesg = fmt::format("RIGS dchol_pivot(MLM) unique diagonal values ({:d} total):\n",
-                            (int)dchol_diag.size());
-    for (double v : dchol_diag)
-      mesg += fmt::format("  {:.6g}\n", v);
-    utils::logmesg(lmp, mesg);
-  }
 }
 
 void FixRigs::shake4(int ilist)
@@ -423,6 +376,10 @@ void FixRigs::shake4(int ilist)
    demoted improper solver: solve 3-atom triangle then push 4th atom
    ------------------------------------------------------------------------- */
 
+static bool has_nan3(const double v[3]) {
+  return std::isnan(v[0]) || std::isnan(v[1]) || std::isnan(v[2]);
+}
+
 void FixRigs::shake4demoted(int ilist)
 {
   int m = list[ilist];
@@ -431,11 +388,10 @@ void FixRigs::shake4demoted(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double fpre0[3] = {f[i0][0], f[i0][1], f[i0][2]};
-  double fpre1[3] = {f[i1][0], f[i1][1], f[i1][2]};
-  double fpre2[3] = {f[i2][0], f[i2][1], f[i2][2]};
+  store_lamda_corrections = true;
 
   shake3angle(ilist);
+  store_lamda_corrections = false;
 
   double m0, m1, m2, m3;
   if (rmass) {
@@ -443,13 +399,6 @@ void FixRigs::shake4demoted(int ilist)
   } else {
     m0 = mass[type[i0]]; m1 = mass[type[i1]];
     m2 = mass[type[i2]]; m3 = mass[type[i3]];
-  }
-
-  double xc0[3], xc1[3], xc2[3];
-  for (int k = 0; k < 3; k++) {
-    xc0[k] = xshake[i0][k] + (f[i0][k] - fpre0[k]) * dtfsq / m0;
-    xc1[k] = xshake[i1][k] + (f[i1][k] - fpre1[k]) * dtfsq / m1;
-    xc2[k] = xshake[i2][k] + (f[i2][k] - fpre2[k]) * dtfsq / m2;
   }
 
   double l00 = rigs_lm[ilist][3];
@@ -461,8 +410,8 @@ void FixRigs::shake4demoted(int ilist)
 
   double r01[3], r02[3];
   for (int k = 0; k < 3; k++) {
-    r01[k] = xc0[k] - xc1[k];
-    r02[k] = xc0[k] - xc2[k];
+    r01[k] = xshake[i0][k] - xshake[i1][k];
+    r02[k] = xshake[i0][k] - xshake[i2][k];
   }
 
   double e1[3], e2[3], n[3];
@@ -477,8 +426,8 @@ void FixRigs::shake4demoted(int ilist)
 
   double r03_target[3], r03_alt[3], diff_pos[3], diff_neg[3];
   for (int k = 0; k < 3; k++) {
-    r03_target[k] = xc0[k] - (l20 * e1[k] + l21_ * e2[k] + l22 * n[k] / nn);
-    r03_alt[k]    = xc0[k] - (l20 * e1[k] + l21_ * e2[k] - l22 * n[k] / nn);
+    r03_target[k] = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] + l22 * n[k] / nn);
+    r03_alt[k]    = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] - l22 * n[k] / nn);
     diff_pos[k] = r03_target[k] - xshake[i3][k];
     diff_neg[k] = r03_alt[k]    - xshake[i3][k];
   }
@@ -493,19 +442,19 @@ void FixRigs::shake4demoted(int ilist)
     for (int k = 0; k < 3; k++) f_cons[k] = m3 * diff_neg[k] * inv_dtfsq;
   }
 
-  for (int k = 0; k < 3; k++) f[i3][k] += f_cons[k];
-
   double M_total = m0 + m1 + m2 + m3;
   double s0 = m0 / M_total;
   double s1 = m1 / M_total;
   double s2 = m2 / M_total;
-  double s3 = m3 / M_total;
-  for (int k = 0; k < 3; k++) {
-    f[i0][k] -= s0 * f_cons[k];
-    f[i1][k] -= s1 * f_cons[k];
-    f[i2][k] -= s2 * f_cons[k];
-    f[i3][k] -= s3 * f_cons[k];
-  }
+  double s3 = m3 / M_total - 1;
+  if (i0 < nlocal)
+    for (int k = 0; k < 3; k++) f[i0][k] -= s0 * f_cons[k];
+  if (i1 < nlocal)
+    for (int k = 0; k < 3; k++) f[i1][k] -= s1 * f_cons[k];
+  if (i2 < nlocal)
+    for (int k = 0; k < 3; k++) f[i2][k] -= s2 * f_cons[k];
+  if (i3 < nlocal)
+    for (int k = 0; k < 3; k++) f[i3][k] -= s3 * f_cons[k];
 }
 
 /* ----------------------------------------------------------------------
@@ -577,6 +526,7 @@ void FixRigs::shake3angle(int ilist)
   double skewS = skew(phiS);
 
   double Asq = skewC * skewC + skewS * skewS;
+
   double sinp = sqrt(Asq - skewChi * skewChi);
   double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
   double cskew = (skewS * sinp - skewChi * skewC) / Asq;
@@ -585,28 +535,56 @@ void FixRigs::shake3angle(int ilist)
   double lamda02 = chi(1, 1) + cskew * phiC(1, 1);
   double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS(0, 1);
 
-  lamda01 /= dtfsq;
-  lamda02 /= dtfsq;
-  lamda12 /= dtfsq;
-
-  if (i0 < nlocal) {
-    f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
-    f[i0][1] -= (lamda01 + lamda12) * r01[1] + (lamda02 + lamda12) * r02[1];
-    f[i0][2] -= (lamda01 + lamda12) * r01[2] + (lamda02 + lamda12) * r02[2];
+  if (store_lamda_corrections) {
+    double m0, m1, m2;
+    if (rmass) {
+      m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2];
+    } else {
+      m0 = mass[type[i0]]; m1 = mass[type[i1]];
+      m2 = mass[type[i2]];
+    }
+    double corr[3];
+    for (int i = 0; i < 3; i++) {
+      corr[i] = -(lamda01 + lamda12) * r01[i] - (lamda02 + lamda12) * r02[i];
+      xshake[i0][i] += corr[i] / m0;
+    }
+    if (i0 < nlocal)
+      for (int i = 0; i < 3; i++) f[i0][i] += corr[i] / dtfsq;
+    for (int i = 0; i < 3; i++) {
+      corr[i] = lamda01 * r01[i] + lamda12 * r02[i];
+      xshake[i1][i] += corr[i] / m1;
+    }
+    if (i1 < nlocal)
+      for (int i = 0; i < 3; i++) f[i0][i] += corr[i] / dtfsq;
+    for (int i = 0; i < 3; i++) {
+      corr[i] = lamda12 * r01[i] + lamda02 * r02[i];
+      xshake[i2][i] += corr[i] / m2;
+    }
+    if (i2 < nlocal)
+      for (int i = 0; i < 3; i++) f[i2][i] += corr[i] / dtfsq;
+    lamda01 /= dtfsq; // for virial
+    lamda02 /= dtfsq;
+    lamda12 /= dtfsq;
+  } else {
+    lamda01 /= dtfsq;
+    lamda02 /= dtfsq;
+    lamda12 /= dtfsq;
+    if (i0 < nlocal) {
+      f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
+      f[i0][1] -= (lamda01 + lamda12) * r01[1] + (lamda02 + lamda12) * r02[1];
+      f[i0][2] -= (lamda01 + lamda12) * r01[2] + (lamda02 + lamda12) * r02[2];
+    }
+    if (i1 < nlocal) {
+      f[i1][0] += lamda01 * r01[0] + lamda12 * r02[0];
+      f[i1][1] += lamda01 * r01[1] + lamda12 * r02[1];
+      f[i1][2] += lamda01 * r01[2] + lamda12 * r02[2];
+    }
+    if (i2 < nlocal) {
+      f[i2][0] += lamda02 * r02[0] + lamda12 * r01[0];
+      f[i2][1] += lamda02 * r02[1] + lamda12 * r01[1];
+      f[i2][2] += lamda02 * r02[2] + lamda12 * r01[2];
+    }
   }
-
-  if (i1 < nlocal) {
-    f[i1][0] += lamda01 * r01[0] + lamda12 * r02[0];
-    f[i1][1] += lamda01 * r01[1] + lamda12 * r02[1];
-    f[i1][2] += lamda01 * r01[2] + lamda12 * r02[2];
-  }
-
-  if (i2 < nlocal) {
-    f[i2][0] += lamda02 * r02[0] + lamda12 * r01[0];
-    f[i2][1] += lamda02 * r02[1] + lamda12 * r01[1];
-    f[i2][2] += lamda02 * r02[2] + lamda12 * r01[2];
-  }
-
   if (evflag) {
     int count = 0;
     if (i0 < nlocal) atomlist[count++] = i0;

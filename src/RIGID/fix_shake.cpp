@@ -726,13 +726,27 @@ void FixShake::post_force(int vflag)
 
   // loop over clusters to add constraint forces
 
+  // dispatch based on cluster size:
+  //   shake_flag 2 -> 2-atom cluster
+  //   shake_flag 3 -> 3-atom cluster (bonds only)
+  //   shake_flag 1 -> 3-atom cluster (bonds + angle, "frozen angle")
+  //   shake_flag 4,5,6,-5 -> 4-atom cluster (sub-dispatched by shake4/shake4improper/shake4demoted)
+  // any other shake_flag value is a bug
   int m;
   for (int i = 0; i < nlist; i++) {
     m = list[i];
-    if (shake_flag[m] == 2) shake(i);
-    else if (shake_flag[m] == 3) shake3(i);
-    else if (shake_flag[m] == 4 || shake_flag[m] == 5 || shake_flag[m] == 6) shake4(i);
-    else shake3angle(i);
+    switch (shake_flag[m]) {
+    case 2:
+      shake(i); break;
+    case 3:
+      shake3(i); break;
+    case 1:
+      shake3angle(i); break;
+    case 4: case 5: case 6: case -5:
+      shake4(i); break;
+    default:
+      error->one(FLERR, "RIGS: unexpected shake_flag {} in post_force dispatch", shake_flag[m]);
+    }
   }
 
   // store vflag for coordinate_constraints_end_of_step()
@@ -777,13 +791,22 @@ void FixShake::post_force_respa(int vflag, int ilevel, int iloop)
   int m;
   for (int i = 0; i < nlist; i++) {
     m = list[i];
-    if (shake_flag[m] == 2) shake(i);
-    else if (shake_flag[m] == 3) shake3(i);
-    else if (shake_flag[m] == 4 || shake_flag[m] == 5 || shake_flag[m] == 6) shake4(i);
-    else shake3angle(i);
+    switch (shake_flag[m]) {
+    case 2:
+      shake(i); break;
+    case 3:
+      shake3(i); break;
+    case 1:
+      shake3angle(i); break;
+    case 4: case 5: case 6: case -5:
+      shake4(i); break;
+    default:
+      error->one(FLERR, "RIGS: unexpected shake_flag {} in post_force_respa dispatch", shake_flag[m]);
+    }
   }
 
   // store vflag for coordinate_constraints_end_of_step()
+
   vflag_post_force = vflag;
 }
 

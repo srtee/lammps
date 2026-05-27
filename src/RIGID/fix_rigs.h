@@ -56,8 +56,9 @@ class FixRigs : public FixShake {
   double **rigs_lm;
   int rigs_maxlist;
 
-  struct RigCache { double L[6]; double lm[6]; double ratio_d2d0; };
+  struct RigCache { double L[6]; double lm[6]; int demote_pos = 0; };
   std::map<std::string, RigCache> rigs_cache;
+  bool store_lamda_corrections;
 
   void prebuild_matrices();
   // void check_rank3(int ilist);
