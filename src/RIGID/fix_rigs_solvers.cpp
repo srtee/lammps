@@ -29,9 +29,11 @@ void FixRigs::prebuild_matrices()
   if (nlist > rigs_maxlist) {
     memory->destroy(rigs_L);
     memory->destroy(rigs_lm);
+    memory->destroy(rigs_R);
     rigs_maxlist = nlist;
     memory->create(rigs_L, rigs_maxlist, 6, "rigs:rigs_L");
     memory->create(rigs_lm, rigs_maxlist, 6, "rigs:rigs_lm");
+    memory->create(rigs_R, rigs_maxlist, 9, "rigs:rigs_R");
   }
 
   for (int ilist = 0; ilist < nlist; ilist++) {
@@ -65,6 +67,8 @@ void FixRigs::prebuild_matrices()
       lm[0] = dc.d0;
       lm[1] = dc.d1;
       lm[2] = dc.m01;
+
+      chol_frame2(L, rigs_R[ilist]);
 
     } else if (shake_flag[m] == 5) {
       double bond1 = bond_distance[shake_type[m][0]];
@@ -101,6 +105,8 @@ void FixRigs::prebuild_matrices()
       lm[3] = dc.m01;
       lm[4] = dc.m02;
       lm[5] = dc.m12;
+
+      chol_frame3(L, rigs_R[ilist]);
 
     } else if (shake_flag[m] == 6) {
       double bond1 = bond_distance[shake_type[m][0]];
@@ -139,6 +145,8 @@ void FixRigs::prebuild_matrices()
       lm[3] = dc.m01;
       lm[4] = dc.m02;
       lm[5] = dc.m12;
+
+      chol_frame3(L, rigs_R[ilist]);
     }
   }
 }

@@ -95,6 +95,13 @@ inline SymMat2 mtm(const Mat2 &M)
 	  M(0, 1) * M(0, 1) + M(1, 1) * M(1, 1)};
 }
 
+inline SymMat2 mmt(const Mat2 &M)
+{
+  return {M(0, 0) * M(0, 0) + M(0, 1) * M(0, 1),
+	  M(0, 0) * M(1, 0) + M(0, 1) * M(1, 1),
+	  M(1, 0) * M(1, 0) + M(1, 1) * M(1, 1)};
+}
+
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
 
 inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)

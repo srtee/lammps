@@ -50,6 +50,7 @@ class FixRigs : public FixShake {
 
   double **rigs_L;
   double **rigs_lm;
+  double **rigs_R;
   int rigs_maxlist;
 
   void prebuild_matrices();
