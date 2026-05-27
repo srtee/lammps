@@ -151,6 +151,23 @@ inline DChol2 inv_dchol(const SymMat2 &A)
   return {1/A.d00, 1/d1, -m01};
 }
 
+inline DChol2 dchol_pivot(const SymMat2 &A, int perm[2])
+{
+  perm[0] = 0; perm[1] = 1;
+  double d0, d1, m01;
+  if (std::fabs(A.d00) >= std::fabs(A.d11)) {
+    d0 = A.d00;
+    m01 = A.d01 / d0;
+    d1 = A.d11 - m01 * A.d01;
+  } else {
+    perm[0] = 1; perm[1] = 0;
+    d0 = A.d11;
+    m01 = A.d01 / d0;
+    d1 = A.d00 - m01 * A.d01;
+  }
+  return {d0, d1, m01};
+}
+
 inline void lslt_mul(SymMat2 &S, const DChol2 &L)
 {
   // S <- S * L^T

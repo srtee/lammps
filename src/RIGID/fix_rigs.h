@@ -24,6 +24,10 @@ FixStyle(rigs,FixRigs);
 
 #include "fix_shake.h"
 
+#include <cstring>
+#include <map>
+#include <string>
+
 namespace LAMMPS_NS {
 
 class FixRigs : public FixShake {
@@ -50,10 +54,13 @@ class FixRigs : public FixShake {
 
   double **rigs_L;
   double **rigs_lm;
-  double **rigs_R;
   int rigs_maxlist;
 
+  struct RigCache { double L[6]; double lm[6]; };
+  std::map<std::string, RigCache> rigs_cache;
+
   void prebuild_matrices();
+  // void check_rank3(int ilist);
   void shake3angle(int) override;
   void shake4(int ilist) override;
   void shake4improper(int ilist);

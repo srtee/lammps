@@ -31,7 +31,7 @@ FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
     rigs_dihedral_distance(nullptr),
-    rigs_L(nullptr), rigs_lm(nullptr), rigs_R(nullptr), rigs_maxlist(0)
+    rigs_L(nullptr), rigs_lm(nullptr), rigs_maxlist(0)
 {
   restart_peratom = 1;
   atom->add_callback(Atom::RESTART);
@@ -47,7 +47,6 @@ FixRigs::~FixRigs()
   delete[] rigs_dihedral_distance;
   memory->destroy(rigs_L);
   memory->destroy(rigs_lm);
-  memory->destroy(rigs_R);
 }
 
 void FixRigs::grow_arrays(int nmax)

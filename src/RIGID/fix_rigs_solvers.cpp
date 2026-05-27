@@ -16,10 +16,14 @@
 #include "fix_rigs.h"
 
 #include "atom.h"
+#include "comm.h"
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
 #include "memory.h"
+
+#include <cstring>
+#include <set>
 
 using namespace LAMMPS_NS;
 using namespace RigsMath;
@@ -29,12 +33,100 @@ void FixRigs::prebuild_matrices()
   if (nlist > rigs_maxlist) {
     memory->destroy(rigs_L);
     memory->destroy(rigs_lm);
-    memory->destroy(rigs_R);
     rigs_maxlist = nlist;
     memory->create(rigs_L, rigs_maxlist, 6, "rigs:rigs_L");
     memory->create(rigs_lm, rigs_maxlist, 6, "rigs:rigs_lm");
-    memory->create(rigs_R, rigs_maxlist, 9, "rigs:rigs_R");
   }
+
+  if (rmass) {
+    for (int ilist = 0; ilist < nlist; ilist++) {
+      int m = list[ilist];
+      double *L = rigs_L[ilist];
+      double *lm = rigs_lm[ilist];
+
+      if (shake_flag[m] == 1) {
+        double bond1 = bond_distance[shake_type[m][0]];
+        double bond2 = bond_distance[shake_type[m][1]];
+        double bond12 = rigs_angle[shake_type[m][2]];
+
+        L[0] = bond1 * bond1;
+        L[1] = bond12;
+        L[2] = bond2 * bond2;
+
+        int i0 = closest_list[ilist][0];
+        int i1 = closest_list[ilist][1];
+        int i2 = closest_list[ilist][2];
+        double invmass0 = 1.0 / rmass[i0];
+        double invmass01 = invmass0 + 1.0 / rmass[i1];
+        double invmass02 = invmass0 + 1.0 / rmass[i2];
+        DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+        lm[0] = dc.d0;
+        lm[1] = dc.d1;
+        lm[2] = dc.m01;
+
+      } else if (shake_flag[m] == 5) {
+        int i0 = closest_list[ilist][0];
+        int i1 = closest_list[ilist][1];
+        int i2 = closest_list[ilist][2];
+        int i3 = closest_list[ilist][3];
+        double mu0 = 1.0 / rmass[i0];
+        double mu01 = mu0 + 1.0 / rmass[i1];
+        double mu02 = mu0 + 1.0 / rmass[i2];
+        double mu03 = mu0 + 1.0 / rmass[i3];
+        DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+
+        double bond0 = bond_distance[shake_type[m][0]];
+        double bond1 = bond_distance[shake_type[m][1]];
+        double bond2 = bond_distance[shake_type[m][2]];
+
+        L[0] = bond0 * bond0;
+        L[1] = rigs_angle[rigs_type[m][0]];
+        L[2] = rigs_angle[rigs_type[m][1]];
+        L[3] = bond1 * bond1;
+        L[4] = rigs_angle[rigs_type[m][2]];
+        L[5] = bond2 * bond2;
+
+        lm[0] = dc.d0;
+        lm[1] = dc.d1;
+        lm[2] = dc.d2;
+        lm[3] = dc.m01;
+        lm[4] = dc.m02;
+        lm[5] = dc.m12;
+
+      } else if (shake_flag[m] == 6) {
+        double bond1 = bond_distance[shake_type[m][0]];
+        double bond2 = bond_distance[shake_type[m][1]];
+        double bond3 = bond_distance[shake_type[m][2]];
+
+        L[0] = bond1 * bond1;
+        L[1] = bond1 * bond2;
+        L[2] = bond1 * bond3;
+        L[3] = bond2 * bond2;
+        L[4] = bond2 * bond3;
+        L[5] = bond3 * bond3;
+
+        int i0 = closest_list[ilist][0];
+        int i1 = closest_list[ilist][1];
+        int i2 = closest_list[ilist][2];
+        int i3 = closest_list[ilist][3];
+        double mu0 = 1.0 / rmass[i0];
+        double mu2 = 1.0 / rmass[i2];
+        double mu10 = 1.0 / rmass[i1] + mu0;
+        double mu02 = mu0 + mu2;
+        double mu23 = mu2 + 1.0 / rmass[i3];
+        DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+        lm[0] = dc.d0;
+        lm[1] = dc.d1;
+        lm[2] = dc.d2;
+        lm[3] = dc.m01;
+        lm[4] = dc.m02;
+        lm[5] = dc.m12;
+      }
+    }
+    return;
+  }
+
+  std::set<double> dchol_diag;
 
   for (int ilist = 0; ilist < nlist; ilist++) {
     int m = list[ilist];
@@ -42,112 +134,150 @@ void FixRigs::prebuild_matrices()
     double *lm = rigs_lm[ilist];
 
     if (shake_flag[m] == 1) {
-      double bond1 = bond_distance[shake_type[m][0]];
-      double bond2 = bond_distance[shake_type[m][1]];
-      double bond12 = rigs_angle[shake_type[m][2]];
-
-      L[0] = bond1 * bond1;
-      L[1] = bond12;
-      L[2] = bond2 * bond2;
-
+      int bt0 = shake_type[m][0];
+      int bt1 = shake_type[m][1];
+      int at = shake_type[m][2];
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
       int i2 = closest_list[ilist][2];
-      double invmass0, invmass01, invmass02;
-      if (rmass) {
-        invmass0 = 1.0 / rmass[i0];
-        invmass01 = invmass0 + 1.0 / rmass[i1];
-        invmass02 = invmass0 + 1.0 / rmass[i2];
-      } else {
-        invmass0 = 1.0 / mass[type[i0]];
-        invmass01 = invmass0 + 1.0 / mass[type[i1]];
-        invmass02 = invmass0 + 1.0 / mass[type[i2]];
-      }
-      DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
-      lm[0] = dc.d0;
-      lm[1] = dc.d1;
-      lm[2] = dc.m01;
+      int t0 = type[i0], t1 = type[i1], t2 = type[i2];
 
-      chol_frame2(L, rigs_R[ilist]);
+      char key[128];
+      std::snprintf(key, sizeof(key), "F1:%d:%d:%d:%d:%d:%d", bt0, bt1, at, t0, t1, t2);
+      std::string skey(key);
+      auto it = rigs_cache.find(skey);
+      if (it == rigs_cache.end()) {
+        RigCache c;
+        double bond1 = bond_distance[bt0];
+        double bond2 = bond_distance[bt1];
+        c.L[0] = bond1 * bond1;
+        c.L[1] = rigs_angle[at];
+        c.L[2] = bond2 * bond2;
+        double invmass0 = 1.0 / mass[t0];
+        double invmass01 = invmass0 + 1.0 / mass[t1];
+        double invmass02 = invmass0 + 1.0 / mass[t2];
+        DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+        c.lm[0] = dc.d0;
+        c.lm[1] = dc.d1;
+        c.lm[2] = dc.m01;
+        it = rigs_cache.insert({skey, c}).first;
+      }
+      std::memcpy(L, it->second.L, 3 * sizeof(double));
+      std::memcpy(lm, it->second.lm, 3 * sizeof(double));
 
     } else if (shake_flag[m] == 5) {
-      double bond1 = bond_distance[shake_type[m][0]];
-      double bond2 = bond_distance[shake_type[m][1]];
-      double bond3 = bond_distance[shake_type[m][2]];
-
-      L[0] = bond1 * bond1;
-      L[1] = rigs_angle[rigs_type[m][0]];
-      L[2] = rigs_angle[rigs_type[m][1]];
-      L[3] = bond2 * bond2;
-      L[4] = rigs_angle[rigs_type[m][2]];
-      L[5] = bond3 * bond3;
-
+      int bt0 = shake_type[m][0];
+      int bt1 = shake_type[m][1];
+      int bt2 = shake_type[m][2];
+      int at0 = rigs_type[m][0];
+      int at1 = rigs_type[m][1];
+      int at2 = rigs_type[m][2];
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
       int i2 = closest_list[ilist][2];
       int i3 = closest_list[ilist][3];
-      double mu0, mu01, mu02, mu03;
-      if (rmass) {
-        mu0 = 1.0 / rmass[i0];
-        mu01 = mu0 + 1.0 / rmass[i1];
-        mu02 = mu0 + 1.0 / rmass[i2];
-        mu03 = mu0 + 1.0 / rmass[i3];
-      } else {
-        mu0 = 1.0 / mass[type[i0]];
-        mu01 = mu0 + 1.0 / mass[type[i1]];
-        mu02 = mu0 + 1.0 / mass[type[i2]];
-        mu03 = mu0 + 1.0 / mass[type[i3]];
-      }
-      DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
-      lm[0] = dc.d0;
-      lm[1] = dc.d1;
-      lm[2] = dc.d2;
-      lm[3] = dc.m01;
-      lm[4] = dc.m02;
-      lm[5] = dc.m12;
+      int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
 
-      chol_frame3(L, rigs_R[ilist]);
+      char key[256];
+      std::snprintf(key, sizeof(key), "F5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                    bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
+      std::string skey(key);
+      auto it = rigs_cache.find(skey);
+      if (it == rigs_cache.end()) {
+        RigCache c;
+        double mu0 = 1.0 / mass[t0];
+        double mu01 = mu0 + 1.0 / mass[t1];
+        double mu02 = mu0 + 1.0 / mass[t2];
+        double mu03 = mu0 + 1.0 / mass[t3];
+        DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+        double bond0 = bond_distance[bt0];
+        double bond1 = bond_distance[bt1];
+        double bond2 = bond_distance[bt2];
+        double angle01 = rigs_angle[at0];
+        double angle02 = rigs_angle[at1];
+        double angle12 = rigs_angle[at2];
+        c.L[0] = bond0 * bond0;
+        c.L[1] = angle01;
+        c.L[2] = angle02;
+        c.L[3] = bond1 * bond1;
+        c.L[4] = angle12;
+        c.L[5] = bond2 * bond2;
+        c.lm[0] = dc.d0;
+        c.lm[1] = dc.d1;
+        c.lm[2] = dc.d2;
+        c.lm[3] = dc.m01;
+        c.lm[4] = dc.m02;
+        c.lm[5] = dc.m12;
+        double d0 = bond1;
+        double u01 = angle01 / d0;
+        double u02 = angle02 / d0;
+        double d1 = sqrt(bond1 * bond1 - u01 * u01);
+        double u12 = (angle12 - u01 * u02) / d1;
+        double d2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
+        Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, d1, u12, d2});
+        mul_ltdl(rt_LM, dc);
+        SymMat3 MLM = mtm(rt_LM);
+        int perm[3];
+        DChol3 dc_MLM = dchol_pivot(MLM, perm);
+        dchol_diag.insert(dc_MLM.d0);
+        dchol_diag.insert(dc_MLM.d1);
+        dchol_diag.insert(dc_MLM.d2);
+        it = rigs_cache.insert({skey, c}).first;
+      }
+      std::memcpy(L, it->second.L, 6 * sizeof(double));
+      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
 
     } else if (shake_flag[m] == 6) {
-      double bond1 = bond_distance[shake_type[m][0]];
-      double bond2 = bond_distance[shake_type[m][1]];
-      double bond3 = bond_distance[shake_type[m][2]];
-
-      L[0] = bond1 * bond1;
-      L[1] = bond1 * bond2;
-      L[2] = bond1 * bond3;
-      L[3] = bond2 * bond2;
-      L[4] = bond2 * bond3;
-      L[5] = bond3 * bond3;
-
+      int bt0 = shake_type[m][0];
+      int bt1 = shake_type[m][1];
+      int bt2 = shake_type[m][2];
       int i0 = closest_list[ilist][0];
       int i1 = closest_list[ilist][1];
       int i2 = closest_list[ilist][2];
       int i3 = closest_list[ilist][3];
-      double mu0, mu2, mu10, mu02, mu23;
-      if (rmass) {
-        mu0 = 1.0 / rmass[i0];
-        mu2 = 1.0 / rmass[i2];
-        mu10 = 1.0 / rmass[i1] + mu0;
-        mu02 = mu0 + mu2;
-        mu23 = mu2 + 1.0 / rmass[i3];
-      } else {
-        mu0 = 1.0 / mass[type[i0]];
-        mu2 = 1.0 / mass[type[i2]];
-        mu10 = 1.0 / mass[type[i1]] + mu0;
-        mu02 = mu0 + mu2;
-        mu23 = mu2 + 1.0 / mass[type[i3]];
-      }
-      DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
-      lm[0] = dc.d0;
-      lm[1] = dc.d1;
-      lm[2] = dc.d2;
-      lm[3] = dc.m01;
-      lm[4] = dc.m02;
-      lm[5] = dc.m12;
+      int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
 
-      chol_frame3(L, rigs_R[ilist]);
+      char key[128];
+      std::snprintf(key, sizeof(key), "F6:%d:%d:%d:%d:%d:%d:%d",
+                    bt0, bt1, bt2, t0, t1, t2, t3);
+      std::string skey(key);
+      auto it = rigs_cache.find(skey);
+      if (it == rigs_cache.end()) {
+        RigCache c;
+        double bond1 = bond_distance[bt0];
+        double bond2 = bond_distance[bt1];
+        double bond3 = bond_distance[bt2];
+        c.L[0] = bond1 * bond1;
+        c.L[1] = bond1 * bond2;
+        c.L[2] = bond1 * bond3;
+        c.L[3] = bond2 * bond2;
+        c.L[4] = bond2 * bond3;
+        c.L[5] = bond3 * bond3;
+        double mu0 = 1.0 / mass[t0];
+        double mu2 = 1.0 / mass[t2];
+        double mu10 = 1.0 / mass[t1] + mu0;
+        double mu02 = mu0 + mu2;
+        double mu23 = mu2 + 1.0 / mass[t3];
+        DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+        c.lm[0] = dc.d0;
+        c.lm[1] = dc.d1;
+        c.lm[2] = dc.d2;
+        c.lm[3] = dc.m01;
+        c.lm[4] = dc.m02;
+        c.lm[5] = dc.m12;
+        it = rigs_cache.insert({skey, c}).first;
+      }
+      std::memcpy(L, it->second.L, 6 * sizeof(double));
+      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
     }
+  }
+
+  if (comm->me == 0 && !dchol_diag.empty()) {
+    auto mesg = fmt::format("RIGS dchol_pivot(MLM) unique diagonal values ({:d} total):\n",
+                            (int)dchol_diag.size());
+    for (double v : dchol_diag)
+      mesg += fmt::format("  {:.6g}\n", v);
+    utils::logmesg(lmp, mesg);
   }
 }
 

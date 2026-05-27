@@ -33,8 +33,11 @@ struct SymMat3 {
   }
 };
 
+struct Mat3;
+
 struct UTMat3 {
   double u00, u01, u02, u11, u12, u22;
+  operator Mat3() const;
 };
 
 struct Mat3 {
@@ -53,6 +56,15 @@ struct Mat3 {
     return *this;
   }
 };
+
+inline UTMat3::operator Mat3() const
+{
+  Mat3 M;
+  M(0, 0) = u00; M(0, 1) = u01; M(0, 2) = u02;
+  M(1, 0) = 0.0; M(1, 1) = u11; M(1, 2) = u12;
+  M(2, 0) = 0.0; M(2, 1) = 0.0; M(2, 2) = u22;
+  return M;
+}
 
 struct ColMat3 {
   double d[3][3];
@@ -209,6 +221,48 @@ inline DChol3 inv_dchol(const SymMat3 &A)
   double d2 = A.d22 - m02 * A.d02 - m12 * (A.d12 - m01 * A.d02);
   m02 -= m01 * m12; // U^{-1}_{02} = u01*u12 - u02
   return {1.0/A.d00, 1.0/d1, 1.0/d2, -m01, -m02, -m12};
+}
+
+inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
+{
+  perm[0] = 0; perm[1] = 1; perm[2] = 2;
+
+  double a00 = A.d00, a01 = A.d01, a02 = A.d02;
+  double a11 = A.d11, a12 = A.d12;
+  double a22 = A.d22;
+
+  {
+    double alpha = std::fabs(a00), beta = std::fabs(a11), gamma = std::fabs(a22);
+    if (beta > alpha && beta >= gamma) {
+      int t = perm[0]; perm[0] = perm[1]; perm[1] = t;
+      double tmp = a00; a00 = a11; a11 = tmp;
+      tmp = a02; a02 = a12; a12 = tmp;
+    } else if (gamma > alpha) {
+      int t = perm[0]; perm[0] = perm[2]; perm[2] = t;
+      double tmp = a00; a00 = a22; a22 = tmp;
+      tmp = a01; a01 = a12; a12 = tmp;
+    }
+  }
+
+  double d0 = a00;
+  double m01 = a01 / d0;
+  double m02 = a02 / d0;
+
+  double c11 = a11 - m01 * a01;
+  double c12 = a12 - m01 * a02;
+  double c22 = a22 - m02 * a02;
+
+  if (std::fabs(c22) > std::fabs(c11)) {
+    int t = perm[1]; perm[1] = perm[2]; perm[2] = t;
+    double tmp = c11; c11 = c22; c22 = tmp;
+    tmp = m01; m01 = m02; m02 = tmp;
+  }
+
+  double d1 = c11;
+  double m12 = c12 / d1;
+  double d2 = c22 - m12 * c12;
+
+  return {d0, d1, d2, m01, m02, m12};
 }
 
 inline LTMat3 chol_lower(const SymMat3 &A)
