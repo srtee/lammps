@@ -183,6 +183,7 @@ void FixRigs::prebuild_matrices()
                     bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
       std::string skey(key);
       auto it = rigs_cache.find(skey);
+      bool demoted = false;
       if (it == rigs_cache.end()) {
         RigCache c;
         double mu0 = 1.0 / mass[t0];
@@ -208,6 +209,7 @@ void FixRigs::prebuild_matrices()
         c.lm[3] = dc.m01;
         c.lm[4] = dc.m02;
         c.lm[5] = dc.m12;
+
         double d0 = bond1;
         double u01 = angle01 / d0;
         double u02 = angle02 / d0;
@@ -217,15 +219,137 @@ void FixRigs::prebuild_matrices()
         Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, d1, u12, d2});
         mul_ltdl(rt_LM, dc);
         SymMat3 MLM = mtm(rt_LM);
-        int perm[3];
-        DChol3 dc_MLM = dchol_pivot(MLM, perm);
+        int perm_mlm[3];
+        DChol3 dc_MLM = dchol_pivot(MLM, perm_mlm);
         dchol_diag.insert(dc_MLM.d0);
         dchol_diag.insert(dc_MLM.d1);
         dchol_diag.insert(dc_MLM.d2);
+
+        double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
+        c.ratio_d2d0 = ratio_d2d0;
+        demoted = (ratio_d2d0 < 1e-3);
+
+        if (demoted) {
+          SymMat3 Lref = {c.L[0], c.L[1], c.L[2], c.L[3], c.L[4], c.L[5]};
+          int permL[3];
+          DChol3 dcL = dchol_pivot(Lref, permL);
+          int pd = permL[2] + 1;
+
+          int tmp = closest_list[ilist][3];
+          closest_list[ilist][3] = closest_list[ilist][pd];
+          closest_list[ilist][pd] = tmp;
+
+          tmp = shake_type[m][2];
+          shake_type[m][2] = shake_type[m][pd - 1];
+          shake_type[m][pd - 1] = tmp;
+
+          int tri_at;
+          if (pd == 1) {
+            tri_at = rigs_type[m][2];
+            rigs_type[m][2] = rigs_type[m][0];
+            rigs_type[m][0] = tri_at;
+          } else if (pd == 2) {
+            tri_at = rigs_type[m][1];
+            rigs_type[m][1] = rigs_type[m][0];
+            rigs_type[m][0] = tri_at;
+          } else {
+            tri_at = rigs_type[m][0];
+          }
+
+          shake_flag[m] = -5;
+
+          bt0 = shake_type[m][0];
+          bt1 = shake_type[m][1];
+          double b0 = bond_distance[bt0];
+          double b1 = bond_distance[bt1];
+          L[0] = b0 * b0;
+          L[1] = rigs_angle[tri_at];
+          L[2] = b1 * b1;
+
+          int i1a = closest_list[ilist][1];
+          int i2a = closest_list[ilist][2];
+          double im0 = 1.0 / mass[i0];
+          double im1a = 1.0 / mass[i1a];
+          double im2a = 1.0 / mass[i2a];
+          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1a, im0, im0 + im2a});
+          lm[0] = dc3.d0;
+          lm[1] = dc3.d1;
+          lm[2] = dc3.m01;
+
+          double l00 = sqrt(dcL.d0);
+          double l11 = sqrt(dcL.d1);
+          L[3] = dcL.m02 * l00;
+          L[4] = dcL.m12 * l11;
+          L[5] = sqrt(dcL.d2);
+          lm[3] = l00;
+          lm[4] = dcL.m01;
+          lm[5] = l11;
+        }
+
         it = rigs_cache.insert({skey, c}).first;
+      } else {
+        demoted = (it->second.ratio_d2d0 < 1e-3);
+        if (demoted) {
+          int pd;
+          SymMat3 Lref = {it->second.L[0], it->second.L[1], it->second.L[2],
+                          it->second.L[3], it->second.L[4], it->second.L[5]};
+          int permL[3];
+          DChol3 dcL = dchol_pivot(Lref, permL);
+          pd = permL[2] + 1;
+
+          int tmp = closest_list[ilist][3];
+          closest_list[ilist][3] = closest_list[ilist][pd];
+          closest_list[ilist][pd] = tmp;
+
+          tmp = shake_type[m][2];
+          shake_type[m][2] = shake_type[m][pd - 1];
+          shake_type[m][pd - 1] = tmp;
+
+          if (pd == 1) {
+            int tri_at = rigs_type[m][2];
+            rigs_type[m][2] = rigs_type[m][0];
+            rigs_type[m][0] = tri_at;
+          } else if (pd == 2) {
+            int tri_at = rigs_type[m][1];
+            rigs_type[m][1] = rigs_type[m][0];
+            rigs_type[m][0] = tri_at;
+          }
+
+          shake_flag[m] = -5;
+
+          int bt0n = shake_type[m][0];
+          int bt1n = shake_type[m][1];
+          double b0 = bond_distance[bt0n];
+          double b1 = bond_distance[bt1n];
+          L[0] = b0 * b0;
+          L[1] = rigs_angle[rigs_type[m][0]];
+          L[2] = b1 * b1;
+
+          int i1a = closest_list[ilist][1];
+          int i2a = closest_list[ilist][2];
+          double im0 = 1.0 / mass[i0];
+          double im1a = 1.0 / mass[i1a];
+          double im2a = 1.0 / mass[i2a];
+          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1a, im0, im0 + im2a});
+          lm[0] = dc3.d0;
+          lm[1] = dc3.d1;
+          lm[2] = dc3.m01;
+
+          double l00 = sqrt(dcL.d0);
+          double l11 = sqrt(dcL.d1);
+          L[3] = dcL.m02 * l00;
+          L[4] = dcL.m12 * l11;
+          L[5] = sqrt(dcL.d2);
+          lm[3] = l00;
+          lm[4] = dcL.m01;
+          lm[5] = l11;
+        }
       }
-      std::memcpy(L, it->second.L, 6 * sizeof(double));
-      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
+
+      if (!demoted) {
+        std::memcpy(L, it->second.L, 6 * sizeof(double));
+        std::memcpy(lm, it->second.lm, 6 * sizeof(double));
+      }
 
     } else if (shake_flag[m] == 6) {
       int bt0 = shake_type[m][0];
@@ -286,10 +410,101 @@ void FixRigs::shake4(int ilist)
   int m = list[ilist];
   if (shake_flag[m] == 5) {
     shake4improper(ilist);
+  } else if (shake_flag[m] == -5) {
+    shake4demoted(ilist);
   } else if (shake_flag[m] == 6) {
     error->one(FLERR,"RIGS dihedral constraint solver not yet implemented");
   } else {
     FixShake::shake4(ilist);
+  }
+}
+
+/* ----------------------------------------------------------------------
+   demoted improper solver: solve 3-atom triangle then push 4th atom
+   ------------------------------------------------------------------------- */
+
+void FixRigs::shake4demoted(int ilist)
+{
+  int m = list[ilist];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+  int i3 = closest_list[ilist][3];
+
+  double fpre0[3] = {f[i0][0], f[i0][1], f[i0][2]};
+  double fpre1[3] = {f[i1][0], f[i1][1], f[i1][2]};
+  double fpre2[3] = {f[i2][0], f[i2][1], f[i2][2]};
+
+  shake3angle(ilist);
+
+  double m0, m1, m2, m3;
+  if (rmass) {
+    m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2]; m3 = rmass[i3];
+  } else {
+    m0 = mass[type[i0]]; m1 = mass[type[i1]];
+    m2 = mass[type[i2]]; m3 = mass[type[i3]];
+  }
+
+  double xc0[3], xc1[3], xc2[3];
+  for (int k = 0; k < 3; k++) {
+    xc0[k] = xshake[i0][k] + (f[i0][k] - fpre0[k]) * dtfsq / m0;
+    xc1[k] = xshake[i1][k] + (f[i1][k] - fpre1[k]) * dtfsq / m1;
+    xc2[k] = xshake[i2][k] + (f[i2][k] - fpre2[k]) * dtfsq / m2;
+  }
+
+  double l00 = rigs_lm[ilist][3];
+  double m01 = rigs_lm[ilist][4];
+  double l11 = rigs_lm[ilist][5];
+  double l20 = rigs_L[ilist][3];
+  double l21_ = rigs_L[ilist][4];
+  double l22 = rigs_L[ilist][5];
+
+  double r01[3], r02[3];
+  for (int k = 0; k < 3; k++) {
+    r01[k] = xc0[k] - xc1[k];
+    r02[k] = xc0[k] - xc2[k];
+  }
+
+  double e1[3], e2[3], n[3];
+  for (int k = 0; k < 3; k++) {
+    e1[k] = r01[k] / l00;
+    e2[k] = (r02[k] - m01 * r01[k]) / l11;
+  }
+  n[0] = e1[1] * e2[2] - e1[2] * e2[1];
+  n[1] = e1[2] * e2[0] - e1[0] * e2[2];
+  n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+  double nn = sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
+  double r03_target[3], r03_alt[3], diff_pos[3], diff_neg[3];
+  for (int k = 0; k < 3; k++) {
+    r03_target[k] = xc0[k] - (l20 * e1[k] + l21_ * e2[k] + l22 * n[k] / nn);
+    r03_alt[k]    = xc0[k] - (l20 * e1[k] + l21_ * e2[k] - l22 * n[k] / nn);
+    diff_pos[k] = r03_target[k] - xshake[i3][k];
+    diff_neg[k] = r03_alt[k]    - xshake[i3][k];
+  }
+  double dpos = diff_pos[0]*diff_pos[0] + diff_pos[1]*diff_pos[1] + diff_pos[2]*diff_pos[2];
+  double dneg = diff_neg[0]*diff_neg[0] + diff_neg[1]*diff_neg[1] + diff_neg[2]*diff_neg[2];
+
+  double f_cons[3];
+  double inv_dtfsq = 1.0 / dtfsq;
+  if (dpos <= dneg) {
+    for (int k = 0; k < 3; k++) f_cons[k] = m3 * diff_pos[k] * inv_dtfsq;
+  } else {
+    for (int k = 0; k < 3; k++) f_cons[k] = m3 * diff_neg[k] * inv_dtfsq;
+  }
+
+  for (int k = 0; k < 3; k++) f[i3][k] += f_cons[k];
+
+  double M_total = m0 + m1 + m2 + m3;
+  double s0 = m0 / M_total;
+  double s1 = m1 / M_total;
+  double s2 = m2 / M_total;
+  double s3 = m3 / M_total;
+  for (int k = 0; k < 3; k++) {
+    f[i0][k] -= s0 * f_cons[k];
+    f[i1][k] -= s1 * f_cons[k];
+    f[i2][k] -= s2 * f_cons[k];
+    f[i3][k] -= s3 * f_cons[k];
   }
 }
 

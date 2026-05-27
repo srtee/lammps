@@ -56,13 +56,14 @@ class FixRigs : public FixShake {
   double **rigs_lm;
   int rigs_maxlist;
 
-  struct RigCache { double L[6]; double lm[6]; };
+  struct RigCache { double L[6]; double lm[6]; double ratio_d2d0; };
   std::map<std::string, RigCache> rigs_cache;
 
   void prebuild_matrices();
   // void check_rank3(int ilist);
   void shake3angle(int) override;
   void shake4(int ilist) override;
+  void shake4demoted(int ilist);
   void shake4improper(int ilist);
   void shake4dihedral(int ilist);
   void fill_improper_types(int i);
