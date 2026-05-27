@@ -373,6 +373,21 @@ inline Mat43 dihedral_L_lambda(const Mat3 &lam) {
   return L;
 }
 
+inline void chol_frame3(const double *L, double *R)
+{
+  double b1 = sqrt(L[0]);
+  double r10 = L[1] / b1;
+  double b2sq = L[3] - r10 * r10;
+  double b2 = sqrt(b2sq);
+  double r20 = L[2] / b1;
+  double r21 = (L[4] - r10 * r20) / b2;
+  double b3sq = L[5] - r20 * r20 - r21 * r21;
+  double b3 = sqrt(b3sq);
+  R[0] = b1;  R[1] = 0.0; R[2] = 0.0;
+  R[3] = r10; R[4] = b2;  R[5] = 0.0;
+  R[6] = r20; R[7] = r21; R[8] = b3;
+}
+
 }
 
 #endif

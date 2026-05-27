@@ -181,6 +181,15 @@ inline void mul_ltdl(Mat2 &M, const DChol2 &L)
   M(1, 0) += M(1, 1) * L.m01;
 }
 
+inline void chol_frame2(const double *L, double *R)
+{
+  double b1 = sqrt(L[0]);
+  double r10 = L[1] / b1;
+  double b2 = sqrt(L[2] - r10 * r10);
+  R[0] = b1;  R[1] = 0.0;
+  R[2] = r10; R[3] = b2;
+}
+
 }
 
 #endif
