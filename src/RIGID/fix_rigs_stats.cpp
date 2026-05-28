@@ -238,15 +238,11 @@ void FixRigs::min_post_force(int vflag)
     atom3 = domain->closest_image(i, atom3);
     atom4 = domain->closest_image(i, atom4);
 
-    if (rigs_type[i][0] > 0) {
-      if (shake_flag[i] == 5)
-        bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
-      else // -5: triangle angle at type 0
-        bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
-    }
-    if (rigs_type[i][1] > 0 && shake_flag[i] == 5)
+    if (rigs_type[i][0] > 0)
+      bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
+    if (rigs_type[i][1] > 0)
       bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
-    if (rigs_type[i][2] > 0 && shake_flag[i] == 5)
+    if (rigs_type[i][2] > 0)
       bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
   }
 }
