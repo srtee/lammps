@@ -307,27 +307,26 @@ void FixRigs::prebuild_matrices()
             int tri_at = rigs_type[m][1];
             rigs_type[m][1] = rigs_type[m][0];
             rigs_type[m][0] = tri_at;
-	  }
+          }
         }
+        std::memcpy(L, it->second.L, 6 * sizeof(double));
+        std::memcpy(lm, it->second.lm, 6 * sizeof(double));
       }
-      std::memcpy(L, it->second.L, 6 * sizeof(double));
-      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
-    } else if (shake_flag[m] == 6) {
-      int bt0 = shake_type[m][0];
-      int bt1 = shake_type[m][1];
-      int bt2 = shake_type[m][2];
-      int i0 = closest_list[ilist][0];
-      int i1 = closest_list[ilist][1];
-      int i2 = closest_list[ilist][2];
-      int i3 = closest_list[ilist][3];
-      int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+      bt0 = shake_type[m][0];
+      bt1 = shake_type[m][1];
+      bt2 = shake_type[m][2];
+      i0 = closest_list[ilist][0];
+      i1 = closest_list[ilist][1];
+      i2 = closest_list[ilist][2];
+      i3 = closest_list[ilist][3];
+      t0 = type[i0]; t1 = type[i1]; t2 = type[i2]; t3 = type[i3];
 
-      char key[128];
-      std::snprintf(key, sizeof(key), "F6:%d:%d:%d:%d:%d:%d:%d",
+      char keyF6[128];
+      std::snprintf(keyF6, sizeof(keyF6), "F6:%d:%d:%d:%d:%d:%d:%d",
                     bt0, bt1, bt2, t0, t1, t2, t3);
-      std::string skey(key);
-      auto it = rigs_cache.find(skey);
-      if (it == rigs_cache.end()) {
+      std::string skeyF6(keyF6);
+      auto itF6 = rigs_cache.find(skeyF6);
+      if (itF6 == rigs_cache.end()) {
         RigCache c;
         double bond1 = bond_distance[bt0];
         double bond2 = bond_distance[bt1];
@@ -350,10 +349,10 @@ void FixRigs::prebuild_matrices()
         c.lm[3] = dc.m01;
         c.lm[4] = dc.m02;
         c.lm[5] = dc.m12;
-        it = rigs_cache.insert({skey, c}).first;
+        itF6 = rigs_cache.insert({skeyF6, c}).first;
       }
-      std::memcpy(L, it->second.L, 6 * sizeof(double));
-      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
+      std::memcpy(L, itF6->second.L, 6 * sizeof(double));
+      std::memcpy(lm, itF6->second.lm, 6 * sizeof(double));
     }
   }
 }

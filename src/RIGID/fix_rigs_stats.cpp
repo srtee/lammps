@@ -224,7 +224,7 @@ void FixRigs::min_post_force(int vflag)
   int atom2, atom3, atom4;
 
   for (int i = 0; i < nlocal; i++) {
-    if (shake_flag[i] != 5) continue;
+    if (shake_flag[i] != 5 && shake_flag[i] != -5) continue;
     if (shake_atom[i][0] != atom->tag[i]) continue;
 
     atom2 = atom->map(shake_atom[i][1]);
@@ -238,11 +238,15 @@ void FixRigs::min_post_force(int vflag)
     atom3 = domain->closest_image(i, atom3);
     atom4 = domain->closest_image(i, atom4);
 
-    if (rigs_type[i][0] > 0)
-      bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
-    if (rigs_type[i][1] > 0)
+    if (rigs_type[i][0] > 0) {
+      if (shake_flag[i] == 5)
+        bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
+      else // -5: triangle angle at type 0
+        bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
+    }
+    if (rigs_type[i][1] > 0 && shake_flag[i] == 5)
       bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
-    if (rigs_type[i][2] > 0)
+    if (rigs_type[i][2] > 0 && shake_flag[i] == 5)
       bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
   }
 }
@@ -268,7 +272,7 @@ void FixRigs::stats()
 
   for (int ii = 0; ii < nlist; ++ii) {
     int i = list[ii];
-    if (shake_flag[i] != 5) continue;
+    if (shake_flag[i] != 5 && shake_flag[i] != -5) continue;
 
     int i0 = closest_list[ii][0];
     int i1 = closest_list[ii][1];
