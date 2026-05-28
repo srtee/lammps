@@ -59,8 +59,10 @@ class FixRigs : public FixShake {
   struct RigCache { double L[6]; double lm[6]; int demote_pos = 0; };
   std::map<std::string, RigCache> rigs_cache;
   bool store_lamda_corrections;
+  bool propagate_demoted_clusters;
 
   void prebuild_matrices();
+  void transform_clusters(int, int);
   // void check_rank3(int ilist);
   void shake3angle(int) override;
   void shake4(int ilist) override;

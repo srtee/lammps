@@ -232,38 +232,38 @@ void FixRigs::prebuild_matrices()
           SymMat3 Lref = {c.L[0], c.L[1], c.L[2], c.L[3], c.L[4], c.L[5]};
           int permL[3];
           DChol3 dcL = dchol_pivot(Lref, permL);
-          c.demote_pos = permL[2] + 1;
-	  int pd = c.demote_pos;
+          int pd = perm_mlm[2] + 1;
+	  c.demote_pos = pd;
 
-          int tmp = closest_list[ilist][3];
-          closest_list[ilist][3] = closest_list[ilist][pd];
-          closest_list[ilist][pd] = tmp;
+	  if (pd != 3) {
+            int tmp = closest_list[ilist][3];
+            closest_list[ilist][3] = closest_list[ilist][pd];
+            closest_list[ilist][pd] = tmp;
 
-          tmp = shake_type[m][2];
-          shake_type[m][2] = shake_type[m][pd - 1];
-          shake_type[m][pd - 1] = tmp;
+            tmp = shake_type[m][2];
+            shake_type[m][2] = shake_type[m][pd - 1];
+            shake_type[m][pd - 1] = tmp;
 
-          int tri_at;
-          if (pd == 1) {
-            tri_at = rigs_type[m][2];
-            rigs_type[m][2] = rigs_type[m][0];
-            rigs_type[m][0] = tri_at;
-          } else if (pd == 2) {
-            tri_at = rigs_type[m][1];
-            rigs_type[m][1] = rigs_type[m][0];
-            rigs_type[m][0] = tri_at;
-          } else {
-            tri_at = rigs_type[m][0];
-          }
+            if (pd == 1) {
+              tmp = rigs_type[m][2];
+              rigs_type[m][2] = rigs_type[m][0];
+              rigs_type[m][0] = tmp;
+            } else if (pd == 2) {
+              tmp = rigs_type[m][1];
+              rigs_type[m][1] = rigs_type[m][0];
+              rigs_type[m][0] = tmp;
+            }
+	  }
 
-          shake_flag[m] = -5; // TODO: propaagate this!!
+          shake_flag[m] = -5;
+
 
           bt0 = shake_type[m][0];
           bt1 = shake_type[m][1];
           double b0 = bond_distance[bt0];
           double b1 = bond_distance[bt1];
           c.L[0] = b0 * b0;
-          c.L[1] = rigs_angle[tri_at];
+          c.L[1] = rigs_angle[rigs_type[m][0]];
           c.L[2] = b1 * b1;
 
           int i1a = closest_list[ilist][1];
@@ -284,42 +284,82 @@ void FixRigs::prebuild_matrices()
           c.lm[3] = l00_1;
           c.lm[4] = dcL.m01;
           c.lm[5] = l11_1;
+          
+          bt0 = shake_type[m][0];
+          bt1 = shake_type[m][1];
+          bt2 = shake_type[m][2];
+          at0 = rigs_type[m][0];
+          at1 = rigs_type[m][1];
+          at2 = rigs_type[m][2];
+          t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+	  char newkey[256];
+          std::snprintf(newkey, sizeof(newkey), "F-5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                    bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
+          std::string newskey(newkey);
+          it = rigs_cache.insert({newskey, c}).first;
+	  propagate_demoted_clusters = true;
         }
         it = rigs_cache.insert({skey, c}).first;
       } else {
         int pd = (it->second.demote_pos);
         if (pd) {
           shake_flag[m] = -5;
+	  if (pd != 3) {
+            int tmp = closest_list[ilist][3];
+            closest_list[ilist][3] = closest_list[ilist][pd];
+            closest_list[ilist][pd] = tmp;
 
-          int tmp = closest_list[ilist][3];
-          closest_list[ilist][3] = closest_list[ilist][pd];
-          closest_list[ilist][pd] = tmp;
+            tmp = shake_type[m][2];
+            shake_type[m][2] = shake_type[m][pd - 1];
+            shake_type[m][pd - 1] = tmp;
 
-          tmp = shake_type[m][2];
-          shake_type[m][2] = shake_type[m][pd - 1];
-          shake_type[m][pd - 1] = tmp;
-
-          if (pd == 1) {
-            int tri_at = rigs_type[m][2];
-            rigs_type[m][2] = rigs_type[m][0];
-            rigs_type[m][0] = tri_at;
-          } else if (pd == 2) {
-            int tri_at = rigs_type[m][1];
-            rigs_type[m][1] = rigs_type[m][0];
-            rigs_type[m][0] = tri_at;
-          }
+            if (pd == 1) {
+              tmp = rigs_type[m][2];
+              rigs_type[m][2] = rigs_type[m][0];
+              rigs_type[m][0] = tmp;
+            } else if (pd == 2) {
+              tmp = rigs_type[m][1];
+              rigs_type[m][1] = rigs_type[m][0];
+              rigs_type[m][0] = tmp;
+            }
+	  }
         }
+      }
+      std::memcpy(L, it->second.L, 6 * sizeof(double));
+      std::memcpy(lm, it->second.lm, 6 * sizeof(double));
+    } else if (shake_flag[m] == -5) {
+      int bt0 = shake_type[m][0];
+      int bt1 = shake_type[m][1];
+      int bt2 = shake_type[m][2];
+      int at0 = rigs_type[m][0];
+      int at1 = rigs_type[m][1];
+      int at2 = rigs_type[m][2];
+      int i0 = closest_list[ilist][0];
+      int i1 = closest_list[ilist][1];
+      int i2 = closest_list[ilist][2];
+      int i3 = closest_list[ilist][3];
+      int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+
+      char key[256];
+      std::snprintf(key, sizeof(key), "F-5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                    bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
+      std::string skey(key);
+      auto it = rigs_cache.find(skey);
+      if (it == rigs_cache.end()) {
+        error->one(FLERR,"RIGS error: Type -5 cluster detected without cache hit!");
+      } else {
         std::memcpy(L, it->second.L, 6 * sizeof(double));
         std::memcpy(lm, it->second.lm, 6 * sizeof(double));
       }
-      bt0 = shake_type[m][0];
-      bt1 = shake_type[m][1];
-      bt2 = shake_type[m][2];
-      i0 = closest_list[ilist][0];
-      i1 = closest_list[ilist][1];
-      i2 = closest_list[ilist][2];
-      i3 = closest_list[ilist][3];
-      t0 = type[i0]; t1 = type[i1]; t2 = type[i2]; t3 = type[i3];
+    } else if (shake_flag[m] == 6) {
+      int bt0 = shake_type[m][0];
+      int bt1 = shake_type[m][1];
+      int bt2 = shake_type[m][2];
+      int i0 = closest_list[ilist][0];
+      int i1 = closest_list[ilist][1];
+      int i2 = closest_list[ilist][2];
+      int i3 = closest_list[ilist][3];
+      int t0 = type[i0]; int t1 = type[i1]; int t2 = type[i2]; int t3 = type[i3];
 
       char keyF6[128];
       std::snprintf(keyF6, sizeof(keyF6), "F6:%d:%d:%d:%d:%d:%d:%d",
@@ -354,6 +394,10 @@ void FixRigs::prebuild_matrices()
       std::memcpy(L, itF6->second.L, 6 * sizeof(double));
       std::memcpy(lm, itF6->second.lm, 6 * sizeof(double));
     }
+  }
+  if (propagate_demoted_clusters) {
+    transform_clusters(5, -5);
+    propagate_demoted_clusters = false;
   }
 }
 
@@ -392,6 +436,16 @@ void FixRigs::shake4demoted(int ilist)
   shake3angle(ilist);
   store_lamda_corrections = false;
 
+  double r01[3], r02[3], r03[3];
+  for (int k = 0; k < 3; k++) {
+    r01[k] = xshake[i0][k] - xshake[i1][k];
+    r02[k] = xshake[i0][k] - xshake[i2][k];
+    r03[k] = xshake[i0][k] - xshake[i3][k];
+    // TODO: work directly from i3's forces and velocities
+    // since i3 is likely to be a virtual site with very small mass
+    // and xshake[i3] probably looks pretty wild
+  }
+
   double m0, m1, m2, m3;
   if (rmass) {
     m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2]; m3 = rmass[i3];
@@ -407,12 +461,6 @@ void FixRigs::shake4demoted(int ilist)
   double l21_ = rigs_L[ilist][4];
   double l22 = rigs_L[ilist][5];
 
-  double r01[3], r02[3];
-  for (int k = 0; k < 3; k++) {
-    r01[k] = xshake[i0][k] - xshake[i1][k];
-    r02[k] = xshake[i0][k] - xshake[i2][k];
-  }
-
   double e1[3], e2[3], n[3];
   for (int k = 0; k < 3; k++) {
     e1[k] = r01[k] / l00;
@@ -421,24 +469,14 @@ void FixRigs::shake4demoted(int ilist)
   n[0] = e1[1] * e2[2] - e1[2] * e2[1];
   n[1] = e1[2] * e2[0] - e1[0] * e2[2];
   n[2] = e1[0] * e2[1] - e1[1] * e2[0];
-  double nn = sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
 
-  double r03_target[3], r03_alt[3], diff_pos[3], diff_neg[3];
-  for (int k = 0; k < 3; k++) {
-    r03_target[k] = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] + l22 * n[k] / nn);
-    r03_alt[k]    = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] - l22 * n[k] / nn);
-    diff_pos[k] = r03_target[k] - xshake[i3][k];
-    diff_neg[k] = r03_alt[k]    - xshake[i3][k];
-  }
-  double dpos = diff_pos[0]*diff_pos[0] + diff_pos[1]*diff_pos[1] + diff_pos[2]*diff_pos[2];
-  double dneg = diff_neg[0]*diff_neg[0] + diff_neg[1]*diff_neg[1] + diff_neg[2]*diff_neg[2];
+  double sgn = (r03[0] * n[0] + r03[1] * n[1] + r03[2] * n[2] < 0) ? -1.0 : 1.0;
 
   double f_cons[3];
   double inv_dtfsq = 1.0 / dtfsq;
-  if (dpos <= dneg) {
-    for (int k = 0; k < 3; k++) f_cons[k] = m3 * diff_pos[k] * inv_dtfsq;
-  } else {
-    for (int k = 0; k < 3; k++) f_cons[k] = m3 * diff_neg[k] * inv_dtfsq;
+  for (int k = 0; k < 3; k++) {
+    f_cons[k] = r03[k] - (l20 * e1[k] + l21_ * e2[k] + sgn * l22 * n[k]);
+    f_cons[k] *= m3 * inv_dtfsq;
   }
 
   double M_total = m0 + m1 + m2 + m3;
@@ -454,6 +492,7 @@ void FixRigs::shake4demoted(int ilist)
     for (int k = 0; k < 3; k++) f[i2][k] -= s2 * f_cons[k];
   if (i3 < nlocal)
     for (int k = 0; k < 3; k++) f[i3][k] -= s3 * f_cons[k];
+  
 }
 
 /* ----------------------------------------------------------------------

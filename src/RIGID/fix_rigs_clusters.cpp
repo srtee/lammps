@@ -195,18 +195,48 @@ void FixRigs::post_constructor()
     MPI_Allreduce(&count4, &tmp4, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     MPI_Allreduce(&count5, &tmp5, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (comm->me == 0)
-      utils::logmesg(lmp, "  {:>8} = # of remaining size 4 clusters\n"
-                     "  {:>8} = # of upgraded improper clusters\n",
+      utils::logmesg(lmp, "{:>8} = # of remaining size 4 clusters\n"
+                     "{:>8} = # of upgraded improper clusters\n",
                      tmp4, tmp5);
   }
 
+  transform_clusters(4, 5);
   for (i = 0; i < nlocal; i++) {
-    if (shake_flag[i] != 5) continue;
+    if (shake_flag[i] == 5) {
+      if (rigs_type[i][0] > 0)
+        angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
+      if (rigs_type[i][1] > 0)
+        angletype_findset(i, shake_atom[i][1], shake_atom[i][3], -1);
+      if (rigs_type[i][2] > 0)
+        angletype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
+    } else if (shake_flag[i] == 6) {
+      if (atom->tag[i] == shake_atom[i][0]) {
+        bondtype_findset(i, shake_atom[i][0], shake_atom[i][1], -1);
+        bondtype_findset(i, shake_atom[i][0], shake_atom[i][2], -1);
+        if (rigs_type[i][0] > 0)
+          angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
+        dihedraltype_findset(i, shake_atom[i][0], shake_atom[i][1],
+                             shake_atom[i][2], shake_atom[i][3], -1);
+      } else {
+        bondtype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
+        if (rigs_type[i][1] > 0)
+          angletype_findset(i, shake_atom[i][0], shake_atom[i][3], -1);
+      }
+    }
+  }
+}
+
+void FixRigs::transform_clusters(int from_flag, int to_flag)
+{
+  int i;
+  int nlocal = atom->nlocal;
+  for (i = 0; i < nlocal; i++) {
+    if (shake_flag[i] != to_flag) continue;
     if (shake_atom[i][0] != atom->tag[i]) continue;
     for (int k = 1; k <= 3; k++) {
       int pidx = atom->map(shake_atom[i][k]);
-      if (pidx >= 0 && pidx < nlocal && shake_flag[pidx] == 4) {
-        shake_flag[pidx] = 5;
+      if (pidx >= 0 && pidx < nlocal && shake_flag[pidx] == from_flag) {
+        shake_flag[pidx] = to_flag;
         rigs_type[pidx][0] = rigs_type[i][0];
         rigs_type[pidx][1] = rigs_type[i][1];
         rigs_type[pidx][2] = rigs_type[i][2];
@@ -216,7 +246,7 @@ void FixRigs::post_constructor()
 
   int nsend = 0;
   for (i = 0; i < nlocal; i++) {
-    if (shake_flag[i] == 5 && shake_atom[i][0] == atom->tag[i])
+    if (shake_flag[i] == to_flag && shake_atom[i][0] == atom->tag[i])
       nsend++;
   }
 
@@ -225,7 +255,7 @@ void FixRigs::post_constructor()
   UpgradedCluster *sendbuf = new UpgradedCluster[nsend > 0 ? nsend : 1];
   nsend = 0;
   for (i = 0; i < nlocal; i++) {
-    if (shake_flag[i] == 5 && shake_atom[i][0] == atom->tag[i]) {
+    if (shake_flag[i] == to_flag && shake_atom[i][0] == atom->tag[i]) {
       sendbuf[nsend].central = atom->tag[i];
       sendbuf[nsend].rt0 = rigs_type[i][0];
       sendbuf[nsend].rt1 = rigs_type[i][1];
@@ -253,9 +283,9 @@ void FixRigs::post_constructor()
   for (int c = 0; c < totalrecv_n; c++) {
     tagint ctag = recvbuf[c].central;
     for (i = 0; i < nlocal; i++) {
-      if (shake_flag[i] != 4) continue;
+      if (shake_flag[i] != from_flag) continue;
       if (shake_atom[i][0] != ctag) continue;
-      shake_flag[i] = 5;
+      shake_flag[i] = to_flag;
       rigs_type[i][0] = recvbuf[c].rt0;
       rigs_type[i][1] = recvbuf[c].rt1;
       rigs_type[i][2] = recvbuf[c].rt2;
@@ -266,28 +296,5 @@ void FixRigs::post_constructor()
   delete[] recvbuf;
   delete[] recvcounts;
   delete[] displs;
-
-  for (i = 0; i < nlocal; i++) {
-    if (shake_flag[i] == 5) {
-      if (rigs_type[i][0] > 0)
-        angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
-      if (rigs_type[i][1] > 0)
-        angletype_findset(i, shake_atom[i][1], shake_atom[i][3], -1);
-      if (rigs_type[i][2] > 0)
-        angletype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
-    } else if (shake_flag[i] == 6) {
-      if (atom->tag[i] == shake_atom[i][0]) {
-        bondtype_findset(i, shake_atom[i][0], shake_atom[i][1], -1);
-        bondtype_findset(i, shake_atom[i][0], shake_atom[i][2], -1);
-        if (rigs_type[i][0] > 0)
-          angletype_findset(i, shake_atom[i][1], shake_atom[i][2], -1);
-        dihedraltype_findset(i, shake_atom[i][0], shake_atom[i][1],
-                             shake_atom[i][2], shake_atom[i][3], -1);
-      } else {
-        bondtype_findset(i, shake_atom[i][2], shake_atom[i][3], -1);
-        if (rigs_type[i][1] > 0)
-          angletype_findset(i, shake_atom[i][0], shake_atom[i][3], -1);
-      }
-    }
-  }
 }
+
