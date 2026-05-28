@@ -244,7 +244,100 @@ void FixRigs::min_post_force(int vflag)
       bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
     if (rigs_type[i][2] > 0)
       bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
+
+    if (output_every) {
+      double delx, dely, delz, r01, r02, r03, r12, r13, r23, angle;
+      int n = 0;
+      if (i < nlocal) n++;
+      if (atom2 < nlocal) n++;
+      if (atom3 < nlocal) n++;
+      if (atom4 < nlocal) n++;
+
+      if (rigs_type[i][0] > 0) {
+        delx = x[i][0] - x[atom2][0];
+        dely = x[i][1] - x[atom2][1];
+        delz = x[i][2] - x[atom2][2];
+        r01 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[i][0] - x[atom3][0];
+        dely = x[i][1] - x[atom3][1];
+        delz = x[i][2] - x[atom3][2];
+        r02 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[atom2][0] - x[atom3][0];
+        dely = x[atom2][1] - x[atom3][1];
+        delz = x[atom2][2] - x[atom3][2];
+        r12 = sqrt(delx*delx + dely*dely + delz*delz);
+        angle = acos((r01*r01 + r02*r02 - r12*r12) / (2.0*r01*r02)) * (180.0/MY_PI);
+        int m = rigs_type[i][0];
+        a_count[m] += n;
+        a_ave[m] += n * angle;
+        a_max[m] = MAX(a_max[m], angle);
+        a_min[m] = MIN(a_min[m], angle);
+      }
+      if (rigs_type[i][1] > 0) {
+        delx = x[i][0] - x[atom2][0];
+        dely = x[i][1] - x[atom2][1];
+        delz = x[i][2] - x[atom2][2];
+        r01 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[i][0] - x[atom4][0];
+        dely = x[i][1] - x[atom4][1];
+        delz = x[i][2] - x[atom4][2];
+        r03 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[atom2][0] - x[atom4][0];
+        dely = x[atom2][1] - x[atom4][1];
+        delz = x[atom2][2] - x[atom4][2];
+        r13 = sqrt(delx*delx + dely*dely + delz*delz);
+        angle = acos((r01*r01 + r03*r03 - r13*r13) / (2.0*r01*r03)) * (180.0/MY_PI);
+        int m = rigs_type[i][1];
+        a_count[m] += n;
+        a_ave[m] += n * angle;
+        a_max[m] = MAX(a_max[m], angle);
+        a_min[m] = MIN(a_min[m], angle);
+      }
+      if (rigs_type[i][2] > 0) {
+        delx = x[i][0] - x[atom3][0];
+        dely = x[i][1] - x[atom3][1];
+        delz = x[i][2] - x[atom3][2];
+        r02 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[i][0] - x[atom4][0];
+        dely = x[i][1] - x[atom4][1];
+        delz = x[i][2] - x[atom4][2];
+        r03 = sqrt(delx*delx + dely*dely + delz*delz);
+        delx = x[atom3][0] - x[atom4][0];
+        dely = x[atom3][1] - x[atom4][1];
+        delz = x[atom3][2] - x[atom4][2];
+        r23 = sqrt(delx*delx + dely*dely + delz*delz);
+        angle = acos((r02*r02 + r03*r03 - r23*r23) / (2.0*r02*r03)) * (180.0/MY_PI);
+        int m = rigs_type[i][2];
+        a_count[m] += n;
+        a_ave[m] += n * angle;
+        a_max[m] = MAX(a_max[m], angle);
+        a_min[m] = MIN(a_min[m], angle);
+      }
+    }
   }
+
+  if (output_every) {
+    bigint ntimestep = update->ntimestep;
+    int na = atom->nangletypes + 1;
+    MPI_Allreduce(a_count,a_count_all,na,MPI_LMP_BIGINT,MPI_SUM,world);
+    MPI_Allreduce(a_ave,a_ave_all,na,MPI_DOUBLE,MPI_SUM,world);
+    MPI_Allreduce(a_max,a_max_all,na,MPI_DOUBLE,MPI_MAX,world);
+    MPI_Allreduce(a_min,a_min_all,na,MPI_DOUBLE,MPI_MIN,world);
+    if (comm->me == 0) {
+      const int width = (int) log10((double)(MAX(1,na))) + 2;
+      auto mesg = fmt::format("RIGS stats (type/ave/delta/count) on step {}\n", ntimestep);
+      for (int i = 1; i < na; i++) {
+        const auto acnt = a_count_all[i];
+        if (acnt)
+          mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n", i, width,
+                              a_ave_all[i]/acnt, a_max_all[i]-a_min_all[i], acnt/3);
+      }
+      utils::logmesg(lmp, mesg);
+    }
+    next_output = ntimestep + output_every;
+    if (ntimestep % output_every != 0)
+      next_output = (ntimestep/output_every)*output_every + output_every;
+  } else next_output = -1;
 }
 
 void FixRigs::stats()

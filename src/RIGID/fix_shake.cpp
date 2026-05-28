@@ -940,7 +940,7 @@ void FixShake::min_post_force(int vflag)
             b_min[m] = MIN(b_min[m], r);
           }
         }
-      } else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6) {
+      } else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6 || shake_flag[i] == -5) {
         atom1 = atom->map(shake_atom[i][0]);
         atom2 = atom->map(shake_atom[i][1]);
         atom3 = atom->map(shake_atom[i][2]);
@@ -1058,7 +1058,7 @@ void FixShake::min_post_force(int vflag)
     }
   }
 
-  if (output_every) {
+  if (output_every && !rigsflag) {
     bigint ntimestep = update->ntimestep;
     if (next_output == ntimestep) {
       // sum collected data across all procs
@@ -1090,6 +1090,11 @@ void FixShake::min_post_force(int vflag)
         utils::logmesg(lmp,mesg);
       }
     }
+    next_output = ntimestep + output_every;
+    if (ntimestep % output_every != 0)
+      next_output = (ntimestep/output_every)*output_every + output_every;
+  } else if (rigsflag) {
+    bigint ntimestep = update->ntimestep;
     next_output = ntimestep + output_every;
     if (ntimestep % output_every != 0)
       next_output = (ntimestep/output_every)*output_every + output_every;
