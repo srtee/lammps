@@ -593,7 +593,7 @@ void FixRigs::shake3angle(int ilist)
       xshake[i1][i] += corr[i] / m1;
     }
     if (i1 < nlocal)
-      for (int i = 0; i < 3; i++) f[i0][i] += corr[i] / dtfsq;
+      for (int i = 0; i < 3; i++) f[i1][i] += corr[i] / dtfsq;
     for (int i = 0; i < 3; i++) {
       corr[i] = lamda12 * r01[i] + lamda02 * r02[i];
       xshake[i2][i] += corr[i] / m2;
