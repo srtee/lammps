@@ -431,21 +431,6 @@ void FixRigs::shake4demoted(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  store_lamda_corrections = true;
-
-  shake3angle(ilist);
-  store_lamda_corrections = false;
-
-  double r01[3], r02[3], r03[3];
-  for (int k = 0; k < 3; k++) {
-    r01[k] = xshake[i0][k] - xshake[i1][k];
-    r02[k] = xshake[i0][k] - xshake[i2][k];
-    r03[k] = xshake[i0][k] - xshake[i3][k];
-    // TODO: work directly from i3's forces and velocities
-    // since i3 is likely to be a virtual site with very small mass
-    // and xshake[i3] probably looks pretty wild
-  }
-
   double m0, m1, m2, m3;
   if (rmass) {
     m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2]; m3 = rmass[i3];
@@ -454,14 +439,78 @@ void FixRigs::shake4demoted(int ilist)
     m2 = mass[type[i2]]; m3 = mass[type[i3]];
   }
 
+  double f_i3[3];
+  for (int k = 0; k < 3; k++) f_i3[k] = f[i3][k];// + v[i3][k] * dtv / m3;
+
   double l00 = rigs_lm[ilist][3];
   double m01 = rigs_lm[ilist][4];
   double l11 = rigs_lm[ilist][5];
+
+  double r01[3], r02[3];
+  for (int k = 0; k < 3; k++) {
+    r01[k] = x[i0][k] - x[i1][k];
+    r02[k] = x[i0][k] - x[i2][k];
+  }
+
+  double e1[3], e2[3], n[3];
+  for (int k = 0; k < 3; k++) {
+    e1[k] = r01[k] / l00;
+    e2[k] = (r02[k] - m01 * r01[k]) / l11;
+  }
+  n[0] = e1[1] * e2[2] - e1[2] * e2[1];
+  n[1] = e1[2] * e2[0] - e1[0] * e2[2];
+  n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+
+  double f_n = f_i3[0]*n[0] + f_i3[1]*n[1] + f_i3[2]*n[2];
+  double f1 = f_i3[0]*e1[0] + f_i3[1]*e1[1] + f_i3[2]*e1[2];
+  double f2 = f_i3[0]*e2[0] + f_i3[1]*e2[1] + f_i3[2]*e2[2];
+
+  double w1 = l00 / (l00 + l11);
+  double w2 = 1.0 - w1;
+  double f1e1_f2e2[3];
+  for (int k = 0; k < 3; k++) f1e1_f2e2[k] = f1*e1[k] + f2*e2[k];
+
+  for (int k = 0; k < 3; k++) {
+    xshake[i0][k] += f_n * n[k] * dtfsq / m0;
+  }
+  if (i0 < nlocal)
+    for (int k = 0; k < 3; k++) f[i0][k] += f_n * n[k];
+
+  for (int k = 0; k < 3; k++) {
+    xshake[i1][k] += f1e1_f2e2[k] * w1 * dtfsq / m1;
+  }
+  if (i1 < nlocal)
+    for (int k = 0; k < 3; k++) f[i1][k] += f1e1_f2e2[k] * w1;
+
+  for (int k = 0; k < 3; k++) {
+    xshake[i2][k] += f1e1_f2e2[k] * w2 * dtfsq / m2;
+  }
+  if (i2 < nlocal)
+    for (int k = 0; k < 3; k++) f[i2][k] += f1e1_f2e2[k] * w2;
+
+  for (int k = 0; k < 3; k++) {
+    xshake[i3][k] = x[i3][k] + v[i3][k] * dtv;
+  }
+  if (i3 < nlocal)
+    for (int k = 0; k < 3; k++) {
+      f[i3][k] = 0.0;
+    }
+  store_lamda_corrections = true;
+
+  shake3angle(ilist);
+  store_lamda_corrections = false;
+
+  double r03[3];
+  for (int k = 0; k < 3; k++) {
+    r01[k] = xshake[i0][k] - xshake[i1][k];
+    r02[k] = xshake[i0][k] - xshake[i2][k];
+    r03[k] = xshake[i0][k] - x[i3][k];
+  }
+
   double l20 = rigs_L[ilist][3];
   double l21_ = rigs_L[ilist][4];
   double l22 = rigs_L[ilist][5];
 
-  double e1[3], e2[3], n[3];
   for (int k = 0; k < 3; k++) {
     e1[k] = r01[k] / l00;
     e2[k] = (r02[k] - m01 * r01[k]) / l11;
