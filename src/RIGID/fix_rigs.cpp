@@ -32,7 +32,7 @@ FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
     rigs_dihedral_distance(nullptr),
-    rigs_L(nullptr), rigs_lm(nullptr), rigs_maxlist(0),
+    rigs_L_atom(nullptr), rigs_lm_atom(nullptr),
     store_lamda_corrections(false)
 {
   restart_peratom = 1;
@@ -48,8 +48,8 @@ FixRigs::~FixRigs()
   delete[] rigs_angle_distance;
   delete[] rigs_improper_distance;
   delete[] rigs_dihedral_distance;
-  memory->destroy(rigs_L);
-  memory->destroy(rigs_lm);
+  memory->destroy(rigs_L_atom);
+  memory->destroy(rigs_lm_atom);
 }
 
 void FixRigs::grow_arrays(int nmax)
@@ -57,6 +57,8 @@ void FixRigs::grow_arrays(int nmax)
   FixShake::grow_arrays(nmax);
   memory->grow(rigs_type, nmax, 3, "rigs:rigs_type");
   memory->grow(demoted_tag, nmax, "rigs:demoted_tag");
+  memory->grow(rigs_L_atom, nmax, 6, "rigs:rigs_L_atom");
+  memory->grow(rigs_lm_atom, nmax, 6, "rigs:rigs_lm_atom");
 }
 
 void FixRigs::copy_arrays(int i, int j, int delflag)

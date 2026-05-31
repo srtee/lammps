@@ -21,7 +21,6 @@
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
-#include "memory.h"
 
 #include <cmath>
 #include <cstring>
@@ -32,28 +31,31 @@ using namespace RigsMath;
 
 void FixRigs::prebuild_matrices()
 {
-  if (nlist > rigs_maxlist) {
-    memory->destroy(rigs_L);
-    memory->destroy(rigs_lm);
-    rigs_maxlist = nlist;
-    memory->create(rigs_L, rigs_maxlist, 6, "rigs:rigs_L");
-    memory->create(rigs_lm, rigs_maxlist, 6, "rigs:rigs_lm");
-  }
-
   if (rmass) {
     for (int ilist = 0; ilist < nlist; ilist++) {
       int m = list[ilist];
-      double *L = rigs_L[ilist];
-      double *lm = rigs_lm[ilist];
+      double *L = rigs_L_atom[m];
+      double *lm = rigs_lm_atom[m];
 
       if (shake_flag[m] == 1) {
-        double bond1 = bond_distance[shake_type[m][0]];
-        double bond2 = bond_distance[shake_type[m][1]];
-        double bond12 = rigs_angle[shake_type[m][2]];
+        int bt0 = shake_type[m][0];
+        int bt1 = shake_type[m][1];
+        int at = shake_type[m][2];
 
-        L[0] = bond1 * bond1;
-        L[1] = bond12;
-        L[2] = bond2 * bond2;
+        char key[128];
+        std::snprintf(key, sizeof(key), "D1:%d:%d:%d", bt0, bt1, at);
+        std::string skey(key);
+        auto dit = rigs_dist_cache.find(skey);
+        if (dit == rigs_dist_cache.end()) {
+          RigDistCache dc;
+          double bond1 = bond_distance[bt0];
+          double bond2 = bond_distance[bt1];
+          dc.L[0] = bond1 * bond1;
+          dc.L[1] = rigs_angle[at];
+          dc.L[2] = bond2 * bond2;
+          dit = rigs_dist_cache.insert({skey, dc}).first;
+        }
+        std::memcpy(L, dit->second.L, 3 * sizeof(double));
 
         int i0 = closest_list[ilist][0];
         int i1 = closest_list[ilist][1];
@@ -67,27 +69,42 @@ void FixRigs::prebuild_matrices()
         lm[2] = dc.m01;
 
       } else if (shake_flag[m] == 5) {
+        int bt0 = shake_type[m][0];
+        int bt1 = shake_type[m][1];
+        int bt2 = shake_type[m][2];
+        int at0 = rigs_type[m][0];
+        int at1 = rigs_type[m][1];
+        int at2 = rigs_type[m][2];
         int i0 = closest_list[ilist][0];
         int i1 = closest_list[ilist][1];
         int i2 = closest_list[ilist][2];
         int i3 = closest_list[ilist][3];
+
+        char key[256];
+        std::snprintf(key, sizeof(key), "D5:%d:%d:%d:%d:%d:%d",
+                      bt0, bt1, bt2, at0, at1, at2);
+        std::string skey(key);
+        auto dit = rigs_dist_cache.find(skey);
+        if (dit == rigs_dist_cache.end()) {
+          RigDistCache dc;
+          double bond0 = bond_distance[bt0];
+          double bond1 = bond_distance[bt1];
+          double bond2 = bond_distance[bt2];
+          dc.L[0] = bond0 * bond0;
+          dc.L[1] = rigs_angle[at0];
+          dc.L[2] = rigs_angle[at1];
+          dc.L[3] = bond1 * bond1;
+          dc.L[4] = rigs_angle[at2];
+          dc.L[5] = bond2 * bond2;
+          dit = rigs_dist_cache.insert({skey, dc}).first;
+        }
+        std::memcpy(L, dit->second.L, 6 * sizeof(double));
+
         double mu0 = 1.0 / rmass[i0];
         double mu01 = mu0 + 1.0 / rmass[i1];
         double mu02 = mu0 + 1.0 / rmass[i2];
         double mu03 = mu0 + 1.0 / rmass[i3];
         DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
-
-        double bond0 = bond_distance[shake_type[m][0]];
-        double bond1 = bond_distance[shake_type[m][1]];
-        double bond2 = bond_distance[shake_type[m][2]];
-
-        L[0] = bond0 * bond0;
-        L[1] = rigs_angle[rigs_type[m][0]];
-        L[2] = rigs_angle[rigs_type[m][1]];
-        L[3] = bond1 * bond1;
-        L[4] = rigs_angle[rigs_type[m][2]];
-        L[5] = bond2 * bond2;
-
         lm[0] = dc.d0;
         lm[1] = dc.d1;
         lm[2] = dc.d2;
@@ -95,17 +112,90 @@ void FixRigs::prebuild_matrices()
         lm[4] = dc.m02;
         lm[5] = dc.m12;
 
-      } else if (shake_flag[m] == 6) {
-        double bond1 = bond_distance[shake_type[m][0]];
-        double bond2 = bond_distance[shake_type[m][1]];
-        double bond3 = bond_distance[shake_type[m][2]];
+        double bond0 = bond_distance[bt0];
+        double bond1 = bond_distance[bt1];
+        double bond2 = bond_distance[bt2];
+        double angle01 = rigs_angle[at0];
+        double angle02 = rigs_angle[at1];
+        double angle12 = rigs_angle[at2];
+        double d0 = bond1;
+        double u01 = angle01 / d0;
+        double u02 = angle02 / d0;
+        double dd1 = sqrt(bond1 * bond1 - u01 * u01);
+        double u12 = (angle12 - u01 * u02) / dd1;
+        double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
+        Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
+        mul_ltdl(rt_LM, dc);
+        SymMat3 MLM = mtm(rt_LM);
+        int perm_mlm[3];
+        DChol3 dc_MLM = dchol_pivot(MLM, perm_mlm);
+        double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
+        constexpr double demote_threshold = 1e-3;
+        if (ratio_d2d0 < demote_threshold) {
+          int pd = perm_mlm[2] + 1;
+          demoted_tag[m] = shake_atom[m][pd];
 
-        L[0] = bond1 * bond1;
-        L[1] = bond1 * bond2;
-        L[2] = bond1 * bond3;
-        L[3] = bond2 * bond2;
-        L[4] = bond2 * bond3;
-        L[5] = bond3 * bond3;
+          double im0 = 1.0 / rmass[i0];
+          double im1, im2;
+          int tri_bt0, tri_bt1, tri_at;
+          if (pd == 1) {
+            tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
+            im1 = 1.0 / rmass[i2]; im2 = 1.0 / rmass[i3];
+          } else if (pd == 2) {
+            tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
+            im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i3];
+          } else {
+            tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
+            im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i2];
+          }
+
+          L[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
+          L[1] = rigs_angle[tri_at];
+          L[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
+
+          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1, im0, im0 + im2});
+          lm[0] = dc3.d0;
+          lm[1] = dc3.d1;
+          lm[2] = dc3.m01;
+
+          SymMat3 Lref = {dit->second.L[0], dit->second.L[1], dit->second.L[2],
+                          dit->second.L[3], dit->second.L[4], dit->second.L[5]};
+          int permL[3];
+          DChol3 dcL = dchol_pivot(Lref, permL);
+
+          double l00_1 = sqrt(dcL.d0);
+          double l11_1 = sqrt(dcL.d1);
+          L[3] = dcL.m02 * l00_1;
+          L[4] = dcL.m12 * l11_1;
+          L[5] = sqrt(dcL.d2);
+          lm[3] = l00_1;
+          lm[4] = dcL.m01;
+          lm[5] = l11_1;
+        }
+
+      } else if (shake_flag[m] == 6) {
+        int bt0 = shake_type[m][0];
+        int bt1 = shake_type[m][1];
+        int bt2 = shake_type[m][2];
+
+        char key[128];
+        std::snprintf(key, sizeof(key), "D6:%d:%d:%d", bt0, bt1, bt2);
+        std::string skey(key);
+        auto dit = rigs_dist_cache.find(skey);
+        if (dit == rigs_dist_cache.end()) {
+          RigDistCache dc;
+          double bond1 = bond_distance[bt0];
+          double bond2 = bond_distance[bt1];
+          double bond3 = bond_distance[bt2];
+          dc.L[0] = bond1 * bond1;
+          dc.L[1] = bond1 * bond2;
+          dc.L[2] = bond1 * bond3;
+          dc.L[3] = bond2 * bond2;
+          dc.L[4] = bond2 * bond3;
+          dc.L[5] = bond3 * bond3;
+          dit = rigs_dist_cache.insert({skey, dc}).first;
+        }
+        std::memcpy(L, dit->second.L, 6 * sizeof(double));
 
         int i0 = closest_list[ilist][0];
         int i1 = closest_list[ilist][1];
@@ -130,8 +220,8 @@ void FixRigs::prebuild_matrices()
 
   for (int ilist = 0; ilist < nlist; ilist++) {
     int m = list[ilist];
-    double *L = rigs_L[ilist];
-    double *lm = rigs_lm[ilist];
+    double *L = rigs_L_atom[m];
+    double *lm = rigs_lm_atom[m];
 
     if (shake_flag[m] == 1) {
       int bt0 = shake_type[m][0];
@@ -403,12 +493,12 @@ void FixRigs::shake4demoted(int ilist)
     }
   store_lamda_corrections = true;
 
-  shake3angle_solve(i0, ia, ib, ilist);
+  shake3angle_solve(i0, ia, ib, m);
   store_lamda_corrections = false;
 
-  double l00 = rigs_lm[ilist][3];
-  double m01 = rigs_lm[ilist][4];
-  double l11 = rigs_lm[ilist][5];
+  double l00 = rigs_lm_atom[m][3];
+  double m01 = rigs_lm_atom[m][4];
+  double l11 = rigs_lm_atom[m][5];
 
   double r01[3], r02[3], r03[3], e1[3], e2[3], n[3];
   for (int k = 0; k < 3; k++) {
@@ -420,9 +510,9 @@ void FixRigs::shake4demoted(int ilist)
   domain->minimum_image(FLERR, r02);
   domain->minimum_image(FLERR, r03);
 
-  double l20 = rigs_L[ilist][3];
-  double l21_ = rigs_L[ilist][4];
-  double l22 = rigs_L[ilist][5];
+  double l20 = rigs_L_atom[m][3];
+  double l21_ = rigs_L_atom[m][4];
+  double l22 = rigs_L_atom[m][5];
 
   for (int k = 0; k < 3; k++) {
     e1[k] = r01[k] / l00;
@@ -451,13 +541,13 @@ void FixRigs::shake3angle(int ilist)
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
 
-  shake3angle_solve(i0, i1, i2, ilist);
+  shake3angle_solve(i0, i1, i2, m);
 }
 
-void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
+void FixRigs::shake3angle_solve(int i0, int i1, int i2, int m)
 {
-  const double *L = rigs_L[ilist];
-  const double *lm = rigs_lm[ilist];
+  const double *L = rigs_L_atom[m];
+  const double *lm = rigs_lm_atom[m];
   int atomlist[3];
   double v[6];
 
@@ -661,12 +751,12 @@ void FixRigs::shake4improper(int ilist)
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
 
-  SymMat3 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2],
-               rigs_L[ilist][3], rigs_L[ilist][4], rigs_L[ilist][5]};
+  SymMat3 L = {rigs_L_atom[m][0], rigs_L_atom[m][1], rigs_L_atom[m][2],
+               rigs_L_atom[m][3], rigs_L_atom[m][4], rigs_L_atom[m][5]};
   SymMat3 diff = L - ss;
 
-  DChol3 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2],
-               rigs_lm[ilist][3], rigs_lm[ilist][4], rigs_lm[ilist][5]};
+  DChol3 lm = {rigs_lm_atom[m][0], rigs_lm_atom[m][1], rigs_lm_atom[m][2],
+               rigs_lm_atom[m][3], rigs_lm_atom[m][4], rigs_lm_atom[m][5]};
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
@@ -733,12 +823,12 @@ void FixRigs::shake4dihedral(int ilist)
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
 
-  SymMat3 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2],
-               rigs_L[ilist][3], rigs_L[ilist][4], rigs_L[ilist][5]};
+  SymMat3 L = {rigs_L_atom[m][0], rigs_L_atom[m][1], rigs_L_atom[m][2],
+               rigs_L_atom[m][3], rigs_L_atom[m][4], rigs_L_atom[m][5]};
   SymMat3 diff = L - ss;
 
-  DChol3 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2],
-               rigs_lm[ilist][3], rigs_lm[ilist][4], rigs_lm[ilist][5]};
+  DChol3 lm = {rigs_lm_atom[m][0], rigs_lm_atom[m][1], rigs_lm_atom[m][2],
+               rigs_lm_atom[m][3], rigs_lm_atom[m][4], rigs_lm_atom[m][5]};
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);

@@ -54,12 +54,14 @@ class FixRigs : public FixShake {
   double *rigs_improper_distance;
   double *rigs_dihedral_distance;
 
-  double **rigs_L;
-  double **rigs_lm;
-  int rigs_maxlist;
+  double **rigs_L_atom;
+  double **rigs_lm_atom;
 
   struct RigCache { double L[6]; double lm[6]; };
   std::map<std::string, RigCache> rigs_cache;
+
+  struct RigDistCache { double L[6]; };
+  std::map<std::string, RigDistCache> rigs_dist_cache;
   bool store_lamda_corrections;
 
   void prebuild_matrices();
@@ -70,7 +72,7 @@ class FixRigs : public FixShake {
     { transform_clusters(from_flag, to_flag, false, propagate_shake_data); }
   // void check_rank3(int ilist);
   void shake3angle(int) override;
-  void shake3angle_solve(int i0, int i1, int i2, int ilist);
+  void shake3angle_solve(int i0, int i1, int i2, int m);
   void shake4(int ilist) override;
   void shake4demoted(int ilist);
   void shake4improper(int ilist);
