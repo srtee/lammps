@@ -2970,11 +2970,6 @@ void FixShake::shake3angle(int ilist)
     f[i2][2] -= lamda02*r02[2] + lamda12*r12[2];
   }
 
-  //printf("SHAKE proc=%d step=%ld ilist=%d i0_force=(%.8e, %.8e, %.8e)\n", comm->me, update->ntimestep, ilist,
-    //     lamda01*r01[0] + lamda02*r02[0],
-      //   lamda01*r01[1] + lamda02*r02[1],
-        // lamda01*r01[2] + lamda02*r02[2]);
-
   if (evflag) {
     int count = 0;
     if (i0 < nlocal) atomlist[count++] = i0;

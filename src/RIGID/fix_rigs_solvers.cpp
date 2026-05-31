@@ -263,9 +263,6 @@ void FixRigs::prebuild_matrices()
           c.lm[5] = l11_1;
 
           demoted_tag[m] = shake_atom[m][pd];
-          printf("[DEBUG prebuild DEMOTE] m=%d tags={%d,%d,%d,%d} pd=%d demoted_tag=%d ratio=%.6e\n",
-                 m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
-                 pd, (int)demoted_tag[m], ratio_d2d0);
         }
         it = rigs_cache.insert({skey, c}).first;
       } else {
@@ -296,9 +293,6 @@ void FixRigs::prebuild_matrices()
         if (ratio_d2d0 < demote_threshold) {
           int pd = perm_mlm[2] + 1;
           demoted_tag[m] = shake_atom[m][pd];
-          printf("[DEBUG prebuild DEMOTE cache_hit] m=%d tags={%d,%d,%d,%d} pd=%d demoted_tag=%d ratio=%.6e\n",
-                 m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
-                 pd, (int)demoted_tag[m], ratio_d2d0);
         }
       }
       std::memcpy(L, it->second.L, 6 * sizeof(double));
@@ -625,10 +619,6 @@ void FixRigs::shake4improper(int ilist)
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
-
-  printf("[DEBUG shake4improper] m=%d tags={%d,%d,%d,%d} indices={%d,%d,%d,%d} nlocal=%d\n",
-         m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
-         i0, i1, i2, i3, nlocal);
 
   double dist12 = rigs_angle_distance[rigs_type[m][0]];
   double dist13 = rigs_angle_distance[rigs_type[m][1]];
