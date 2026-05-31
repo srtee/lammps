@@ -33,7 +33,7 @@ FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
     rigs_dihedral_distance(nullptr),
     rigs_L(nullptr), rigs_lm(nullptr), rigs_maxlist(0),
-    store_lamda_corrections(false), propagate_demoted_clusters(true)
+    store_lamda_corrections(false)
 {
   restart_peratom = 1;
   atom->add_callback(Atom::RESTART);
@@ -63,7 +63,7 @@ void FixRigs::copy_arrays(int i, int j, int delflag)
 {
   FixShake::copy_arrays(i, j, delflag);
   demoted_tag[j] = demoted_tag[i];
-  if (shake_flag[j] == 5 || shake_flag[j] == -5 ||
+  if (shake_flag[j] == 5 ||
       shake_flag[j] == 6) {
     rigs_type[j][0] = rigs_type[i][0];
     rigs_type[j][1] = rigs_type[i][1];
@@ -75,7 +75,7 @@ int FixRigs::pack_exchange(int i, double *buf)
 {
   int m = FixShake::pack_exchange(i, buf);
   buf[m++] = ubuf(demoted_tag[i]).d;
-  if (shake_flag[i] == 5 || shake_flag[i] == -5 || 
+  if (shake_flag[i] == 5 ||
       shake_flag[i] == 6) {
     buf[m++] = rigs_type[i][0];
     buf[m++] = rigs_type[i][1];
@@ -88,7 +88,7 @@ int FixRigs::unpack_exchange(int nlocal, double *buf)
 {
   int m = FixShake::unpack_exchange(nlocal, buf);
   demoted_tag[nlocal] = (tagint) ubuf(buf[m++]).i;
-  if (shake_flag[nlocal] == 5 || shake_flag[nlocal] == -5 || 
+  if (shake_flag[nlocal] == 5 ||
       shake_flag[nlocal] == 6) {
     rigs_type[nlocal][0] = static_cast<int>(buf[m++]);
     rigs_type[nlocal][1] = static_cast<int>(buf[m++]);
@@ -100,7 +100,7 @@ int FixRigs::unpack_exchange(int nlocal, double *buf)
 int FixRigs::pack_restart(int i, double *buf)
 {
   int m = 0;
-  if (shake_flag[i] == 5 || shake_flag[i] == -5 || 
+  if (shake_flag[i] == 5 ||
       shake_flag[i] == 6) {
     buf[m++] = 5;
     buf[m++] = ubuf(demoted_tag[i]).d;
@@ -133,7 +133,7 @@ void FixRigs::unpack_restart(int i, int nth)
 
 int FixRigs::size_restart(int i)
 {
-  if (shake_flag[i] == 5 || shake_flag[i] == -5 ||
+  if (shake_flag[i] == 5 ||
       shake_flag[i] == 6) return 5;
   return 2;
 }

@@ -730,7 +730,7 @@ void FixShake::post_force(int vflag)
   //   shake_flag 2 -> 2-atom cluster
   //   shake_flag 3 -> 3-atom cluster (bonds only)
   //   shake_flag 1 -> 3-atom cluster (bonds + angle, "frozen angle")
-  //   shake_flag 4,5,6,-5 -> 4-atom cluster (sub-dispatched by shake4/shake4improper/shake4demoted)
+  //   shake_flag 4,5,6 -> 4-atom cluster (sub-dispatched by shake4/shake4improper/shake4demoted)
   // any other shake_flag value is a bug
   int m;
   for (int i = 0; i < nlist; i++) {
@@ -742,7 +742,7 @@ void FixShake::post_force(int vflag)
       shake3(i); break;
     case 1:
       shake3angle(i); break;
-    case 4: case 5: case 6: case -5:
+    case 4: case 5: case 6:
       shake4(i); break;
     default:
       error->one(FLERR, "RIGS: unexpected shake_flag {} in post_force dispatch", shake_flag[m]);
@@ -798,7 +798,7 @@ void FixShake::post_force_respa(int vflag, int ilevel, int iloop)
       shake3(i); break;
     case 1:
       shake3angle(i); break;
-    case 4: case 5: case 6: case -5:
+    case 4: case 5: case 6:
       shake4(i); break;
     default:
       error->one(FLERR, "RIGS: unexpected shake_flag {} in post_force_respa dispatch", shake_flag[m]);
@@ -940,7 +940,7 @@ void FixShake::min_post_force(int vflag)
             b_min[m] = MIN(b_min[m], r);
           }
         }
-      } else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6 || shake_flag[i] == -5) {
+      } else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6) {
         atom1 = atom->map(shake_atom[i][0]);
         atom2 = atom->map(shake_atom[i][1]);
         atom3 = atom->map(shake_atom[i][2]);
