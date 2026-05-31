@@ -57,12 +57,12 @@ class FixRigs : public FixShake {
 
   double **rigs_lm_atom;
 
-  struct RigEntry { double d[6]; };
-  std::vector<RigEntry> L_entries;
-  std::vector<RigEntry> lm_entries;
+  struct ConstraintEntry { double data[6]; };
+  std::vector<ConstraintEntry> L_entries;
+  std::vector<ConstraintEntry> lm_entries;
   std::vector<int> ilist_to_idx;
   std::vector<int> entry_demoted_pivot;
-  std::unordered_map<std::string, int> key_to_idx;
+  std::unordered_map<std::string, int> cache_key_to_idx;
 
   bool store_lamda_corrections;
 
