@@ -479,9 +479,9 @@ void FixRigs::shake4(int ilist)
     if (demoted_tag[m] != 0)
       shake4demoted(ilist);
     else
-      shake4improper(ilist);
+      solve3x3(ilist, IMPROPER);
   } else if (shake_flag[m] == 6) {
-    error->one(FLERR,"RIGS dihedral constraint solver not yet implemented");
+    solve3x3(ilist, DIHEDRAL);
   } else {
     FixShake::shake4(ilist);
   }
@@ -735,12 +735,20 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
 }
 
 /* ----------------------------------------------------------------------
-   calculate RIGS constraint forces for flag 5 = improper cluster
-   star topology: center atom 0 + partners 1,2,3
-   3x3 Gram matrices with r01, r02, r03 on diagonal
+   Unified 3x3 constraint solver for improper (star) and dihedral (chain) topologies
+
+   IMPROPER: star topology, center atom 0 + partners 1,2,3
+     R row k = x[i0] - x[partner_k]  (center minus partner)
+     S row k = xshake[i0] - xshake[partner_k]
+     force sign = -1/dtfsq
+
+   DIHEDRAL: chain topology A-B-C-D stored as 1-0-2-3
+     R row 0 = x[i1]-x[i0], row 1 = x[i0]-x[i2], row 2 = x[i2]-x[i3]
+     S row k = xshake version of same
+     force sign = +1 (use dtf^2 multiplier internally)
    ------------------------------------------------------------------------- */
 
-void FixRigs::shake4improper(int ilist)
+void FixRigs::solve3x3(int ilist, Topology topo)
 {
   int m = list[ilist];
   int i0 = closest_list[ilist][0];
@@ -748,158 +756,65 @@ void FixRigs::shake4improper(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double dist12 = rigs_angle_distance[rigs_type[m][0]];
-  double dist13 = rigs_angle_distance[rigs_type[m][1]];
-  double dist23;
-  if (rigs_type[m][2] > 0)
-    dist23 = rigs_angle_distance[rigs_type[m][2]];
-  else
-    dist23 = rigs_improper_distance[-rigs_type[m][2]];
+  // row_source[k] = {ia, ib} means R(k,*) = x[ia] - x[ib]
+  // dihedral: row 0 = B-A (i1-i0), row 1 = A-C (i0-i2), row 2 = C-D (i2-i3)
+  int row_ia[3], row_ib[3];
+  if (topo == IMPROPER) {
+    row_ia[0] = i0; row_ib[0] = i1;
+    row_ia[1] = i0; row_ib[1] = i2;
+    row_ia[2] = i0; row_ib[2] = i3;
+  } else {
+    row_ia[0] = i1; row_ib[0] = i0;
+    row_ia[1] = i0; row_ib[1] = i2;
+    row_ia[2] = i2; row_ib[2] = i3;
+  }
+
+  double f_sign = (topo == IMPROPER) ? -1.0 / dtfsq : dtfsq;
 
   Mat3 R, S;
-  R(0, 0) = x[i0][0] - x[i1][0];
-  R(0, 1) = x[i0][1] - x[i1][1];
-  R(0, 2) = x[i0][2] - x[i1][2];
-  R(1, 0) = x[i0][0] - x[i2][0];
-  R(1, 1) = x[i0][1] - x[i2][1];
-  R(1, 2) = x[i0][2] - x[i2][2];
-  R(2, 0) = x[i0][0] - x[i3][0];
-  R(2, 1) = x[i0][1] - x[i3][1];
-  R(2, 2) = x[i0][2] - x[i3][2];
-
-  S(0, 0) = xshake[i0][0] - xshake[i1][0];
-  S(0, 1) = xshake[i0][1] - xshake[i1][1];
-  S(0, 2) = xshake[i0][2] - xshake[i1][2];
-  S(1, 0) = xshake[i0][0] - xshake[i2][0];
-  S(1, 1) = xshake[i0][1] - xshake[i2][1];
-  S(1, 2) = xshake[i0][2] - xshake[i2][2];
-  S(2, 0) = xshake[i0][0] - xshake[i3][0];
-  S(2, 1) = xshake[i0][1] - xshake[i3][1];
-  S(2, 2) = xshake[i0][2] - xshake[i3][2];
-
   for (int row = 0; row < 3; row++) {
-    double dr[3] = {R(row, 0), R(row, 1), R(row, 2)};
-    // domain->minimum_image(FLERR, dr);
-    R(row, 0) = dr[0]; R(row, 1) = dr[1]; R(row, 2) = dr[2];
-    double ds[3] = {S(row, 0), S(row, 1), S(row, 2)};
-    // domain->minimum_image(FLERR, ds);
-    S(row, 0) = ds[0]; S(row, 1) = ds[1]; S(row, 2) = ds[2];
+    R(row, 0) = x[row_ia[row]][0] - x[row_ib[row]][0];
+    R(row, 1) = x[row_ia[row]][1] - x[row_ib[row]][1];
+    R(row, 2) = x[row_ia[row]][2] - x[row_ib[row]][2];
+    S(row, 0) = xshake[row_ia[row]][0] - xshake[row_ib[row]][0];
+    S(row, 1) = xshake[row_ia[row]][1] - xshake[row_ib[row]][1];
+    S(row, 2) = xshake[row_ia[row]][2] - xshake[row_ib[row]][2];
   }
 
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
 
-  SymMat3 L3;
-  SymMat3 diff3;
-  DChol3 lm3;
-  {
-    int idx = ilist_to_idx[ilist];
-    const double *Lp = L_entries[idx].d;
-    L3 = {Lp[0], Lp[1], Lp[2], Lp[3], Lp[4], Lp[5]};
-    diff3 = L3 - ss;
-    const double *lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].d;
-    lm3 = {lmp[0], lmp[1], lmp[2], lmp[3], lmp[4], lmp[5]};
-  }
+  int idx = ilist_to_idx[ilist];
+  const double *Lp = L_entries[idx].d;
+  const double *lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].d;
+  SymMat3 L = {Lp[0], Lp[1], Lp[2], Lp[3], Lp[4], Lp[5]};
+  SymMat3 diff = L - ss;
+  DChol3 lm = {lmp[0], lmp[1], lmp[2], lmp[3], lmp[4], lmp[5]};
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
-  SymMat3 sigma = diff3 + mtm(chi);
+  SymMat3 sigma = diff + mtm(chi);
   u_mul(rc, chi);
-  lslt_mul(sigma, lm3);
-  LTMat3 sc = mul_dl(chol_lower(sigma),lm3);
-  mul_ltdl(chi, lm3);
+  lslt_mul(sigma, lm);
+  LTMat3 sc = mul_dl(chol_lower(sigma), lm);
+  mul_ltdl(chi, lm);
 
   Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
   lamda += chi;
 
-  Mat43 L_lam = improper_L_lambda(lamda);
+  Mat43 L_lam = (topo == IMPROPER) ? improper_L_lambda(lamda)
+                                      : dihedral_L_lambda(lamda);
   L_lam *= R;
 
   if (i0 < nlocal)
-    for (int i = 0; i < 3; i++) f[i0][i] -= L_lam(0, i) / dtfsq;
+    for (int i = 0; i < 3; i++) f[i0][i] += f_sign * L_lam(0, i);
   if (i1 < nlocal)
-    for (int i = 0; i < 3; i++) f[i1][i] -= L_lam(1, i) / dtfsq;
+    for (int i = 0; i < 3; i++) f[i1][i] += f_sign * L_lam(1, i);
   if (i2 < nlocal)
-    for (int i = 0; i < 3; i++) f[i2][i] -= L_lam(2, i) / dtfsq;
+    for (int i = 0; i < 3; i++) f[i2][i] += f_sign * L_lam(2, i);
   if (i3 < nlocal)
-    for (int i = 0; i < 3; i++) f[i3][i] -= L_lam(3, i) / dtfsq;
+    for (int i = 0; i < 3; i++) f[i3][i] += f_sign * L_lam(3, i);
 }
 
-/* ----------------------------------------------------------------------
-   calculate RIGS constraint forces for flag 6 = dihedral cluster
-   chain topology: atoms A-B-C-D stored as 1-0-2-3
-   3x3 Gram matrices with r10, r02, r23 on diagonal
-   ------------------------------------------------------------------------- */
 
-void FixRigs::shake4dihedral(int ilist)
-{
-  int m = list[ilist];
-  int i0 = closest_list[ilist][0];
-  int i1 = closest_list[ilist][1];
-  int i2 = closest_list[ilist][2];
-  int i3 = closest_list[ilist][3];
-
-  double dist12 = rigs_angle_distance[rigs_type[m][0]];
-  double dist23 = rigs_angle_distance[rigs_type[m][1]];
-  double dist13 = rigs_dihedral_distance[rigs_type[m][2]];
-
-  Mat3 R;
-  R(0,0) = x[i1][0] - x[i0][0]; R(0,1) = x[i1][1] - x[i0][1]; R(0,2) = x[i1][2] - x[i0][2];
-  R(1,0) = x[i0][0] - x[i2][0]; R(1,1) = x[i0][1] - x[i2][1]; R(1,2) = x[i0][2] - x[i2][2];
-  R(2,0) = x[i2][0] - x[i3][0]; R(2,1) = x[i2][1] - x[i3][1]; R(2,2) = x[i2][2] - x[i3][2];
-
-  Mat3 S;
-  S(0,0) = xshake[i1][0] - xshake[i0][0]; S(0,1) = xshake[i1][1] - xshake[i0][1]; S(0,2) = xshake[i1][2] - xshake[i0][2];
-  S(1,0) = xshake[i0][0] - xshake[i2][0]; S(1,1) = xshake[i0][1] - xshake[i2][1]; S(1,2) = xshake[i0][2] - xshake[i2][2];
-  S(2,0) = xshake[i2][0] - xshake[i3][0]; S(2,1) = xshake[i2][1] - xshake[i3][1]; S(2,2) = xshake[i2][2] - xshake[i3][2];
-
-  for (int row = 0; row < 3; row++) {
-    double dr[3] = {R(row, 0), R(row, 1), R(row, 2)};
-    // domain->minimum_image(FLERR, dr);
-    R(row, 0) = dr[0]; R(row, 1) = dr[1]; R(row, 2) = dr[2];
-    double ds[3] = {S(row, 0), S(row, 1), S(row, 2)};
-    // domain->minimum_image(FLERR, ds);
-    S(row, 0) = ds[0]; S(row, 1) = ds[1]; S(row, 2) = ds[2];
-  }
-
-  SymMat3 rr = mmt(R);
-  SymMat3 ss = mmt(S);
-
-  SymMat3 L4;
-  SymMat3 diff4;
-  DChol3 lm4;
-  {
-    int idx = ilist_to_idx[ilist];
-    const double *Lp = L_entries[idx].d;
-    L4 = {Lp[0], Lp[1], Lp[2], Lp[3], Lp[4], Lp[5]};
-    diff4 = L4 - ss;
-    const double *lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].d;
-    lm4 = {lmp[0], lmp[1], lmp[2], lmp[3], lmp[4], lmp[5]};
-  }
-
-  Mat3 chi = mat_dot(R, S);
-  UTMat3 rc = inv_chol_upper(rr);
-  ut_mul(rc, chi);
-  SymMat3 sigma = diff4 + mtm(chi);
-  u_mul(rc, chi);
-
-  lslt_mul(sigma, lm4);
-  LTMat3 sc = mul_dl(chol_lower(sigma),lm4);
-  mul_ltdl(chi, lm4);
-
-  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
-  lamda += chi;
-
-  Mat43 L_lam = dihedral_L_lambda(lamda);
-  L_lam *= R;
-
-  if (i0 < nlocal)
-    for (int i = 0; i < 3; i++) f[i0][i] += dtfsq * L_lam(0, i);
-  if (i1 < nlocal)
-    for (int i = 0; i < 3; i++) f[i1][i] += dtfsq * L_lam(1, i);
-  if (i2 < nlocal)
-    for (int i = 0; i < 3; i++) f[i2][i] += dtfsq * L_lam(2, i);
-  if (i3 < nlocal)
-    for (int i = 0; i < 3; i++) f[i3][i] += dtfsq * L_lam(3, i);
-}

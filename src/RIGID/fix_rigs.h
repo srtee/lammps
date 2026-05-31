@@ -73,12 +73,12 @@ class FixRigs : public FixShake {
   inline void transform_clusters_local(int from_flag, int to_flag, bool propagate_shake_data = false)
     { transform_clusters(from_flag, to_flag, false, propagate_shake_data); }
   // void check_rank3(int ilist);
+  enum Topology { IMPROPER, DIHEDRAL };
   void shake3angle(int) override;
   void shake3angle_solve(int i0, int i1, int i2, int ilist);
   void shake4(int ilist) override;
   void shake4demoted(int ilist);
-  void shake4improper(int ilist);
-  void shake4dihedral(int ilist);
+  void solve3x3(int ilist, Topology topo);
   void fill_improper_types(int i);
   int improper_check(int i);
   int bondtype_find(int i, tagint partner, int setflag);
