@@ -17,6 +17,7 @@
 
 #include "atom.h"
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
@@ -167,7 +168,7 @@ void FixRigs::prebuild_matrices()
       std::memcpy(L, it->second.L, 3 * sizeof(double));
       std::memcpy(lm, it->second.lm, 3 * sizeof(double));
 
-    } else if (shake_flag[m] == 5) {
+     } else if (shake_flag[m] == 5) {
       int bt0 = shake_type[m][0];
       int bt1 = shake_type[m][1];
       int bt2 = shake_type[m][2];
@@ -179,6 +180,10 @@ void FixRigs::prebuild_matrices()
       int i2 = closest_list[ilist][2];
       int i3 = closest_list[ilist][3];
       int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+
+      printf("[DEBUG prebuild F5] m=%d tags={%d,%d,%d,%d} indices={%d,%d,%d,%d} nlocal=%d\n",
+             m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
+             i0, i1, i2, i3, nlocal);
 
       char key[256];
       std::snprintf(key, sizeof(key), "F5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
@@ -233,10 +238,18 @@ void FixRigs::prebuild_matrices()
           int permL[3];
           DChol3 dcL = dchol_pivot(Lref, permL);
           int pd = perm_mlm[2] + 1;
-	  c.demote_pos = pd;
+ 	  c.demote_pos = pd;
+
+          printf("[DEBUG prebuild F5 DEMOTE fresh] m=%d tags_before_perm={%d,%d,%d,%d} indices_before_perm={%d,%d,%d,%d} perm_mlm={%d,%d,%d} pd=%d ratio=%.6e\n",
+                 m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
+                 i0, i1, i2, i3, perm_mlm[0], perm_mlm[1], perm_mlm[2], pd, ratio_d2d0);
 
 	  if (pd != 3) {
-            int tmp = closest_list[ilist][3];
+            tagint tmp_tag = shake_atom[m][3];
+	    shake_atom[m][3] = shake_atom[m][pd];
+	    shake_atom[m][pd] = tmp_tag;
+		  
+	    int tmp = closest_list[ilist][3];
             closest_list[ilist][3] = closest_list[ilist][pd];
             closest_list[ilist][pd] = tmp;
 
@@ -254,6 +267,11 @@ void FixRigs::prebuild_matrices()
               rigs_type[m][0] = tmp;
             }
 	  }
+
+          printf("[DEBUG prebuild F5 DEMOTE fresh] m=%d tags_after_perm={%d,%d,%d,%d} indices_after_perm={%d,%d,%d,%d}\n",
+                 m, (int)atom->tag[closest_list[ilist][0]], (int)atom->tag[closest_list[ilist][1]],
+                 (int)atom->tag[closest_list[ilist][2]], (int)atom->tag[closest_list[ilist][3]],
+                 closest_list[ilist][0], closest_list[ilist][1], closest_list[ilist][2], closest_list[ilist][3]);
 
           shake_flag[m] = -5;
 
@@ -303,9 +321,16 @@ void FixRigs::prebuild_matrices()
       } else {
         int pd = (it->second.demote_pos);
         if (pd) {
+          printf("[DEBUG prebuild F5 DEMOTE cache_hit] m=%d tags_before_perm={%d,%d,%d,%d} indices_before_perm={%d,%d,%d,%d} pd=%d\n",
+                 m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
+                 i0, i1, i2, i3, pd);
           shake_flag[m] = -5;
 	  if (pd != 3) {
-            int tmp = closest_list[ilist][3];
+            tagint tmp_tag = shake_atom[m][3];
+	    shake_atom[m][3] = shake_atom[m][pd];
+	    shake_atom[m][pd] = tmp_tag;
+            
+	    int tmp = closest_list[ilist][3];
             closest_list[ilist][3] = closest_list[ilist][pd];
             closest_list[ilist][pd] = tmp;
 
@@ -323,6 +348,10 @@ void FixRigs::prebuild_matrices()
               rigs_type[m][0] = tmp;
             }
 	  }
+          printf("[DEBUG prebuild F5 DEMOTE cache_hit] m=%d tags_after_perm={%d,%d,%d,%d} indices_after_perm={%d,%d,%d,%d}\n",
+                 m, (int)atom->tag[closest_list[ilist][0]], (int)atom->tag[closest_list[ilist][1]],
+                 (int)atom->tag[closest_list[ilist][2]], (int)atom->tag[closest_list[ilist][3]],
+                 closest_list[ilist][0], closest_list[ilist][1], closest_list[ilist][2], closest_list[ilist][3]);
         }
       }
       std::memcpy(L, it->second.L, 6 * sizeof(double));
@@ -396,7 +425,7 @@ void FixRigs::prebuild_matrices()
     }
   }
   if (propagate_demoted_clusters) {
-    transform_clusters(5, -5);
+    transform_clusters(5, -5, false, true);
     propagate_demoted_clusters = false;
   }
 }
@@ -431,81 +460,98 @@ void FixRigs::shake4demoted(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double m0, m1, m2, m3;
-  if (rmass) {
-    m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2]; m3 = rmass[i3];
-  } else {
-    m0 = mass[type[i0]]; m1 = mass[type[i1]];
-    m2 = mass[type[i2]]; m3 = mass[type[i3]];
-  }
-
-  double f_i3[3];
-  for (int k = 0; k < 3; k++) f_i3[k] = f[i3][k];// + v[i3][k] * dtv / m3;
-
+//  double m0, m1, m2, m3;
+//  if (rmass) {
+//    m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2]; m3 = rmass[i3];
+//  } else {
+//    m0 = mass[type[i0]]; m1 = mass[type[i1]];
+//    m2 = mass[type[i2]]; m3 = mass[type[i3]];
+//  }
+//
+//  double f_i3[3];
+//  for (int k = 0; k < 3; k++) f_i3[k] = f[i3][k];// + v[i3][k] * dtv / m3;
+//
   double l00 = rigs_lm[ilist][3];
   double m01 = rigs_lm[ilist][4];
   double l11 = rigs_lm[ilist][5];
 
-  double r01[3], r02[3];
+  double r01[3], r02[3], r03[3], e1[3], e2[3], n[3];
   for (int k = 0; k < 3; k++) {
-    r01[k] = x[i0][k] - x[i1][k];
-    r02[k] = x[i0][k] - x[i2][k];
+    r01[k] = xshake[i0][k] - xshake[i1][k];
+    r02[k] = xshake[i0][k] - xshake[i2][k];
+    r03[k] = xshake[i0][k] - x[i3][k];
   }
-
-  double e1[3], e2[3], n[3];
-  for (int k = 0; k < 3; k++) {
-    e1[k] = r01[k] / l00;
-    e2[k] = (r02[k] - m01 * r01[k]) / l11;
-  }
-  n[0] = e1[1] * e2[2] - e1[2] * e2[1];
-  n[1] = e1[2] * e2[0] - e1[0] * e2[2];
-  n[2] = e1[0] * e2[1] - e1[1] * e2[0];
-
-  double f_n = f_i3[0]*n[0] + f_i3[1]*n[1] + f_i3[2]*n[2];
-  double f1 = f_i3[0]*e1[0] + f_i3[1]*e1[1] + f_i3[2]*e1[2];
-  double f2 = f_i3[0]*e2[0] + f_i3[1]*e2[1] + f_i3[2]*e2[2];
-
-  double w1 = l00 / (l00 + l11);
-  double w2 = 1.0 - w1;
-  double f1e1_f2e2[3];
-  for (int k = 0; k < 3; k++) f1e1_f2e2[k] = f1*e1[k] + f2*e2[k];
-
-  for (int k = 0; k < 3; k++) {
-    xshake[i0][k] += f_n * n[k] * dtfsq / m0;
-  }
-  if (i0 < nlocal)
-    for (int k = 0; k < 3; k++) f[i0][k] += f_n * n[k];
-
-  for (int k = 0; k < 3; k++) {
-    xshake[i1][k] += f1e1_f2e2[k] * w1 * dtfsq / m1;
-  }
-  if (i1 < nlocal)
-    for (int k = 0; k < 3; k++) f[i1][k] += f1e1_f2e2[k] * w1;
-
-  for (int k = 0; k < 3; k++) {
-    xshake[i2][k] += f1e1_f2e2[k] * w2 * dtfsq / m2;
-  }
-  if (i2 < nlocal)
-    for (int k = 0; k < 3; k++) f[i2][k] += f1e1_f2e2[k] * w2;
-
-  for (int k = 0; k < 3; k++) {
-    xshake[i3][k] = x[i3][k] + v[i3][k] * dtv;
-  }
+  domain->minimum_image(FLERR, r01);
+  domain->minimum_image(FLERR, r02);
+  domain->minimum_image(FLERR, r03);
+  double old_r0101 = dot3(r01, r01);
+  double old_r0102 = dot3(r01, r02);
+  double old_r0202 = dot3(r02, r02);
+//
+//  double r01[3], r02[3];
+//  for (int k = 0; k < 3; k++) {
+//    r01[k] = x[i0][k] - x[i1][k];
+//    r02[k] = x[i0][k] - x[i2][k];
+//  }
+//
+//  double e1[3], e2[3], n[3];
+//  for (int k = 0; k < 3; k++) {
+//    e1[k] = r01[k] / l00;
+//    e2[k] = (r02[k] - m01 * r01[k]) / l11;
+//  }
+//  n[0] = e1[1] * e2[2] - e1[2] * e2[1];
+//  n[1] = e1[2] * e2[0] - e1[0] * e2[2];
+//  n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+//
+//  double f_n = f_i3[0]*n[0] + f_i3[1]*n[1] + f_i3[2]*n[2];
+//  double f1 = f_i3[0]*e1[0] + f_i3[1]*e1[1] + f_i3[2]*e1[2];
+//  double f2 = f_i3[0]*e2[0] + f_i3[1]*e2[1] + f_i3[2]*e2[2];
+//
+//  double w1 = l00 / (l00 + l11);
+//  double w2 = 1.0 - w1;
+//  double f1e1_f2e2[3];
+//  for (int k = 0; k < 3; k++) f1e1_f2e2[k] = f1*e1[k] + f2*e2[k];
+//
+//  for (int k = 0; k < 3; k++) {
+//    xshake[i0][k] += f_n * n[k] * dtfsq / m0;
+//  }
+//  if (i0 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i0][k] += f_n * n[k];
+//
+//  for (int k = 0; k < 3; k++) {
+//    xshake[i1][k] += f1e1_f2e2[k] * w1 * dtfsq / m1;
+//  }
+//  if (i1 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i1][k] += f1e1_f2e2[k] * w1;
+//
+//  for (int k = 0; k < 3; k++) {
+//    xshake[i2][k] += f1e1_f2e2[k] * w2 * dtfsq / m2;
+//  }
+//  if (i2 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i2][k] += f1e1_f2e2[k] * w2;
+//
+//  for (int k = 0; k < 3; k++) {
+//    xshake[i3][k] = x[i3][k] + v[i3][k] * dtv;
+//  }
   if (i3 < nlocal)
     for (int k = 0; k < 3; k++) {
       f[i3][k] = 0.0;
+      v[i3][k] = 0.0;
     }
   store_lamda_corrections = true;
 
   shake3angle(ilist);
   store_lamda_corrections = false;
 
-  double r03[3];
   for (int k = 0; k < 3; k++) {
     r01[k] = xshake[i0][k] - xshake[i1][k];
     r02[k] = xshake[i0][k] - xshake[i2][k];
     r03[k] = xshake[i0][k] - x[i3][k];
   }
+  domain->minimum_image(FLERR, r01);
+  domain->minimum_image(FLERR, r02);
+  domain->minimum_image(FLERR, r03);
+  double old_r0303 = dot3(r03, r03);
 
   double l20 = rigs_L[ilist][3];
   double l21_ = rigs_L[ilist][4];
@@ -519,28 +565,51 @@ void FixRigs::shake4demoted(int ilist)
   n[1] = e1[2] * e2[0] - e1[0] * e2[2];
   n[2] = e1[0] * e2[1] - e1[1] * e2[0];
 
-  double sgn = (r03[0] * n[0] + r03[1] * n[1] + r03[2] * n[2] < 0) ? -1.0 : 1.0;
+  double r03_dot_n = dot3(r03, n);
+  double sgn = (r03_dot_n < 0) ? -1.0 : 1.0;
+  double e1_sq = dot3(e1, e1);
+  double e2_sq = dot3(e2, e2);
+  double n_sq = dot3(n, n);
 
-  double f_cons[3];
   double inv_dtfsq = 1.0 / dtfsq;
   for (int k = 0; k < 3; k++) {
-    f_cons[k] = r03[k] - (l20 * e1[k] + l21_ * e2[k] + sgn * l22 * n[k]);
-    f_cons[k] *= m3 * inv_dtfsq;
+    x[i3][k] = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] + sgn * l22 * n[k]);
+    r03[k] = xshake[i0][k] - x[i3][k];
+  }
+  domain->minimum_image(FLERR, r03);
+  double new_r0303 = dot3(r03, r03);
+
+  double target_bond_sq = bond_distance[shake_type[m][2]] * bond_distance[shake_type[m][2]];
+  if (new_r0303 > 1.1 * target_bond_sq) {
+    printf("[DEBUG shake4demoted] m=%d tags={%d,%d,%d,%d} indices={%d,%d,%d,%d} nlocal=%d\n",
+           m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
+           i0, i1, i2, i3, nlocal);
+    printf("tags: %d %d %d %d\n", atom->tag[i0], atom->tag[i1], atom->tag[i2], atom->tag[i3]);
+    printf("old r0101 = %.6f, r0102 = %.6f, r0202 = %.6f\n", old_r0101, old_r0102, old_r0202);
+    printf("post-solve r0101 = %.8f, r0102 = %.8f, r0202 = %.8f\n",
+           dot3(r01, r01), dot3(r01, r02), dot3(r02, r02));
+    printf("old r0303 = %.8f\n", old_r0303);
+    if (e1_sq > 1.01 || e2_sq > 1.01 || n_sq > 1.01) {
+      printf("e1^2 = %.8f, e2^2 = %.8f, n^2 = %.8f\n", e1_sq, e2_sq, n_sq);
+      printf("e1.e2 = %.8f, e1.n = %.8f, e2.n = %.8f\n", dot3(e1, e2), dot3(e1, n), dot3(e2, n));
+    }
+    printf("dot = %.8f, sgn = %.8f\n", r03_dot_n, sgn);
+    printf("new r0303 = %.8f (target = %.8f)\n", new_r0303, target_bond_sq);
   }
 
-  double M_total = m0 + m1 + m2 + m3;
-  double s0 = m0 / M_total;
-  double s1 = m1 / M_total;
-  double s2 = m2 / M_total;
-  double s3 = m3 / M_total - 1;
-  if (i0 < nlocal)
-    for (int k = 0; k < 3; k++) f[i0][k] -= s0 * f_cons[k];
-  if (i1 < nlocal)
-    for (int k = 0; k < 3; k++) f[i1][k] -= s1 * f_cons[k];
-  if (i2 < nlocal)
-    for (int k = 0; k < 3; k++) f[i2][k] -= s2 * f_cons[k];
-  if (i3 < nlocal)
-    for (int k = 0; k < 3; k++) f[i3][k] -= s3 * f_cons[k];
+//  double M_total = m0 + m1 + m2 + m3;
+//  double s0 = m0 / M_total;
+//  double s1 = m1 / M_total;
+//  double s2 = m2 / M_total;
+//  double s3 = m3 / M_total - 1;
+//  if (i0 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i0][k] -= s0 * f_cons[k];
+//  if (i1 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i1][k] -= s1 * f_cons[k];
+//  if (i2 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i2][k] -= s2 * f_cons[k];
+//  if (i3 < nlocal)
+//    for (int k = 0; k < 3; k++) f[i3][k] -= s3 * f_cons[k];
   
 }
 
@@ -578,6 +647,11 @@ void FixRigs::shake3angle(int ilist)
   s02[1] = xshake[i0][1] - xshake[i2][1];
   s02[2] = xshake[i0][2] - xshake[i2][2];
 
+//  domain->minimum_image(FLERR, r01);
+//  domain->minimum_image(FLERR, r02);
+//  domain->minimum_image(FLERR, s01);
+//  domain->minimum_image(FLERR, s02);
+
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
 
@@ -613,8 +687,8 @@ void FixRigs::shake3angle(int ilist)
   double skewS = skew(phiS);
 
   double Asq = skewC * skewC + skewS * skewS;
-
-  double sinp = sqrt(Asq - skewChi * skewChi);
+  double sinsqp = Asq - skewChi*skewChi;
+  double sinp = sinsqp > 0.0 ? sqrt(sinsqp) : 0.0;
   double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
   double cskew = (skewS * sinp - skewChi * skewC) / Asq;
 
@@ -717,6 +791,10 @@ void FixRigs::shake4improper(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
+  printf("[DEBUG shake4improper] m=%d tags={%d,%d,%d,%d} indices={%d,%d,%d,%d} nlocal=%d\n",
+         m, (int)atom->tag[i0], (int)atom->tag[i1], (int)atom->tag[i2], (int)atom->tag[i3],
+         i0, i1, i2, i3, nlocal);
+
   double dist12 = rigs_angle_distance[rigs_type[m][0]];
   double dist13 = rigs_angle_distance[rigs_type[m][1]];
   double dist23;
@@ -745,6 +823,15 @@ void FixRigs::shake4improper(int ilist)
   S(2, 0) = xshake[i0][0] - xshake[i3][0];
   S(2, 1) = xshake[i0][1] - xshake[i3][1];
   S(2, 2) = xshake[i0][2] - xshake[i3][2];
+
+  for (int row = 0; row < 3; row++) {
+    double dr[3] = {R(row, 0), R(row, 1), R(row, 2)};
+    // domain->minimum_image(FLERR, dr);
+    R(row, 0) = dr[0]; R(row, 1) = dr[1]; R(row, 2) = dr[2];
+    double ds[3] = {S(row, 0), S(row, 1), S(row, 2)};
+    // domain->minimum_image(FLERR, ds);
+    S(row, 0) = ds[0]; S(row, 1) = ds[1]; S(row, 2) = ds[2];
+  }
 
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);
@@ -808,6 +895,15 @@ void FixRigs::shake4dihedral(int ilist)
   S(0,0) = xshake[i1][0] - xshake[i0][0]; S(0,1) = xshake[i1][1] - xshake[i0][1]; S(0,2) = xshake[i1][2] - xshake[i0][2];
   S(1,0) = xshake[i0][0] - xshake[i2][0]; S(1,1) = xshake[i0][1] - xshake[i2][1]; S(1,2) = xshake[i0][2] - xshake[i2][2];
   S(2,0) = xshake[i2][0] - xshake[i3][0]; S(2,1) = xshake[i2][1] - xshake[i3][1]; S(2,2) = xshake[i2][2] - xshake[i3][2];
+
+  for (int row = 0; row < 3; row++) {
+    double dr[3] = {R(row, 0), R(row, 1), R(row, 2)};
+    // domain->minimum_image(FLERR, dr);
+    R(row, 0) = dr[0]; R(row, 1) = dr[1]; R(row, 2) = dr[2];
+    double ds[3] = {S(row, 0), S(row, 1), S(row, 2)};
+    // domain->minimum_image(FLERR, ds);
+    S(row, 0) = ds[0]; S(row, 1) = ds[1]; S(row, 2) = ds[2];
+  }
 
   SymMat3 rr = mmt(R);
   SymMat3 ss = mmt(S);

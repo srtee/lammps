@@ -200,7 +200,7 @@ void FixRigs::post_constructor()
                      tmp4, tmp5);
   }
 
-  transform_clusters(4, 5);
+  transform_clusters_global(4, 5);
   for (i = 0; i < nlocal; i++) {
     if (shake_flag[i] == 5) {
       if (rigs_type[i][0] > 0)
@@ -226,7 +226,7 @@ void FixRigs::post_constructor()
   }
 }
 
-void FixRigs::transform_clusters(int from_flag, int to_flag)
+void FixRigs::transform_clusters(int from_flag, int to_flag, bool global, bool propagate_shake_data)
 {
   int i;
   int nlocal = atom->nlocal;
@@ -240,9 +240,20 @@ void FixRigs::transform_clusters(int from_flag, int to_flag)
         rigs_type[pidx][0] = rigs_type[i][0];
         rigs_type[pidx][1] = rigs_type[i][1];
         rigs_type[pidx][2] = rigs_type[i][2];
+        if (propagate_shake_data) {
+          shake_type[pidx][0] = shake_type[i][0];
+          shake_type[pidx][1] = shake_type[i][1];
+          shake_type[pidx][2] = shake_type[i][2];
+          shake_atom[pidx][0] = shake_atom[i][0];
+          shake_atom[pidx][1] = shake_atom[i][1];
+          shake_atom[pidx][2] = shake_atom[i][2];
+          shake_atom[pidx][3] = shake_atom[i][3];
+        }
       }
     }
   }
+
+  if (!global) return;
 
   int nsend = 0;
   for (i = 0; i < nlocal; i++) {
@@ -250,51 +261,119 @@ void FixRigs::transform_clusters(int from_flag, int to_flag)
       nsend++;
   }
 
-  struct UpgradedCluster { tagint central; int rt0, rt1, rt2; };
-  const int sizeof_uc = sizeof(UpgradedCluster);
-  UpgradedCluster *sendbuf = new UpgradedCluster[nsend > 0 ? nsend : 1];
-  nsend = 0;
-  for (i = 0; i < nlocal; i++) {
-    if (shake_flag[i] == to_flag && shake_atom[i][0] == atom->tag[i]) {
-      sendbuf[nsend].central = atom->tag[i];
-      sendbuf[nsend].rt0 = rigs_type[i][0];
-      sendbuf[nsend].rt1 = rigs_type[i][1];
-      sendbuf[nsend].rt2 = rigs_type[i][2];
-      nsend++;
-    }
-  }
-
-  int nsend_bytes = nsend * sizeof_uc;
-  int *recvcounts = new int[comm->nprocs];
-  MPI_Allgather(&nsend_bytes, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
-
-  int totalrecv = 0;
-  int *displs = new int[comm->nprocs];
-  for (int p = 0; p < comm->nprocs; p++) {
-    displs[p] = totalrecv;
-    totalrecv += recvcounts[p];
-  }
-
-  int totalrecv_n = totalrecv / sizeof_uc;
-  UpgradedCluster *recvbuf = new UpgradedCluster[totalrecv_n > 0 ? totalrecv_n : 1];
-  MPI_Allgatherv(sendbuf, nsend_bytes, MPI_CHAR,
-                 recvbuf, recvcounts, displs, MPI_CHAR, world);
-
-  for (int c = 0; c < totalrecv_n; c++) {
-    tagint ctag = recvbuf[c].central;
+  if (propagate_shake_data) {
+    struct UpgradedCluster {
+      tagint central;
+      int rt0, rt1, rt2;
+      int st0, st1, st2;
+      tagint sa0, sa1, sa2, sa3;
+    };
+    const int sizeof_uc = sizeof(UpgradedCluster);
+    UpgradedCluster *sendbuf = new UpgradedCluster[nsend > 0 ? nsend : 1];
+    nsend = 0;
     for (i = 0; i < nlocal; i++) {
-      if (shake_flag[i] != from_flag) continue;
-      if (shake_atom[i][0] != ctag) continue;
-      shake_flag[i] = to_flag;
-      rigs_type[i][0] = recvbuf[c].rt0;
-      rigs_type[i][1] = recvbuf[c].rt1;
-      rigs_type[i][2] = recvbuf[c].rt2;
+      if (shake_flag[i] == to_flag && shake_atom[i][0] == atom->tag[i]) {
+        sendbuf[nsend].central = atom->tag[i];
+        sendbuf[nsend].rt0 = rigs_type[i][0];
+        sendbuf[nsend].rt1 = rigs_type[i][1];
+        sendbuf[nsend].rt2 = rigs_type[i][2];
+        sendbuf[nsend].st0 = shake_type[i][0];
+        sendbuf[nsend].st1 = shake_type[i][1];
+        sendbuf[nsend].st2 = shake_type[i][2];
+        sendbuf[nsend].sa0 = shake_atom[i][0];
+        sendbuf[nsend].sa1 = shake_atom[i][1];
+        sendbuf[nsend].sa2 = shake_atom[i][2];
+        sendbuf[nsend].sa3 = shake_atom[i][3];
+        nsend++;
+      }
     }
-  }
 
-  delete[] sendbuf;
-  delete[] recvbuf;
-  delete[] recvcounts;
-  delete[] displs;
+    int nsend_bytes = nsend * sizeof_uc;
+    int *recvcounts = new int[comm->nprocs];
+    MPI_Allgather(&nsend_bytes, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+
+    int totalrecv = 0;
+    int *displs = new int[comm->nprocs];
+    for (int p = 0; p < comm->nprocs; p++) {
+      displs[p] = totalrecv;
+      totalrecv += recvcounts[p];
+    }
+
+    int totalrecv_n = totalrecv / sizeof_uc;
+    UpgradedCluster *recvbuf = new UpgradedCluster[totalrecv_n > 0 ? totalrecv_n : 1];
+    MPI_Allgatherv(sendbuf, nsend_bytes, MPI_CHAR,
+                   recvbuf, recvcounts, displs, MPI_CHAR, world);
+
+    for (int c = 0; c < totalrecv_n; c++) {
+      tagint ctag = recvbuf[c].central;
+      for (i = 0; i < nlocal; i++) {
+        if (shake_flag[i] != from_flag) continue;
+        if (shake_atom[i][0] != ctag) continue;
+        shake_flag[i] = to_flag;
+        rigs_type[i][0] = recvbuf[c].rt0;
+        rigs_type[i][1] = recvbuf[c].rt1;
+        rigs_type[i][2] = recvbuf[c].rt2;
+        shake_type[i][0] = recvbuf[c].st0;
+        shake_type[i][1] = recvbuf[c].st1;
+        shake_type[i][2] = recvbuf[c].st2;
+        shake_atom[i][0] = recvbuf[c].sa0;
+        shake_atom[i][1] = recvbuf[c].sa1;
+        shake_atom[i][2] = recvbuf[c].sa2;
+        shake_atom[i][3] = recvbuf[c].sa3;
+      }
+    }
+
+    delete[] sendbuf;
+    delete[] recvbuf;
+    delete[] recvcounts;
+    delete[] displs;
+  } else {
+    struct UpgradedCluster { tagint central; int rt0, rt1, rt2; };
+    const int sizeof_uc = sizeof(UpgradedCluster);
+    UpgradedCluster *sendbuf = new UpgradedCluster[nsend > 0 ? nsend : 1];
+    nsend = 0;
+    for (i = 0; i < nlocal; i++) {
+      if (shake_flag[i] == to_flag && shake_atom[i][0] == atom->tag[i]) {
+        sendbuf[nsend].central = atom->tag[i];
+        sendbuf[nsend].rt0 = rigs_type[i][0];
+        sendbuf[nsend].rt1 = rigs_type[i][1];
+        sendbuf[nsend].rt2 = rigs_type[i][2];
+        nsend++;
+      }
+    }
+
+    int nsend_bytes = nsend * sizeof_uc;
+    int *recvcounts = new int[comm->nprocs];
+    MPI_Allgather(&nsend_bytes, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+
+    int totalrecv = 0;
+    int *displs = new int[comm->nprocs];
+    for (int p = 0; p < comm->nprocs; p++) {
+      displs[p] = totalrecv;
+      totalrecv += recvcounts[p];
+    }
+
+    int totalrecv_n = totalrecv / sizeof_uc;
+    UpgradedCluster *recvbuf = new UpgradedCluster[totalrecv_n > 0 ? totalrecv_n : 1];
+    MPI_Allgatherv(sendbuf, nsend_bytes, MPI_CHAR,
+                   recvbuf, recvcounts, displs, MPI_CHAR, world);
+
+    for (int c = 0; c < totalrecv_n; c++) {
+      tagint ctag = recvbuf[c].central;
+      for (i = 0; i < nlocal; i++) {
+        if (shake_flag[i] != from_flag) continue;
+        if (shake_atom[i][0] != ctag) continue;
+        shake_flag[i] = to_flag;
+        rigs_type[i][0] = recvbuf[c].rt0;
+        rigs_type[i][1] = recvbuf[c].rt1;
+        rigs_type[i][2] = recvbuf[c].rt2;
+      }
+    }
+
+    delete[] sendbuf;
+    delete[] recvbuf;
+    delete[] recvcounts;
+    delete[] displs;
+  }
 }
 

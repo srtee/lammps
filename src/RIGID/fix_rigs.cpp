@@ -138,6 +138,8 @@ void FixRigs::init()
 {
   FixShake::init();
 
+  dtv = update->dt;
+  dtf = 0.5 * update->dt * force->ftm2v;
   delete[] rigs_angle;
   rigs_angle = new double[atom->nangletypes + 1];
 

@@ -46,6 +46,7 @@ class FixRigs : public FixShake {
   int size_restart(int) override;
   int maxsize_restart() override;
  protected:
+  double dtv, dtf;
   int **rigs_type;
   double *rigs_angle;
   double *rigs_angle_distance;
@@ -62,7 +63,11 @@ class FixRigs : public FixShake {
   bool propagate_demoted_clusters;
 
   void prebuild_matrices();
-  void transform_clusters(int, int);
+  void transform_clusters(int from_flag, int to_flag, bool global, bool propagate_shake_data);
+  inline void transform_clusters_global(int from_flag, int to_flag)
+    { transform_clusters(from_flag, to_flag, true, false); }
+  inline void transform_clusters_local(int from_flag, int to_flag, bool propagate_shake_data = false)
+    { transform_clusters(from_flag, to_flag, false, propagate_shake_data); }
   // void check_rank3(int ilist);
   void shake3angle(int) override;
   void shake4(int ilist) override;
@@ -76,6 +81,10 @@ class FixRigs : public FixShake {
   int dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag);
   void min_post_force(int vflag) override;
   void stats() override;
+
+  inline double dot3(double* a, double* b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  }
 };
 
 }    // namespace LAMMPS_NS
