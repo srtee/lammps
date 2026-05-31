@@ -1,0 +1,150 @@
+LAMMPS (30 Mar 2026 - Development - patch_30Mar2026-125-g4ac85c7115-modified)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread.
+  using 1 OpenMP thread(s) per MPI task
+Reading data file ...
+  orthogonal box = (36.840194 41.013691 29.768095) to (64.21156 68.385058 57.139462)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  2004 atoms
+  reading velocities ...
+  2004 velocities
+  scanning bonds ...
+  3 = max bonds/atom
+  scanning angles ...
+  6 = max angles/atom
+  scanning dihedrals ...
+  14 = max dihedrals/atom
+  scanning impropers ...
+  1 = max impropers/atom
+  orthogonal box = (36.840194 41.013691 29.768095) to (64.21156 68.385058 57.139462)
+  1 by 1 by 1 MPI processor grid
+  reading bonds ...
+  1365 bonds
+  reading angles ...
+  786 angles
+  reading dihedrals ...
+  207 dihedrals
+  reading impropers ...
+  12 impropers
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     4 = max # of 1-2 neighbors
+     7 = max # of 1-3 neighbors
+    14 = max # of 1-4 neighbors
+    18 = max # of special neighbors
+  special bonds CPU = 0.001 seconds
+  read_data CPU = 0.024 seconds
+Finding SHAKE clusters ...
+      19 = # of size 2 clusters
+       6 = # of size 3 clusters
+       3 = # of size 4 clusters
+     640 = # of frozen angles
+       0 = # of improper clusters
+       0 = # of dihedral clusters
+  size 4 cluster: 2 5 6 4
+  size 2 cluster: 7 19
+  size 2 cluster: 8 20
+  size 3 cluster: 11 21 22
+  size 2 cluster: 13 23
+  size 2 cluster: 14 24
+  size 2 cluster: 15 25
+  size 2 cluster: 16 26
+  size 2 cluster: 18 27
+  size 2 cluster: 28 32
+  size 3 cluster: 29 33 34
+  size 2 cluster: 35 39
+  size 3 cluster: 36 40 41
+  size 2 cluster: 42 53
+  size 2 cluster: 43 54
+  size 3 cluster: 46 56 55
+  size 2 cluster: 48 57
+  size 2 cluster: 49 58
+  size 2 cluster: 50 59
+  size 2 cluster: 51 60
+  size 2 cluster: 52 61
+  size 2 cluster: 62 70
+  size 2 cluster: 63 71
+  size 3 cluster: 66 73 72
+  size 3 cluster: 67 75 74
+  size 4 cluster: 69 76 78 77
+  size 2 cluster: 79 81
+  size 4 cluster: 80 84 83 82
+  find clusters CPU = 0.000 seconds
+84 atoms in group peptide
+PPPM initialization ...
+  using 12-bit tables for long-range coulomb
+  G vector (1/distance) = 0.26872465
+  grid = 15 15 15
+  stencil order = 5
+  estimated absolute RMS force accuracy = 0.022820853
+  estimated relative force accuracy = 6.872432e-05
+  using double precision MKL FFT
+  3d grid and FFT values/proc = 10648 3375
+Generated 91 of 91 mixed pair_coeff terms from arithmetic mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 12
+  ghost atom cutoff = 12
+  binsize = 6, bins = 5 5 5
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/charmm/coul/long, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Setting up Verlet run ...
+  Unit style    : real
+  Current step  : 0
+  Time step     : 2
+SHAKE stats (type/ave/delta/count) on step 0
+Bond:    4   1.111     1.44264e-05        9
+Bond:    6   0.996998  7.26967e-06        6
+Bond:    8   1.08      1.32536e-05        7
+Bond:   10   1.111     1.22749e-05        8
+Bond:   12   1.08      1.11767e-05        9
+Bond:   14   0.96      0                  1
+Bond:   18   0.957206  4.37979e-05     1280
+Angle:  31   104.519   0.00396029       640
+Per MPI rank memory allocation (min/avg/max) = 19.03 | 19.03 | 19.03 Mbytes
+------------ Step              0 ----- CPU =            0 (sec) -------------
+TotEng   =     -5237.4580 KinEng   =      1134.9186 Temp     =       282.1005 
+PotEng   =     -6372.3765 E_bond   =        16.5572 E_angle  =        36.3726 
+E_dihed  =        15.5190 E_impro  =         1.9426 E_vdwl   =       692.8945 
+E_coul   =     26772.2647 E_long   =    -33907.9271 Press    =      -837.0111
+------------ Step             10 ----- CPU =    0.1512223 (sec) -------------
+TotEng   =     -5238.2120 KinEng   =      1117.0164 Temp     =       277.6507 
+PotEng   =     -6355.2284 E_bond   =        13.8213 E_angle  =        31.5488 
+E_dihed  =        17.9425 E_impro  =         3.2987 E_vdwl   =       699.0714 
+E_coul   =     26785.8644 E_long   =    -33906.7755 Press    =      -733.3780
+Loop time of 0.151315 on 1 procs for 10 steps with 2004 atoms
+
+Performance: 11.420 ns/day, 2.102 hours/ns, 66.087 timesteps/s, 132.439 katom-step/s
+99.7% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.13636    | 0.13636    | 0.13636    |   0.0 | 90.12
+Bond    | 0.00033317 | 0.00033317 | 0.00033317 |   0.0 |  0.22
+Kspace  | 0.011389   | 0.011389   | 0.011389   |   0.0 |  7.53
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0.00059369 | 0.00059369 | 0.00059369 |   0.0 |  0.39
+Output  | 0.00011582 | 0.00011582 | 0.00011582 |   0.0 |  0.08
+Modify  | 0.0023047  | 0.0023047  | 0.0023047  |   0.0 |  1.52
+Other   |            | 0.0002198  |            |       |  0.15
+
+Nlocal:           2004 ave        2004 max        2004 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:          11100 ave       11100 max       11100 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:         707859 ave      707859 max      707859 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 707859
+Ave neighs/atom = 353.22305
+Ave special neighs/atom = 2.3403194
+Neighbor list builds = 0
+Dangerous builds = 0
+Total wall time: 0:00:00

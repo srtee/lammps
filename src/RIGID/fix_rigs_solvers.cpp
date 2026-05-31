@@ -619,13 +619,18 @@ void FixRigs::shake4demoted(int ilist)
 
 void FixRigs::shake3angle(int ilist)
 {
-  int atomlist[3];
-  double v[6];
-
   int m = list[ilist];
   int i0 = closest_list[ilist][0];
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
+
+  shake3angle_solve(i0, i1, i2, rigs_L[ilist], rigs_lm[ilist]);
+}
+
+void FixRigs::shake3angle_solve(int i0, int i1, int i2, const double *L, const double *lm)
+{
+  int atomlist[3];
+  double v[6];
 
   double r01[3];
   r01[0] = x[i0][0] - x[i1][0];
@@ -647,16 +652,11 @@ void FixRigs::shake3angle(int ilist)
   s02[1] = xshake[i0][1] - xshake[i2][1];
   s02[2] = xshake[i0][2] - xshake[i2][2];
 
-//  domain->minimum_image(FLERR, r01);
-//  domain->minimum_image(FLERR, r02);
-//  domain->minimum_image(FLERR, s01);
-//  domain->minimum_image(FLERR, s02);
-
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
 
-  SymMat2 L = {rigs_L[ilist][0], rigs_L[ilist][1], rigs_L[ilist][2]};
-  SymMat2 diff = L - ss;
+  SymMat2 Lm = {L[0], L[1], L[2]};
+  SymMat2 diff = Lm - ss;
 
   Mat2 chi;
   chi(0, 0) = s01[0] * r01[0] + s01[1] * r01[1] + s01[2] * r01[2];
@@ -664,16 +664,16 @@ void FixRigs::shake3angle(int ilist)
   chi(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
   chi(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
 
-  DChol2 lm = {rigs_lm[ilist][0], rigs_lm[ilist][1], rigs_lm[ilist][2]};
+  DChol2 lmc = {lm[0], lm[1], lm[2]};
 
   UTMat2 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
   SymMat2 sigma = diff + mtm(chi);
   u_mul(rc, chi);
 
-  lslt_mul(sigma, lm);
-  LTMat2 sc = mul_dl(chol_lower(sigma),lm);
-  mul_ltdl(chi, lm);
+  lslt_mul(sigma, lmc);
+  LTMat2 sc = mul_dl(chol_lower(sigma),lmc);
+  mul_ltdl(chi, lmc);
 
   Mat2 phiC = rc * sc;
 
@@ -723,7 +723,7 @@ void FixRigs::shake3angle(int ilist)
     }
     if (i2 < nlocal)
       for (int i = 0; i < 3; i++) f[i2][i] += corr[i] / dtfsq;
-    lamda01 /= dtfsq; // for virial
+    lamda01 /= dtfsq;
     lamda02 /= dtfsq;
     lamda12 /= dtfsq;
   } else {

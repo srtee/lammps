@@ -1,0 +1,36 @@
+units real
+atom_style full
+region box block -5 5 -5 5 -5 5
+create_box 3 box bond/types 2 angle/types 2 &
+  extra/bond/per/atom 3 extra/angle/per/atom 3 &
+  extra/special/per/atom 3
+
+mass 1 15.8994
+mass 2 1.008
+mass 3 0.1
+
+pair_style lj/cut/coul/long 8.0
+pair_coeff 1 1 0.1550 3.1536
+pair_coeff 2 2 0.0    1.0
+pair_coeff 3 3 0.0    1.0
+kspace_style pppm 1e-4
+bond_style zero
+bond_coeff 1 0.9574
+bond_coeff 2 0.15
+
+angle_style zero
+angle_coeff 1 104.52
+angle_coeff 2 74
+molecule water tip4p.mol
+create_atoms 0 random 33 34564 NULL mol water 25367 overlap 1.33
+
+timestep 0.1
+fix rigid all rigs 1e-4 1000 10 b 1 2 a 1 2
+#minimize 1e-8 1e-10 1000 10000
+fix integrate all nvt temp 300.0 300.0 100.0
+
+thermo_style custom step temp press etotal density pe ke
+thermo 10
+run 100
+write_data tip4p-explicit.data nocoeff
+

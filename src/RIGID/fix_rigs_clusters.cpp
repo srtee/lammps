@@ -45,6 +45,7 @@ void FixRigs::post_constructor()
     rigs_type[i][0] = 0;
     rigs_type[i][1] = 0;
     rigs_type[i][2] = 0;
+    demoted_tag[i] = 0;
   }
 
   for (i = 0; i < nlocal; i++) {

@@ -1,0 +1,189 @@
+LAMMPS (30 Mar 2026 - Development - patch_30Mar2026-155-gcd5ec8f223-modified)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread.
+  using 1 OpenMP thread(s) per MPI task
+units real
+atom_style full
+region box block -5 5 -5 5 -5 5
+create_box 3 box bond/types 2 angle/types 2   extra/bond/per/atom 3 extra/angle/per/atom 3   extra/special/per/atom 3
+Created orthogonal box = (-5 -5 -5) to (5 5 5)
+  1 by 1 by 1 MPI processor grid
+
+mass 1 15.8994
+mass 2 1.008
+mass 3 0.1
+
+pair_style lj/cut/coul/long 8.0
+pair_coeff 1 1 0.1550 3.1536
+pair_coeff 2 2 0.0    1.0
+pair_coeff 3 3 0.0    1.0
+kspace_style pppm 1e-4
+bond_style zero
+bond_coeff 1 0.9574
+bond_coeff 2 0.15
+
+angle_style zero
+angle_coeff 1 104.52
+angle_coeff 2 74
+molecule water tip4p.mol
+Read molecule template water:
+# Water molecule. Explicit TIP4P geometry for use with fix rigid
+  1 molecules
+  0 fragments
+  0 bodies
+  4 atoms with max type 3
+  3 bonds with max type 2
+  3 angles with max type 2
+  0 dihedrals with max type 0
+  0 impropers with max type 0
+create_atoms 0 random 33 34564 NULL mol water 25367 overlap 1.33
+Created 132 atoms
+  using lattice units in orthogonal box = (-5 -5 -5) to (5 5 5)
+  create_atoms CPU = 0.004 seconds
+
+timestep 0.1
+fix rigid all rigs 1e-8 1000 10 b 1 2 #a 1 2
+  find clusters CPU = 0.000 seconds
+Finding RIGS clusters ...
+       0 = # of size 2 clusters
+       0 = # of size 3 clusters
+      33 = # of size 4 clusters
+       0 = # of frozen angles
+       0 = # of improper clusters
+       0 = # of dihedral clusters
+      33 = # of remaining size 4 clusters
+       0 = # of upgraded improper clusters
+#minimize 1e-6 1e-8 1000 10000
+fix integrate all nvt temp 300.0 300.0 1.0
+
+thermo_style custom step temp press etotal density pe ke
+thermo 10
+run 100
+PPPM initialization ...
+  using 12-bit tables for long-range coulomb
+  G vector (1/distance) = 0.35180663
+  grid = 8 8 8
+  stencil order = 5
+  estimated absolute RMS force accuracy = 0.017760644
+  estimated relative force accuracy = 5.3485652e-05
+  using double precision MKL FFT
+  3d grid and FFT values/proc = 3375 512
+Generated 3 of 3 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 10
+  ghost atom cutoff = 10
+  binsize = 5, bins = 2 2 2
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/cut/coul/long, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+SHAKE nlist=0: i=0 atom1=830 atom2=0 atom3=285 atom4=831
+SHAKE nlist=1: i=1 atom1=1 atom2=2 atom3=3 atom4=4
+SHAKE nlist=2: i=5 atom1=77 atom2=5 atom3=357 atom4=78
+SHAKE nlist=3: i=6 atom1=6 atom2=7 atom3=286 atom4=8
+SHAKE nlist=4: i=9 atom1=9 atom2=10 atom3=11 atom4=12
+SHAKE nlist=5: i=13 atom1=13 atom2=29 atom3=14 atom4=15
+SHAKE nlist=6: i=16 atom1=16 atom2=17 atom3=18 atom4=19
+SHAKE nlist=7: i=20 atom1=294 atom2=20 atom3=295 atom4=296
+SHAKE nlist=8: i=21 atom1=962 atom2=132 atom3=21 atom4=963
+SHAKE nlist=9: i=22 atom1=138 atom2=139 atom3=22 atom4=140
+SHAKE nlist=10: i=23 atom1=23 atom2=94 atom3=95 atom4=24
+SHAKE nlist=11: i=25 atom1=25 atom2=26 atom3=27 atom4=28
+SHAKE nlist=12: i=30 atom1=30 atom2=152 atom3=31 atom4=32
+SHAKE nlist=13: i=33 atom1=33 atom2=34 atom3=35 atom4=36
+SHAKE nlist=14: i=37 atom1=37 atom2=56 atom3=57 atom4=58
+SHAKE nlist=15: i=38 atom1=38 atom2=396 atom3=681 atom4=39
+SHAKE nlist=16: i=40 atom1=2476 atom2=40 atom3=2477 atom4=41
+SHAKE nlist=17: i=42 atom1=42 atom2=43 atom3=102 atom4=44
+SHAKE nlist=18: i=45 atom1=45 atom2=46 atom3=47 atom4=48
+SHAKE nlist=19: i=49 atom1=49 atom2=333 atom3=50 atom4=51
+SHAKE nlist=20: i=52 atom1=52 atom2=53 atom3=54 atom4=55
+SHAKE nlist=21: i=59 atom1=59 atom2=60 atom3=61 atom4=62
+SHAKE nlist=22: i=63 atom1=84 atom2=63 atom3=96 atom4=97
+SHAKE nlist=23: i=64 atom1=2622 atom2=2507 atom3=64 atom4=2623
+SHAKE nlist=24: i=65 atom1=65 atom2=66 atom3=67 atom4=68
+SHAKE nlist=25: i=69 atom1=181 atom2=69 atom3=182 atom4=183
+SHAKE nlist=26: i=70 atom1=70 atom2=71 atom3=72 atom4=73
+SHAKE nlist=27: i=74 atom1=74 atom2=75 atom3=356 atom4=76
+SHAKE nlist=28: i=79 atom1=79 atom2=80 atom3=81 atom4=82
+SHAKE nlist=29: i=83 atom1=895 atom2=896 atom3=83 atom4=897
+SHAKE nlist=30: i=85 atom1=85 atom2=86 atom3=362 atom4=87
+SHAKE nlist=31: i=88 atom1=88 atom2=89 atom3=90 atom4=91
+SHAKE nlist=32: i=92 atom1=206 atom2=207 atom3=92 atom4=208
+SHAKE nlist=33: i=93 atom1=209 atom2=137 atom3=93 atom4=210
+SHAKE nlist=34: i=98 atom1=217 atom2=218 atom3=98 atom4=219
+SHAKE nlist=35: i=99 atom1=120 atom2=121 atom3=99 atom4=122
+SHAKE nlist=36: i=100 atom1=100 atom2=1228 atom3=101 atom4=1229
+SHAKE nlist=37: i=103 atom1=103 atom2=104 atom3=479 atom4=105
+SHAKE nlist=38: i=106 atom1=106 atom2=107 atom3=108 atom4=109
+SHAKE nlist=39: i=110 atom1=110 atom2=111 atom3=112 atom4=113
+SHAKE nlist=40: i=114 atom1=114 atom2=395 atom3=1516 atom4=115
+SHAKE nlist=41: i=116 atom1=116 atom2=117 atom3=118 atom4=119
+SHAKE nlist=42: i=123 atom1=123 atom2=124 atom3=125 atom4=126
+SHAKE nlist=43: i=127 atom1=127 atom2=128 atom3=129 atom4=130
+SHAKE nlist=44: i=131 atom1=246 atom2=131 atom3=1252 atom4=247
+
+rigs_stats summary: a_count[1]=0 a_count[2]=0
+RIGS stats (type/ave/delta/count) on step 0
+Per MPI rank memory allocation (min/avg/max) = 9.028 | 9.028 | 9.028 Mbytes
+   Step          Temp          Press          TotEng        Density         PotEng         KinEng    
+         0   0              3935759.7      13763.472      0.987204       13763.472      0            
+
+rigs_stats summary: a_count[1]=0 a_count[2]=0
+RIGS stats (type/ave/delta/count) on step 10
+        10   2257.271       909614.87      3636.0389      0.987204       2976.6463      659.39261    
+        20   936.47637      626138.03      2274.1359      0.987204       2000.573       273.5629     
+        30   606.1544       506549.83      1730.6227      0.987204       1553.5532      177.06945    
+        40   475.11918      434446.94      1415.0564      0.987204       1276.2649      138.79152    
+        50   404.94102      383017.34      1194.1866      0.987204       1075.8955      118.29112    
+        60   368.346        343792.26      1026.5997      0.987204       918.9987       107.60101    
+        70   352.11834      311561.82      888.02921      0.987204       785.16862      102.86059    
+        80   336.7035       283825.5       766.74963      0.987204       668.39201      98.357619    
+        90   329.98193      259907.81      660.62016      0.987204       564.22604      96.394118    
+       100   328.276        238677.23      562.18275      0.987204       466.28697      95.895784    
+Loop time of 0.0772281 on 1 procs for 100 steps with 132 atoms
+
+Performance: 11.188 ns/day, 2.145 hours/ns, 1294.865 timesteps/s, 170.922 katom-step/s
+99.1% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.060451   | 0.060451   | 0.060451   |   0.0 | 78.28
+Bond    | 1.7091e-05 | 1.7091e-05 | 1.7091e-05 |   0.0 |  0.02
+Kspace  | 0.010715   | 0.010715   | 0.010715   |   0.0 | 13.87
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0.0016166  | 0.0016166  | 0.0016166  |   0.0 |  2.09
+Output  | 0.00045056 | 0.00045056 | 0.00045056 |   0.0 |  0.58
+Modify  | 0.003174   | 0.003174   | 0.003174   |   0.0 |  4.11
+Other   |            | 0.0008033  |            |       |  1.04
+
+Nlocal:            132 ave         132 max         132 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:           3432 ave        3432 max        3432 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:          36519 ave       36519 max       36519 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 36519
+Ave neighs/atom = 276.65909
+Ave special neighs/atom = 3
+Neighbor list builds = 0
+Dangerous builds = 0
+write_data tip4p-explicit.data nocoeff
+System init for write_data ...
+PPPM initialization ...
+  using 12-bit tables for long-range coulomb
+  G vector (1/distance) = 0.35180663
+  grid = 8 8 8
+  stencil order = 5
+  estimated absolute RMS force accuracy = 0.017760644
+  estimated relative force accuracy = 5.3485652e-05
+  using double precision MKL FFT
+  3d grid and FFT values/proc = 3375 512
+Generated 3 of 3 mixed pair_coeff terms from geometric mixing rule
+
+Total wall time: 0:00:00

@@ -1,0 +1,1167 @@
+LAMMPS (30 Mar 2026 - Development - patch_30Mar2026-105-gab8fe39857-modified)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread.
+  using 1 OpenMP thread(s) per MPI task
+Reading data file ...
+  orthogonal box = (36.840194 41.013691 29.768095) to (64.21156 68.385058 57.139462)
+  1 by 1 by 2 MPI processor grid
+  reading atoms ...
+  2004 atoms
+  reading velocities ...
+  2004 velocities
+  scanning bonds ...
+  3 = max bonds/atom
+  scanning angles ...
+  6 = max angles/atom
+  scanning dihedrals ...
+  14 = max dihedrals/atom
+  scanning impropers ...
+  1 = max impropers/atom
+  orthogonal box = (36.840194 41.013691 29.768095) to (64.21156 68.385058 57.139462)
+  1 by 1 by 2 MPI processor grid
+  reading bonds ...
+  1365 bonds
+  reading angles ...
+  786 angles
+  reading dihedrals ...
+  207 dihedrals
+  reading impropers ...
+  12 impropers
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     4 = max # of 1-2 neighbors
+     7 = max # of 1-3 neighbors
+    14 = max # of 1-4 neighbors
+    18 = max # of special neighbors
+  special bonds CPU = 0.001 seconds
+  read_data CPU = 0.045 seconds
+Finding RIGS clusters ...
+      19 = # of size 2 clusters
+       6 = # of size 3 clusters
+       3 = # of size 4 clusters
+     640 = # of frozen angles
+  find clusters CPU = 0.001 seconds
+84 atoms in group peptide
+PPPM initialization ...
+  using 12-bit tables for long-range coulomb
+  G vector (1/distance) = 0.26872465
+  grid = 15 15 15
+  stencil order = 5
+  estimated absolute RMS force accuracy = 0.022820853
+  estimated relative force accuracy = 6.872432e-05
+  using double precision MKL FFT
+  3d grid and FFT values/proc = 6776 1800
+Generated 91 of 91 mixed pair_coeff terms from arithmetic mixing rule
+angle_distance[31] =  -0.22971576
+Neighbor list info ...
+  update: every = 1 steps, delay = 5 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 12
+  ghost atom cutoff = 12
+  binsize = 6, bins = 5 5 5
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/charmm/coul/long, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Setting up Verlet run ...
+  Unit style    : real
+  Current step  : 0
+  Time step     : 2
+RIGS stats (type/ave/delta/count) on step 0
+Bond:    4   1.111     1.44264e-05        9
+Bond:    6   0.996998  7.26967e-06        6
+Bond:    8   1.08      1.32536e-05        7
+Bond:   10   1.111     1.22749e-05        8
+Bond:   12   1.08      1.11767e-05        9
+Bond:   14   0.96      0                  1
+Bond:   18   0.957206  4.37979e-05     1280
+Angle:  31   104.519   0.00396029       640
+diff11 = -0.017101915016536240, diff12 = -1.127280767835788566, diff22 = -0.036728955186128620
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.032811250143022552, diff12 = -1.133180709706889555, diff22 = -0.041943089061007188
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.074007950257359734, diff12 = -1.135386341485659978, diff22 = 0.003287115718582423
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.127967336503790219, diff12 = -1.121729410069788102, diff22 = 0.072667209619094453
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.016070065554543933, diff12 = -1.132082412245853043, diff22 = -0.084635651701522874
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.045483910809309913, diff12 = -1.140739378858714348, diff22 = -0.033118130839609128
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.078794820650690545, diff12 = -1.123067752501620387, diff22 = 0.028904069608331695
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.008944762865618405, diff12 = -1.138400923335618264, diff22 = -0.071488347097920291
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.009318521860858908, diff12 = -1.144572419034040500, diff22 = -0.100497610241346513
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.013964778803130073, diff12 = -1.135470452986779177, diff22 = -0.052306420143095722
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030341404395120786, diff12 = -1.128914750806536471, diff22 = -0.026740436545638957
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029170479395835947, diff12 = -1.136595782136816002, diff22 = -0.038994566856361268
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.059141271265420459, diff12 = -1.130681727158809435, diff22 = -0.009285010555004858
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.021331414462107068, diff12 = -1.140484571850626239, diff22 = -0.068869062689384419
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046123167876426341, diff12 = -1.136448604574954224, diff22 = -0.026281542882637288
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.070966068402641747, diff12 = -1.132399677510196767, diff22 = 0.001083273033820609
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.009625997245852669, diff12 = -1.133419375161734521, diff22 = -0.078175489814399146
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.004993776849245180, diff12 = -1.140415231863405321, diff22 = -0.083584768734030646
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039675706530622912, diff12 = -1.125561599759880682, diff22 = -0.009466105649291179
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.078707769429798180, diff12 = -1.136850040415409380, diff22 = 0.001704387586690004
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.034332020244443817, diff12 = -1.133996440906642755, diff22 = -0.029389489607870911
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.026729968423816808, diff12 = -1.137379648758834128, diff22 = -0.045343757081825253
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.010974688605690397, diff12 = -1.131002253732235285, diff22 = -0.050588482590916417
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061885169388668837, diff12 = -1.131870323361704234, diff22 = 0.000508195893861196
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.000471981365700036, diff12 = -1.134046082381207299, diff22 = -0.065395992163419847
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031304830035718489, diff12 = -1.126705182985896059, diff22 = -0.018586040175485041
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.016586155467968933, diff12 = -1.120589853429660332, diff22 = -0.022505554145998752
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.068393504583960429, diff12 = -1.137185390515651928, diff22 = -0.011988701504474508
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.092026541110929228, diff12 = -1.131730306209936643, diff22 = 0.015180669092487831
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029428966931653200, diff12 = -1.133457887892832083, diff22 = -0.031888576937096347
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.008717500559001001, diff12 = -1.143507119602398481, diff22 = -0.098320125637208267
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.066934833496936519, diff12 = -1.142174036483944999, diff22 = -0.015286239294299064
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.012885634007935853, diff12 = -1.142162492070805335, diff22 = -0.108575473512956377
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.050050844008574957, diff12 = -1.119538125580284982, diff22 = 0.003791401045232567
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.036461321901438914, diff12 = -1.133599261932469293, diff22 = -0.032578728722593597
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.068400435427359185, diff12 = -1.133142740508752855, diff22 = -0.000977157998011902
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061473072421981745, diff12 = -1.132736008673298489, diff22 = -0.007580800121804621
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.058970621651832533, diff12 = -1.136767760959062512, diff22 = -0.011481688505086463
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.003069494148297047, diff12 = -1.146352894517241872, diff22 = -0.092451655896384044
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.011444433902554119, diff12 = -1.129371191903363769, diff22 = -0.041419860389431018
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041679704861475764, diff12 = -1.131007311687705963, diff22 = -0.023984900905530182
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.075525519928220874, diff12 = -1.142553721009838874, diff22 = -0.009209172992059922
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017026496807913460, diff12 = -1.125934448718907799, diff22 = -0.029349716820701310
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.012832211554358430, diff12 = -1.133355064977172866, diff22 = -0.058464492799420453
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.026075582335191694, diff12 = -1.130724190619243563, diff22 = -0.029812131674519238
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047571546061305980, diff12 = -1.132389100045602781, diff22 = -0.010973907938827687
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.002429960001088971, diff12 = -1.122529881742836189, diff22 = -0.045188078058645220
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.040517419144786349, diff12 = -1.139840843333015830, diff22 = -0.033775101980579869
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047858260341611669, diff12 = -1.143473066576692121, diff22 = -0.038625414675378389
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.117440210394762379, diff12 = -1.134153897936087452, diff22 = 0.037891887633234922
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.018957722531052656, diff12 = -1.131920619574499076, diff22 = -0.087490424197167571
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.017269252943774571, diff12 = -1.120722188463485258, diff22 = -0.055806862928923118
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.033370221545567680, diff12 = -1.130074259010993565, diff22 = -0.096872492307283786
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.043979987700187073, diff12 = -1.137919665933470270, diff22 = -0.027144821269265984
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057837819505425769, diff12 = -1.146496906879659772, diff22 = -0.034104092154256138
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.018898537948854988, diff12 = -1.129639858605970826, diff22 = -0.032589999975763950
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046497034531520431, diff12 = -1.133191128949996074, diff22 = -0.018667261810150104
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.092907648460555436, diff12 = -1.135503978656694279, diff22 = 0.020881162664087793
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.015592731250606451, diff12 = -1.123393695963654126, diff22 = -0.033475923864813351
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.074153564217570578, diff12 = -1.142263231041178440, diff22 = -0.005832058458572931
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.044235556718955515, diff12 = -1.134036597689538794, diff22 = -0.028845986331537010
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.006642118699316857, diff12 = -1.139246006424384561, diff22 = -0.067096580892948232
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.018848636526365481, diff12 = -1.133542611318307358, diff22 = -0.096835109874974790
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.034696320399079217, diff12 = -1.134943956149493172, diff22 = -0.032813123575995751
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046823888397827251, diff12 = -1.133849351584162335, diff22 = -0.030237715139953769
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.026165296512903113, diff12 = -1.134968890340980252, diff22 = -0.042591674265779589
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.044242284235596840, diff12 = -1.138428143805614745, diff22 = -0.028576241286375925
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.098611677305303957, diff12 = -1.128836619543559738, diff22 = 0.033032063747457041
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.038315922192715290, diff12 = -1.135703973702290259, diff22 = -0.034478172789200179
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.052549638478633809, diff12 = -1.143229204053888282, diff22 = -0.037114875876036901
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039887238455175056, diff12 = -1.124547730959615910, diff22 = -0.016268711929501856
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.022226673476937076, diff12 = -1.138360792885241501, diff22 = -0.053056440983894282
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057095674082010994, diff12 = -1.133055551621292345, diff22 = -0.007622386879297838
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.035197527589535871, diff12 = -1.125590431865010288, diff22 = -0.015693395813485278
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.055000843178177439, diff12 = -1.136891790581790129, diff22 = -0.014111919582226462
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.016817452776504926, diff12 = -1.128765852453347485, diff22 = -0.072818671849067984
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.011665741037671928, diff12 = -1.132918258937772871, diff22 = -0.053842192642852504
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.067812643465381961, diff12 = -1.133538885958433440, diff22 = 0.001751243722330154
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061331642235947004, diff12 = -1.138361540942164796, diff22 = -0.010046829322700845
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047899123035652025, diff12 = -1.134044386648568770, diff22 = -0.016250857078322856
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.104155532643127713, diff12 = -1.147122883159264806, diff22 = 0.003761921325534323
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030629708582298965, diff12 = -1.137706441555962122, diff22 = -0.043728059070182512
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.076369938438828333, diff12 = -1.141738320477629021, diff22 = -0.009103575144192022
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.055103235740101342, diff12 = -1.129267349463331849, diff22 = 0.002044005927137826
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.004331476051071426, diff12 = -1.139616182305446923, diff22 = -0.072366080530752996
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.005519114892741817, diff12 = -1.127607241622359258, diff22 = -0.066857361990029562
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047282442833485816, diff12 = -1.127093561474485472, diff22 = -0.005422820885427115
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.036286841840487027, diff12 = -1.131963704163120532, diff22 = -0.026667122686417244
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.073992094458367741, diff12 = -1.121123627224156039, diff22 = 0.031250915768767151
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.082603483576458303, diff12 = -1.143570591059686947, diff22 = -0.001335376013130163
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047076406082511291, diff12 = -1.144396735095671414, diff22 = -0.039690800097195500
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.070812531057553474, diff12 = -1.133424598785170323, diff22 = 0.000530738899005234
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.021700577398750420, diff12 = -1.127953837357841049, diff22 = -0.072677424111249778
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028285192690523320, diff12 = -1.118393844065134424, diff22 = -0.001642801562190321
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.001396606094849706, diff12 = -1.125012938663999096, diff22 = -0.049224347440917859
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.011862638835868355, diff12 = -1.131944555780012518, diff22 = -0.049740914631597910
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.089262749397266083, diff12 = -1.134574691128847901, diff22 = 0.018186001100278903
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.049772072696261604, diff12 = -1.126982539441525599, diff22 = -0.000610981599757920
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.025034806523874020, diff12 = -1.131868044314165767, diff22 = -0.032540265957072378
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033570286255504622, diff12 = -1.135246575107848654, diff22 = -0.036197526681763792
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.036095560701895235, diff12 = -1.130111299031544725, diff22 = -0.021795726859767495
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061211524177052556, diff12 = -1.138636611145723121, diff22 = -0.012969627901389780
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.074726467290901266, diff12 = -1.139548821100652365, diff22 = -0.006065302003668172
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.010259923507449975, diff12 = -1.131830912137299361, diff22 = -0.051388928742053697
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.013193389780060016, diff12 = -1.140141493068517864, diff22 = -0.064448186643502159
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.001205172249594155, diff12 = -1.129429660412522907, diff22 = -0.058847608970673537
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028929919490354283, diff12 = -1.133522361352822916, diff22 = -0.032919561486864368
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.007259091355828029, diff12 = -1.126889472947273596, diff22 = -0.047834377370935099
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.009888679430934633, diff12 = -1.120892209535482520, diff22 = -0.028891042109284171
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.055782866868441916, diff12 = -1.134015178947247016, diff22 = -0.005874310018229467
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.027144067702149055, diff12 = -1.145393724889740339, diff22 = -0.060769982766004427
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.065071425560261131, diff12 = -1.125673656812472334, diff22 = 0.018359449904784886
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.006264097500698562, diff12 = -1.137056982814347528, diff22 = -0.067956043307680680
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039673202773299665, diff12 = -1.131758522943862921, diff22 = -0.023826565142380463
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.044086080739498379, diff12 = -1.141190434280541233, diff22 = -0.041650160572241579
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.013395919896471487, diff12 = -1.132340653498909111, diff22 = -0.052399751126634087
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.008824430008655737, diff12 = -1.131106726430135545, diff22 = -0.055382644732205222
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.087786593106852773, diff12 = -1.127856588819036610, diff22 = 0.031993938263184085
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017176468020691282, diff12 = -1.126548343223793935, diff22 = -0.040552690077847120
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.063800176618263760, diff12 = -1.133297119567559408, diff22 = -0.002169660436797116
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.073313305820531194, diff12 = -1.137543388058377625, diff22 = -0.000867435509327663
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.037992898658931407, diff12 = -1.137449039534584649, diff22 = -0.032331276922216934
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.070573615902941422, diff12 = -1.128321593988186322, diff22 = 0.014148378392807914
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.064439010011050013, diff12 = -1.129188899097960608, diff22 = 0.004747820610275344
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.002341164940241613, diff12 = -1.121321853902234045, diff22 = -0.035771970169725664
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.079363880075675186, diff12 = -1.144470549707023999, diff22 = -0.009610619789908958
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.000894843843448512, diff12 = -1.139205675996297629, diff22 = -0.081787211607958099
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.108465543632610850, diff12 = -1.144060747685867296, diff22 = 0.015997700992975261
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.055393563626966458, diff12 = -1.130212079526410784, diff22 = 0.000206415773760238
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.073504730989053191, diff12 = -1.137501686128557399, diff22 = -0.006045937081213926
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.013989951221824448, diff12 = -1.139065479581606422, diff22 = -0.071104318654573340
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.070589905861471736, diff12 = -1.142198788582811542, diff22 = -0.008666266206527884
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.016110744202702865, diff12 = -1.125820251386826065, diff22 = -0.069555537447457905
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017081280066952753, diff12 = -1.140265083798641221, diff22 = -0.064661131866111110
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.068940626766999746, diff12 = -1.129423536158774777, diff22 = 0.012757026489258361
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.072145828939700340, diff12 = -1.135560099038901649, diff22 = -0.002779089475304031
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046576327180069765, diff12 = -1.131787724380043603, diff22 = -0.017395846570369189
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.001571777540155250, diff12 = -1.125791293351210198, diff22 = -0.045066440893920312
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.027305339101701631, diff12 = -1.137435784783709547, diff22 = -0.100399564696320609
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.043783162771134032, diff12 = -1.128358961487213374, diff22 = -0.008150155282867555
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.006378695220386144, diff12 = -1.136320024350537583, diff22 = -0.068683515398238582
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.007259091355822034, diff12 = -1.126889472947266935, diff22 = -0.047834377370927661
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.012423205652757563, diff12 = -1.140481693170655841, diff22 = -0.067552130905332297
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.034748566392971525, diff12 = -1.135839639926345734, diff22 = -0.038505261036602234
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.003781493854502660, diff12 = -1.128795877812486470, diff22 = -0.045267503860692448
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046823888397839353, diff12 = -1.133849351584168552, diff22 = -0.030237715139953769
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.102883363389205784, diff12 = -1.125332831822608792, diff22 = 0.047843545155225931
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061401339977746994, diff12 = -1.131419915552369648, diff22 = -0.004348524651116015
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.004819924566091482, diff12 = -1.139952709429936206, diff22 = -0.072691735405153168
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.005393338453504093, diff12 = -1.134245065396746854, diff22 = -0.058893310799148835
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.004676955591947918, diff12 = -1.130062342881837711, diff22 = -0.064495554440200942
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.008944762865618405, diff12 = -1.138400923335618264, diff22 = -0.071488347097920291
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.015447528601718719, diff12 = -1.138883938413384422, diff22 = -0.096602422308163516
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033072681859619091, diff12 = -1.137223870565902573, diff22 = -0.037450988713151778
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.058377550596579564, diff12 = -1.139293835311367076, diff22 = -0.019888463535946976
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030341404395122451, diff12 = -1.128914750806539580, diff22 = -0.026740436545638957
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.059141271265419237, diff12 = -1.130681727158809213, diff22 = -0.009285010555004858
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.015192353783291535, diff12 = -1.132119525057442955, diff22 = -0.043782826723885560
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.024478628755448706, diff12 = -1.143908378148845717, diff22 = -0.064644764688240985
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.014827088534553945, diff12 = -1.122852857166203755, diff22 = -0.029707284858728311
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020095012244525701, diff12 = -1.131054639695126873, diff22 = -0.050656702750547455
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029342200509597016, diff12 = -1.123477762115541179, diff22 = -0.010858806248721486
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.040098218041020206, diff12 = -1.138722803295754815, diff22 = -0.033635529350043880
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039736539406871496, diff12 = -1.129757967742692770, diff22 = -0.016577064461407054
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.075699434281931932, diff12 = -1.130859417712380299, diff22 = 0.016043716586455203
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.018514106139427833, diff12 = -1.128431430537304436, diff22 = -0.030757125830834231
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.064291340719623169, diff12 = -1.124229603622094231, diff22 = 0.013676400039760894
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.021024244496942956, diff12 = -1.136231684008147669, diff22 = -0.048293060485560924
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.017884026136050113, diff12 = -1.134775169198608546, diff22 = -0.084324779056896282
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.059291588838532694, diff12 = -1.129909619562085465, diff22 = -0.002047648119341217
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061885169388681716, diff12 = -1.131870323361717112, diff22 = 0.000508195893848318
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.009935033512645686, diff12 = -1.129418613183194031, diff22 = -0.071859042559178743
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.049710667394039842, diff12 = -1.145204541225739003, diff22 = -0.039115809699607818
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.016287512293318152, diff12 = -1.126278477641786901, diff22 = -0.037711576476736064
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.051530367809415889, diff12 = -1.133232149484916462, diff22 = -0.009138371607783857
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.043579585882004612, diff12 = -1.139981175041821615, diff22 = -0.025584668777852371
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.054759172229243536, diff12 = -1.136114706648931438, diff22 = -0.013756056650354842
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030920238391585197, diff12 = -1.135271010077827158, diff22 = -0.036579673582981531
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.008717500559001001, diff12 = -1.143507119602395594, diff22 = -0.098320125637198497
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.066934833496932411, diff12 = -1.142174036483944111, diff22 = -0.015286239294299064
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033104860522721324, diff12 = -1.128930745698762728, diff22 = -0.020416684064214374
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.006728404344921501, diff12 = -1.129674649549432974, diff22 = -0.049458706981915790
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.055770918727690688, diff12 = -1.134903897162304887, diff22 = -0.019666146355942549
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061594426158434135, diff12 = -1.131770494459595211, diff22 = 0.001949852450943035
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.050094259800329999, diff12 = -1.139126618523010448, diff22 = -0.027345166277240152
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.012832211554358430, diff12 = -1.133355064977172866, diff22 = -0.058464492799420453
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.021959225049791753, diff12 = -1.133609781984935339, diff22 = -0.108833078083206414
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.005393338453504093, diff12 = -1.134245065396746854, diff22 = -0.058893310799148835
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.050157262954190651, diff12 = -1.122162252202741684, diff22 = -0.096151311135718065
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.052866241763897981, diff12 = -1.132537317053245118, diff22 = -0.017473835286901607
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033041250325679061, diff12 = -1.130021654806581566, diff22 = -0.027946971432903145
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.038038741593493741, diff12 = -1.125722230198190621, diff22 = -0.012159743006442292
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.054674345667149127, diff12 = -1.139991285738100935, diff22 = -0.021131835328477178
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.017269252943774571, diff12 = -1.120722188463485258, diff22 = -0.055806862928923118
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.024140593689347734, diff12 = -1.134895230082407114, diff22 = -0.050455435277230731
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.019837982430616186, diff12 = -1.130180012610690676, diff22 = -0.039468812051435598
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.002799507232029597, diff12 = -1.130514695686138715, diff22 = -0.055945756043411898
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.004840257368929235, diff12 = -1.135054339140812774, diff22 = -0.073185677463437293
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.009659748828374171, diff12 = -1.135434083630831870, diff22 = -0.082609019284345275
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031786685889546029, diff12 = -1.120414323433516879, diff22 = -0.009949431259996033
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.016357706831336194, diff12 = -1.121614393163705481, diff22 = -0.023186293952804693
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.009035890865399465, diff12 = -1.131990182072553530, diff22 = -0.053235288274362191
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.007939010607073915, diff12 = -1.131586551550182840, diff22 = -0.074277532243623212
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033789888949545932, diff12 = -1.144109754764795817, diff22 = -0.052540275405458248
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.082370412148480732, diff12 = -1.131846815893459368, diff22 = 0.014366680884388860
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047669056357965145, diff12 = -1.127224031502877644, diff22 = -0.015221686928736600
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030204223882331682, diff12 = -1.131725774433340881, diff22 = -0.035759281939359178
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.027446672227369295, diff12 = -1.129879900207161114, diff22 = -0.031046865833066373
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.022125753354109934, diff12 = -1.130390535199482294, diff22 = -0.039249444507295284
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048274039876794461, diff12 = -1.125542202214578680, diff22 = 0.003586219804617374
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.073229116750091028, diff12 = -1.133578663732621727, diff22 = 0.005930029644558910
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.081838107802800764, diff12 = -1.132316077337698790, diff22 = 0.011214199341423092
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.023921713466999006, diff12 = -1.125557871108811447, diff22 = -0.025335300764206092
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028974708058556620, diff12 = -1.130786433417455994, diff22 = -0.033188338804141959
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.008023549889929926, diff12 = -1.124856016267584691, diff22 = -0.040071404161498236
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.011635478428793422, diff12 = -1.130184559053808879, diff22 = -0.053526828946391047
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.006608959814004889, diff12 = -1.128211695824743011, diff22 = -0.046621391162657289
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.023088883320958931, diff12 = -1.128934190293042539, diff22 = -0.028205476646941063
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.064119864428727413, diff12 = -1.127715445718983744, diff22 = 0.004540858329127428
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.005734067048623004, diff12 = -1.135286554962951167, diff22 = -0.076056589136733188
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039619742644510070, diff12 = -1.129102709259480308, diff22 = -0.022082399821922949
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.015433775197610022, diff12 = -1.128012421386290542, diff22 = -0.037058128304102600
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.009551389145794675, diff12 = -1.135384881446454219, diff22 = -0.059222719528712942
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.059895074648135038, diff12 = -1.136129490226092109, diff22 = -0.013300567160905552
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.018897365511657216, diff12 = -1.126675669673809832, diff22 = -0.029037300305958746
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.063593839225271065, diff12 = -1.129219406838311901, diff22 = 0.011571221607080018
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.082803289496288679, diff12 = -1.138710475307302072, diff22 = 0.005194297255175617
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020069458299408649, diff12 = -1.136339887329464560, diff22 = -0.053665261729779590
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033948488922562858, diff12 = -1.131894454138075989, diff22 = -0.031473647168772545
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.040923124684954959, diff12 = -1.140401349445111734, diff22 = -0.036678077625873162
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.009748508249608046, diff12 = -1.135414196148819554, diff22 = -0.081178518149698564
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.002520060515664668, diff12 = -1.134225332939027719, diff22 = -0.063722572862933258
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.015264768452863398, diff12 = -1.128098387773041278, diff22 = -0.036277582114223716
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020908464414134742, diff12 = -1.137730024323853950, diff22 = -0.058826192929647081
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.009035890865399465, diff12 = -1.131990182072547757, diff22 = -0.053235288274350867
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.010290091572896620, diff12 = -1.134330789329704992, diff22 = -0.057980389217716533
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028847665727284366, diff12 = -1.138344305683608670, diff22 = -0.044676509386420205
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028007047429819742, diff12 = -1.135825174697113971, diff22 = -0.044165357255343984
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.039294269719583053, diff12 = -1.130597745643988405, diff22 = -0.023294745802378558
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.051075499835515070, diff12 = -1.130020623741187835, diff22 = -0.006303417968484881
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.043576823728713077, diff12 = -1.127263960494129469, diff22 = -0.008011657096673508
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047669056357965145, diff12 = -1.127224031502877644, diff22 = -0.015221686928736600
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.000717418553900839, diff12 = -1.122452079882730214, diff22 = -0.047909927209960013
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041930066384181286, diff12 = -1.129979427804313374, diff22 = -0.019797956415514406
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.019255329260319365, diff12 = -1.133257044862615359, diff22 = -0.040951064207854659
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041625205683669897, diff12 = -1.136695959611617290, diff22 = -0.031007829152683297
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.032961482067184744, diff12 = -1.125137195666134016, diff22 = -0.014366939574808169
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.056084482753784193, diff12 = -1.126913277094998111, diff22 = -0.121927893703501211
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031854291085178565, diff12 = -1.138016059294852056, diff22 = -0.042217916811634226
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031908996894577046, diff12 = -1.131024485107210431, diff22 = -0.027470899863256570
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.006710656179721108, diff12 = -1.134231101987288159, diff22 = -0.081285739135104285
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048636979860529839, diff12 = -1.143697936397025661, diff22 = -0.044176309833420579
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.008415610238083793, diff12 = -1.129647756256340285, diff22 = -0.049045524120545969
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.022856547576213915, diff12 = -1.136488637439740934, diff22 = -0.048106901451914874
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029085770712881986, diff12 = -1.146053525166221831, diff22 = -0.059906189946160149
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.016231733107974544, diff12 = -1.127638057754764667, diff22 = -0.033115891073790760
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017799648438096005, diff12 = -1.130553346650540192, diff22 = -0.041314848135098337
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048019159058589667, diff12 = -1.149599799940774325, diff22 = -0.051116006287818871
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.013998194557830135, diff12 = -1.128727700719877047, diff22 = -0.045213654605246290
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.065601661165173186, diff12 = -1.139261962980218978, diff22 = -0.010558847110525904
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.019910050255313672, diff12 = -1.138592056210030234, diff22 = -0.066124067669133590
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.092027202917288498, diff12 = -1.138265461334005302, diff22 = 0.011684808776725175
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028016068744814215, diff12 = -1.127439834879958358, diff22 = -0.029050145366024460
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057539903744859511, diff12 = -1.132459749789531234, diff22 = -0.011583430094744607
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.045203222512255836, diff12 = -1.130232895685592487, diff22 = -0.019850890634097840
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.042271741615840464, diff12 = -1.134542505015334601, diff22 = -0.027513521825327070
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041725118410097961, diff12 = -1.132534248786131403, diff22 = -0.018324652224209759
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.021674823639689755, diff12 = -1.129745056847974993, diff22 = -0.033677375375203655
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.044399095332168459, diff12 = -1.144834972915790061, diff22 = -0.042216200312445329
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.005721495468940296, diff12 = -1.127887887239540365, diff22 = -0.056864272996966725
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.034563020044661830, diff12 = -1.130869834987664468, diff22 = -0.022516704554435218
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.015847823036523656, diff12 = -1.122371556578878771, diff22 = -0.072998199948655751
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017156145234366926, diff12 = -1.139291367299369195, diff22 = -0.061839555516351452
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.008440305791321268, diff12 = -1.128990285631702672, diff22 = -0.075423429595373626
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029306989247438797, diff12 = -1.130192870254388415, diff22 = -0.027494885584655515
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.071132687182493104, diff12 = -1.133782180811149676, diff22 = -0.000050450554807124
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.003205850118181752, diff12 = -1.138829108827360770, diff22 = -0.073911849968084531
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041625205683681443, diff12 = -1.136695959611629503, diff22 = -0.031007829152695954
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.060663193055540243, diff12 = -1.133286737997087457, diff22 = -0.133339258321390708
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.016557069300372151, diff12 = -1.136548365481965472, diff22 = -0.058514305850416726
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.029068892621737397, diff12 = -1.141634075698155559, diff22 = -0.048227518248062373
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047603152881066646, diff12 = -1.129357216659707230, diff22 = -0.010670590785348155
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.003305316705551342, diff12 = -1.133383520068580008, diff22 = -0.072775669895230211
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041190207182395522, diff12 = -1.146934386828310171, diff22 = -0.051891173592788165
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031678999034169930, diff12 = -1.131984081877217330, diff22 = -0.032245999670753922
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.017171598999143556, diff12 = -1.123503145699804140, diff22 = -0.057776951650556740
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.015097194773813993, diff12 = -1.121432538227292497, diff22 = -0.059835934421282766
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.002708154160011023, diff12 = -1.132190203799888550, diff22 = -0.073362496927721899
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.037904646524049013, diff12 = -1.124879392147349666, diff22 = -0.006480575126094901
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048232317404802938, diff12 = -1.143089236139205989, diff22 = -0.033310670587130331
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048481163640824110, diff12 = -1.124351905509481053, diff22 = -0.000871572504489326
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.010427637662638101, diff12 = -1.130041340386927384, diff22 = -0.048354460050358261
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017964866916492461, diff12 = -1.124164244065456675, diff22 = -0.023989752605997561
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.044872558273142737, diff12 = -1.139364030440946696, diff22 = -0.027331051865550515
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.023436727657248135, diff12 = -1.131765585052239453, diff22 = -0.038515473856958971
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.037730717110218470, diff12 = -1.132231178049187825, diff22 = -0.023324177083553388
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.073809395770939035, diff12 = -1.134276559209276503, diff22 = 0.007511113620930820
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.014819842559980589, diff12 = -1.128509557240474415, diff22 = -0.039383220397557039
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.030099944002523249, diff12 = -1.132014073791620667, diff22 = -0.026448831049525445
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.028973623147800054, diff12 = -1.133602093476630213, diff22 = -0.031542142607174251
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.066567936142676754, diff12 = -1.146404189174548893, diff22 = -0.023478260960708153
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.002705702222446038, diff12 = -1.122562169953055466, diff22 = -0.040002946740649636
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.015512930851868001, diff12 = -1.116837976101048735, diff22 = -0.012653442787996294
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.022569765033917166, diff12 = -1.129520257643703562, diff22 = -0.035073795935566587
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.036592580521964124, diff12 = -1.131468126453024414, diff22 = -0.023888787508347442
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057459606458541423, diff12 = -1.130908149854727540, diff22 = -0.007669771524222213
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.024407740058482119, diff12 = -1.125869188619510908, diff22 = -0.022104473091639876
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.045450367983454032, diff12 = -1.129737356722593011, diff22 = -0.108365297300847652
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.003833779504997192, diff12 = -1.118988107724209868, diff22 = -0.034264401133715539
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.099023861199721952, diff12 = -1.140633799961652262, diff22 = 0.013558014945063590
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.093370151232059384, diff12 = -1.131763193518931176, diff22 = 0.024657777697273509
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.045714091858322425, diff12 = -1.142251690913143936, diff22 = -0.035953669393766430
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.033153821814663753, diff12 = -1.133029106790869545, diff22 = -0.035841187306466904
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.023250665691660677, diff12 = -1.126806862411646293, diff22 = -0.028730648474151188
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061378688034721574, diff12 = -1.142618274338407236, diff22 = -0.022773832026585117
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.023406294552150375, diff12 = -1.138704546978549725, diff22 = -0.060488235503503351
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061172888551118798, diff12 = -1.130369933115851655, diff22 = -0.003654271028303402
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048481163640815672, diff12 = -1.124351905509476612, diff22 = -0.000871572504489326
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057414829195764461, diff12 = -1.141588766295145163, diff22 = -0.026952134640137571
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.000126620773255537, diff12 = -1.140047713005715835, diff22 = -0.079210816814012985
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.041849894942801336, diff12 = -1.132115478730434388, diff22 = -0.025609909520940888
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.000727478234098800, diff12 = -1.130566242909824659, diff22 = -0.058893686395207534
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.007558822932601905, diff12 = -1.137456997567211747, diff22 = -0.083413189148526135
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.054653919375740823, diff12 = -1.138588036311793505, diff22 = -0.022183848655251803
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048509928672208935, diff12 = -1.138384748588316731, diff22 = -0.039057095269263153
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020788595255566644, diff12 = -1.125442478868388774, diff22 = -0.026839180485398462
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.026277392714919912, diff12 = -1.144157818076139588, diff22 = -0.059286203424630202
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.031353974769275039, diff12 = -1.140855245708892518, diff22 = -0.045745990496249944
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.010746903524217477, diff12 = -1.123592586860263420, diff22 = -0.037689108788906078
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.077091487060686581, diff12 = -1.129206403195975650, diff22 = 0.014750032001197844
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.054422200988385239, diff12 = -1.137289751247621439, diff22 = -0.016934922125022900
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.040974846552235156, diff12 = -1.126205910486912654, diff22 = -0.007532519078708888
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.050532518936171389, diff12 = -1.136008073587266187, diff22 = -0.023453139716885896
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.060846621601818307, diff12 = -1.137546416247907199, diff22 = -0.014371089942701865
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020230033935030867, diff12 = -1.133012425202399420, diff22 = -0.043212319147847289
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.003033129364593323, diff12 = -1.136917654727143123, diff22 = -0.078181862475791619
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.026357017485022505, diff12 = -1.128530466245878605, diff22 = -0.023791489373374275
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.088388132792447727, diff12 = -1.134789022492584731, diff22 = 0.005600130937014725
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.005734067048623004, diff12 = -1.135286554962951167, diff22 = -0.076056589136733188
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.042295026566337102, diff12 = -1.139987069052670776, diff22 = -0.034805712647321352
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.011498495817825027, diff12 = -1.131860930584151603, diff22 = -0.055215395987372129
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.018897365511670094, diff12 = -1.126675669673815605, diff22 = -0.029037300305961411
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.047642260647006163, diff12 = -1.129490919519412717, diff22 = -0.011221797430659985
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.057242504691108809, diff12 = -1.132293724436252980, diff22 = -0.002410557545814540
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.036229276528765064, diff12 = -1.134046512476880597, diff22 = -0.028723726484272460
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.019214242827251926, diff12 = -1.130398914532841914, diff22 = -0.036637260544960859
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.004024548044824328, diff12 = -1.135969592443312859, diff22 = -0.080442493932976089
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.006244370231137997, diff12 = -1.130798007271931027, diff22 = -0.071197309361896499
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.017892242287696591, diff12 = -1.130704858778658783, diff22 = -0.039112447189024180
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.005418176093026861, diff12 = -1.132897990101681795, diff22 = -0.068810974056438434
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.089729615308356325, diff12 = -1.135647976199500420, diff22 = 0.013528101629595390
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.046163008000408179, diff12 = -1.140438759899023324, diff22 = -0.032057789566213302
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.037904646524049013, diff12 = -1.124879392147349666, diff22 = -0.006480575126094901
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.048735861886477161, diff12 = -1.132608464940596082, diff22 = -0.017782521515222305
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.053872131271153312, diff12 = -1.130884256925646536, diff22 = -0.005821702600970369
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.020474897756889265, diff12 = -1.144816180465259681, diff22 = -0.066049695734335945
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = 0.004856268156110954, diff12 = -1.130882866577744617, diff22 = -0.063231762978603001
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.000717418553908389, diff12 = -1.122452079882732434, diff22 = -0.047909927209960013
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+diff11 = -0.061406700751427068, diff12 = -1.137198393901122984, diff22 = -0.013751469356519941
+lamda01 =                 -nan, lamda12 =                  nan, lamda02 =                  nan
+
+Per MPI rank memory allocation (min/avg/max) = 17.16 | 17.17 | 17.18 Mbytes
+------------ Step              0 ----- CPU =            0 (sec) -------------
+TotEng   =     -5237.4580 KinEng   =      1134.9186 Temp     =       282.1005 
+PotEng   =     -6372.3765 E_bond   =        16.5572 E_angle  =        36.3726 
+E_dihed  =        15.5190 E_impro  =         1.9426 E_vdwl   =       692.8945 
+E_coul   =     26772.2647 E_long   =    -33907.9271 Press    =           -nan
+ERROR on proc 1: Out of range atoms - cannot compute PPPM
+For more information see https://docs.lammps.org/err0004 (src/KSPACE/pppm.cpp:1825)
+ERROR on proc 0: Out of range atoms - cannot compute PPPM
+For more information see https://docs.lammps.org/err0004 (src/KSPACE/pppm.cpp:1825)

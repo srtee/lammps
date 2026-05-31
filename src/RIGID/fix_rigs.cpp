@@ -28,7 +28,8 @@
 using namespace LAMMPS_NS;
 
 FixRigs::FixRigs(LAMMPS *lmp, int narg, char **arg) :
-    FixShake(lmp, narg, arg), rigs_type(nullptr), rigs_angle(nullptr),
+    FixShake(lmp, narg, arg), rigs_type(nullptr), demoted_tag(nullptr),
+    rigs_angle(nullptr),
     rigs_angle_distance(nullptr), rigs_improper_distance(nullptr),
     rigs_dihedral_distance(nullptr),
     rigs_L(nullptr), rigs_lm(nullptr), rigs_maxlist(0),
@@ -42,6 +43,7 @@ FixRigs::~FixRigs()
 {
   if (modify->get_fix_by_id(id)) atom->delete_callback(id, Atom::RESTART);
   memory->destroy(rigs_type);
+  memory->destroy(demoted_tag);
   delete[] rigs_angle;
   delete[] rigs_angle_distance;
   delete[] rigs_improper_distance;
@@ -54,11 +56,13 @@ void FixRigs::grow_arrays(int nmax)
 {
   FixShake::grow_arrays(nmax);
   memory->grow(rigs_type, nmax, 3, "rigs:rigs_type");
+  memory->grow(demoted_tag, nmax, "rigs:demoted_tag");
 }
 
 void FixRigs::copy_arrays(int i, int j, int delflag)
 {
   FixShake::copy_arrays(i, j, delflag);
+  demoted_tag[j] = demoted_tag[i];
   if (shake_flag[j] == 5 || shake_flag[j] == -5 ||
       shake_flag[j] == 6) {
     rigs_type[j][0] = rigs_type[i][0];
@@ -70,6 +74,7 @@ void FixRigs::copy_arrays(int i, int j, int delflag)
 int FixRigs::pack_exchange(int i, double *buf)
 {
   int m = FixShake::pack_exchange(i, buf);
+  buf[m++] = ubuf(demoted_tag[i]).d;
   if (shake_flag[i] == 5 || shake_flag[i] == -5 || 
       shake_flag[i] == 6) {
     buf[m++] = rigs_type[i][0];
@@ -82,6 +87,7 @@ int FixRigs::pack_exchange(int i, double *buf)
 int FixRigs::unpack_exchange(int nlocal, double *buf)
 {
   int m = FixShake::unpack_exchange(nlocal, buf);
+  demoted_tag[nlocal] = (tagint) ubuf(buf[m++]).i;
   if (shake_flag[nlocal] == 5 || shake_flag[nlocal] == -5 || 
       shake_flag[nlocal] == 6) {
     rigs_type[nlocal][0] = static_cast<int>(buf[m++]);
@@ -96,12 +102,14 @@ int FixRigs::pack_restart(int i, double *buf)
   int m = 0;
   if (shake_flag[i] == 5 || shake_flag[i] == -5 || 
       shake_flag[i] == 6) {
-    buf[m++] = 4;
+    buf[m++] = 5;
+    buf[m++] = ubuf(demoted_tag[i]).d;
     buf[m++] = rigs_type[i][0];
     buf[m++] = rigs_type[i][1];
     buf[m++] = rigs_type[i][2];
   } else {
-    buf[m++] = 1;
+    buf[m++] = 2;
+    buf[m++] = ubuf(demoted_tag[i]).d;
   }
   return m;
 }
@@ -115,7 +123,8 @@ void FixRigs::unpack_restart(int i, int nth)
   m++;
 
   int count = static_cast<int>(extra[i][m++]);
-  if (count == 4) {
+  demoted_tag[i] = (tagint) ubuf(extra[i][m++]).i;
+  if (count == 5) {
     rigs_type[i][0] = static_cast<int>(extra[i][m++]);
     rigs_type[i][1] = static_cast<int>(extra[i][m++]);
     rigs_type[i][2] = static_cast<int>(extra[i][m++]);
@@ -125,13 +134,13 @@ void FixRigs::unpack_restart(int i, int nth)
 int FixRigs::size_restart(int i)
 {
   if (shake_flag[i] == 5 || shake_flag[i] == -5 ||
-      shake_flag[i] == 6) return 4;
-  return 1;
+      shake_flag[i] == 6) return 5;
+  return 2;
 }
 
 int FixRigs::maxsize_restart()
 {
-  return 4;
+  return 5;
 }
 
 void FixRigs::init()

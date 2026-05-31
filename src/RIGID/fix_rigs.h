@@ -48,6 +48,7 @@ class FixRigs : public FixShake {
  protected:
   double dtv, dtf;
   int **rigs_type;
+  tagint *demoted_tag;
   double *rigs_angle;
   double *rigs_angle_distance;
   double *rigs_improper_distance;
@@ -70,6 +71,7 @@ class FixRigs : public FixShake {
     { transform_clusters(from_flag, to_flag, false, propagate_shake_data); }
   // void check_rank3(int ilist);
   void shake3angle(int) override;
+  void shake3angle_solve(int i0, int i1, int i2, const double *L, const double *lm);
   void shake4(int ilist) override;
   void shake4demoted(int ilist);
   void shake4improper(int ilist);

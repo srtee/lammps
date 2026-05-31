@@ -361,4 +361,6 @@ void FixRigs::stats()
                        a_ave_all[i]/acnt, a_max_all[i]-a_min_all[i], acnt/3);
     }
   }
+
+  next_output += output_every;
 }
