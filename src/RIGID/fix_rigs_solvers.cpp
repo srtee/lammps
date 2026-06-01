@@ -570,7 +570,7 @@ void FixRigs::shake4demoted(int ilist)
       v[i2][k] += a2 * pcorr[k] / mass2;
       f[i2][k] += a2 * fcorr[k];
     }
-  if (i3 < nlocal)
+  //if (i3 < nlocal)
     for (int k = 0; k < 3; k++) {
       f[i3][k] = 0.0;
       v[i3][k] = 0.0;
@@ -592,13 +592,39 @@ void FixRigs::shake4demoted(int ilist)
   double nnorm = sqrt(dot3(n, n));
 
   double sgn = (dot3(r03, n) < 0) ? -1.0 : 1.0;
+  double M012 = mass0 + mass1 + mass2;
 
-  double i3corr[3];
-
-  for (int k = 0; k < 3; k++) {
-    i3corr[k] = r03[k] - (a1 * r01[k] + a2 * r02[k] + sgn * l22 * n[k] / nnorm);
-    x[i3][k] += i3corr[k];
+  for (k = 0; k < 3; k++) {
+    fcorr[k] = r03[k] - (a1 * r01[k] + a2 * r02[k] + sgn * l22 * n[k] / nnorm);
+    fcorr[k] *= mass3;
+    pcorr[k] = -fcorr[k] / dtv;
+    fcorr[k] *= 2 / dtfsq;
   }
+  //if (i3 < nlocal)
+    for (k = 0; k < 3; k++) {
+      f[i3][k] += fcorr[k];
+      v[i3][k] += pcorr[k] / mass3;
+    }
+  //if (i0 < nlocal) {
+  //  for (k = 0; k < 3; k++) {
+  //    f[i0][k] -= fcorr[k] * mass0 / M012;
+  //    v[i0][k] -= pcorr[k] / M012;
+  //    f[i0][k] -= a0 * fcorr[k];
+  //    v[i0][k] -= a0 * pcorr[k] / mass0;
+  //  }
+  //}
+  //if (i1 < nlocal) {
+  //  for (k = 0; k < 3; k++) {
+  //    f[i1][k] -= a1 * fcorr[k];
+  //    v[i1][k] -= a1 * pcorr[k] / mass1;
+  //  }
+  //}
+  //if (i2 < nlocal) {
+  //  for (k = 0; k < 3; k++) {
+  //    f[i2][k] -= a2 * fcorr[k];
+  //    v[i2][k] -= a2 * pcorr[k] / mass2;
+  // }
+  //}
 }
 
 /* ----------------------------------------------------------------------
