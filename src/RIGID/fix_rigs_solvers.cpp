@@ -405,10 +405,11 @@ void FixRigs::lookup_or_compute_matrices()
         }
         cache_key_to_idx[skey] = idx;
       } else {
-        int pd = entry_demoted_pivot[it->second];
+        idx = it->second;
+        int pd = entry_demoted_pivot[idx];
         if (pd > 0) demoted_tag[m] = shake_atom[m][pd];
       }
-      ilist_to_idx[ilist] = it->second;
+      ilist_to_idx[ilist] = idx;
 
     } else if (shake_flag[m] == 6) {
       int bt0 = shake_type[m][0];
@@ -501,17 +502,81 @@ void FixRigs::shake4demoted(int ilist)
   int i0 = closest_list[ilist][0];
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
-  int i3 = atom->map(demoted_tag[m]);
-  if (i3 < 0) i3 = closest_list[ilist][3];
+  int i3 = closest_list[ilist][3];
 
-  int ia, ib;
+  int ia, ib, idem;
   if (atom->tag[i1] == demoted_tag[m]) {
-    ia = i2; ib = i3;
+    ia = i2; ib = i3; idem = i1;
   } else if (atom->tag[i2] == demoted_tag[m]) {
-    ia = i1; ib = i3;
+    ia = i1; ib = i3; idem = i2;
   } else {
-    ia = i1; ib = i2;
+    ia = i1; ib = i2; idem = i3;
   }
+
+//# Inputs: F3, r1, r2, a1, a2
+//
+//  double aa, ab, D, S;
+//  double r0a[3], r0b[3], rab[3], ua[3], ub[3];
+//  double fperp[3], fpar[3], vperp[3], vpar[3];
+//
+//  double fdem[3] = {f[idem][0], f[idem][1], f[idem][2];
+//  double vdem[3] = {v[idem][0], v[idem][1], v[idem][2];
+//
+//  if (rmass) {
+//    double m0 = rmass[i0];
+//    aa = rmass[ia] / m0;
+//    ab = rmass[ib] / m0;
+//  } else {
+//    double m0 = mass[type[i0]];
+//    aa = mass[type[i1]] / m0;
+//    ab = mass[type[i2]] / m0;
+//  }
+//  aa *= aa; ab *= ab;
+//  minus3(x[ia], x[i0], r0a);
+//  scaleto3(ab, r0a, ua);		
+//  minus3(x[ib], x[i0], r0b);
+//  scaleto3(aa, r0b, ub);
+//  minus3(x[ia], x[ib], rab);
+//  plus3(ua, rab, ua);
+//  minus3(ub, rab, ub);
+//  double D = aa + ab + aa * ab;
+//  double S = dot(r0a, ua) + dot(r0b, ub);
+//
+//  cross(ua, ub, fperp);
+//  scale3(fperp, dot(fdem, fperp)/dot(fperp, fperp));
+//  minus3(fdem, fperp, fpar);
+//  vperp[0] = fperp[0]; vperp[1] = fperp[1]; vperp[2] = fperp[2];
+//  scale3(vperp, dot(vdem, vperp)/dot(vperp, vperp));
+//  minus3(vdem, vperp, vpar);
+//
+//  double umoment[3], fmoment[3], vmoment[3];
+//  plus3(ua, ub, umoment);
+//  scale3(umoment, 1.0/S);
+//  cross(fpar, umoment, fmoment);
+//  cross(vpar, umoment, vmoment);
+
+
+
+//D  = a1 + a2 + a1*a2
+//u1 = (1+a2)*r1 - r2
+//u2 = (1+a1)*r2 - r1
+//S  = (1+a2)*dot(r1,r1) + (1+a1)*dot(r2,r2) - 2*dot(r1,r2)
+//
+//# Decompose F3
+//n  = cross(r1, r2)
+//Q  = dot(n, n)
+//n_hat    = n / sqrt(Q)
+//F3_perp  = dot(F3, n_hat) * n_hat
+//F3_para  = F3 - F3_perp
+//
+//# Solve for lambda
+//b  = a2*cross(F3_para, r1) + a1*cross(F3_para, r2)
+//lam = 2*b / S
+//
+//# Solve for forces
+//F1 = (a2*F3_para - 0.5*cross(lam, u1)) / D
+//F2 = (a1*F3_para - 0.5*cross(lam, u2)) / D
+//F0 = F3 - F1 - F2
 
   if (i3 < nlocal)
     for (int k = 0; k < 3; k++) {
@@ -541,9 +606,9 @@ void FixRigs::shake4demoted(int ilist)
     r02[k] = xshake[i0][k] - xshake[ib][k];
     r03[k] = xshake[i0][k] - x[i3][k];
   }
-  domain->minimum_image(FLERR, r01);
-  domain->minimum_image(FLERR, r02);
-  domain->minimum_image(FLERR, r03);
+  //domain->minimum_image(FLERR, r01);
+  //domain->minimum_image(FLERR, r02);
+  //domain->minimum_image(FLERR, r03);
 
   int idx3 = ilist_to_idx[ilist];
   double l20 = L_entries[idx3].data[3];

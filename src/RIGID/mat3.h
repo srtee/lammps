@@ -261,6 +261,7 @@ inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
   double d1 = c11;
   double m12 = c12 / d1;
   double d2 = c22 - m12 * c12;
+  if (d2 < 0.0) d2 = 0.0;
 
   return {d0, d1, d2, m01, m02, m12};
 }
