@@ -17,7 +17,6 @@
 
 #include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
@@ -141,8 +140,7 @@ void FixRigs::lookup_or_compute_matrices()
             L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
             SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                             bond1 * bond1, angle12, bond2 * bond2};
-            int permL[3];
-            DChol3 dcL = dchol_pivot(Lref, permL);
+            DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
             double l00_1 = sqrt(dcL.d0);
             double l11_1 = sqrt(dcL.d1);
             L_entries[idx].data[3] = dcL.m02 * l00_1;
@@ -174,8 +172,7 @@ void FixRigs::lookup_or_compute_matrices()
           lm[2] = dc3.m01;
           SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                           bond1 * bond1, angle12, bond2 * bond2};
-          int permL[3];
-          DChol3 dcL = dchol_pivot(Lref, permL);
+          DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
           lm[3] = sqrt(dcL.d0);
           lm[4] = dcL.m01;
           lm[5] = sqrt(dcL.d1);
@@ -347,8 +344,7 @@ void FixRigs::lookup_or_compute_matrices()
         double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
         constexpr double demote_threshold = 1e-3;
         if (ratio_d2d0 < demote_threshold) {
-          int pos_largest_d = perm_mlm[0] + 1;
-	  int pos_smallest_d = perm_mlm[2] + 1;
+          int pos_smallest_d = perm_mlm[2] + 1;
 
           double im0 = 1.0 / mass[t0];
           double im1, im2;
@@ -426,7 +422,7 @@ void FixRigs::lookup_or_compute_matrices()
       } else {
         idx = it->second;
         int pos_smallest_d = entry_demoted_pivot[idx];
-        if (pd > 0) demoted_tag[m] = shake_atom[m][pos_smallest_d];
+        if (pos_smallest_d > 0) demoted_tag[m] = shake_atom[m][pos_smallest_d];
       }
       ilist_to_idx[ilist] = idx;
 
