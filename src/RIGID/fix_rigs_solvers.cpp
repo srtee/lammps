@@ -141,10 +141,8 @@ void FixRigs::lookup_or_compute_matrices()
             SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                             bond1 * bond1, angle12, bond2 * bond2};
             DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
-            double l00_1 = sqrt(dcL.d0);
-            double l11_1 = sqrt(dcL.d1);
-            L_entries[idx].data[3] = dcL.m02 * l00_1;
-            L_entries[idx].data[4] = dcL.m12 * l11_1;
+            L_entries[idx].data[3] = dcL.m02 - dcL.m01 * dcL.m12;
+            L_entries[idx].data[4] = dcL.m12;
             L_entries[idx].data[5] = sqrt(dcL.d2);
             cache_key_to_idx[skey] = idx;
           } else {
@@ -170,12 +168,6 @@ void FixRigs::lookup_or_compute_matrices()
           lm[0] = dc3.d0;
           lm[1] = dc3.d1;
           lm[2] = dc3.m01;
-          SymMat3 Lref = {bond0 * bond0, angle01, angle02,
-                          bond1 * bond1, angle12, bond2 * bond2};
-          DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
-          lm[3] = sqrt(dcL.d0);
-          lm[4] = dcL.m01;
-          lm[5] = sqrt(dcL.d1);
 
         } else {
           char key[256];
@@ -392,14 +384,9 @@ void FixRigs::lookup_or_compute_matrices()
           SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                           bond1 * bond1, angle12, bond2 * bond2};
           DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
-          double l00_1 = sqrt(dcL.d0);
-          double l11_1 = sqrt(dcL.d1);
-          L_entries[idx].data[3] = dcL.m02 * l00_1;
-          L_entries[idx].data[4] = dcL.m12 * l11_1;
+          L_entries[idx].data[3] = dcL.m02 - dcL.m01 * dcL.m12;
+          L_entries[idx].data[4] = dcL.m12;
           L_entries[idx].data[5] = sqrt(dcL.d2);
-          lm_entries[idx].data[3] = l00_1;
-          lm_entries[idx].data[4] = dcL.m01;
-          lm_entries[idx].data[5] = l11_1;
 
           entry_demoted_pivot.push_back(pos_smallest_d);
           demoted_tag[m] = shake_atom[m][pos_smallest_d];
@@ -513,136 +500,104 @@ static bool has_nan3(const double v[3]) {
 
 void FixRigs::shake4demoted(int ilist)
 {
-  int m = list[ilist];
-  int i0 = closest_list[ilist][0];
-  int i1 = closest_list[ilist][1];
-  int i2 = closest_list[ilist][2];
-  int i3 = closest_list[ilist][3];
+  const int m = list[ilist];
+  const int i0 = closest_list[ilist][0];
+  const tagint dtag = demoted_tag[m];
+  int k, i1, i2, i3; // reorder: 3 is always demoted
 
-  int ia, ib, idem;
-  if (atom->tag[i1] == demoted_tag[m]) {
-    ia = i2; ib = i3; idem = i1;
-  } else if (atom->tag[i2] == demoted_tag[m]) {
-    ia = i1; ib = i3; idem = i2;
+  if (atom->tag[closest_list[ilist][1]] == dtag) {
+    i1 = closest_list[ilist][2];
+    i2 = closest_list[ilist][3];
+    i3 = closest_list[ilist][1];
   } else {
-    ia = i1; ib = i2; idem = i3;
+      i1 = closest_list[ilist][1];
+      if (atom->tag[closest_list[ilist][2]] == dtag) {
+        i2 = closest_list[ilist][3];
+        i3 = closest_list[ilist][2];
+      } else if (atom->tag[closest_list[ilist][3]] == dtag) {
+        i2 = closest_list[ilist][2];
+        i3 = closest_list[ilist][3];
+      } // TODO: throw an error!
+  }
+  
+  int idx = ilist_to_idx[ilist];
+  double a1 = L_entries[idx].data[3];
+  double a2 = L_entries[idx].data[4];
+  double l22 = L_entries[idx].data[5];
+  double a0 = 1 - a1 - a2;
+
+  double mass0, mass1, mass2, mass3;
+
+  if (rmass) {
+    mass0 = rmass[i0]; mass1 = rmass[i1];
+    mass2 = rmass[i2]; mass3 = rmass[i3];
+  } else {
+    mass0 = mass[type[i0]]; mass1 = mass[type[i1]];
+    mass2 = mass[type[i2]]; mass3 = mass[type[i3]];
   }
 
-//# Inputs: F3, r1, r2, a1, a2
-//
-//  double aa, ab, D, S;
-//  double r0a[3], r0b[3], rab[3], ua[3], ub[3];
-//  double fperp[3], fpar[3], vperp[3], vpar[3];
-//
-//  double fdem[3] = {f[idem][0], f[idem][1], f[idem][2];
-//  double vdem[3] = {v[idem][0], v[idem][1], v[idem][2];
-//
-//  if (rmass) {
-//    double m0 = rmass[i0];
-//    aa = rmass[ia] / m0;
-//    ab = rmass[ib] / m0;
-//  } else {
-//    double m0 = mass[type[i0]];
-//    aa = mass[type[i1]] / m0;
-//    ab = mass[type[i2]] / m0;
-//  }
-//  aa *= aa; ab *= ab;
-//  minus3(x[ia], x[i0], r0a);
-//  scaleto3(ab, r0a, ua);		
-//  minus3(x[ib], x[i0], r0b);
-//  scaleto3(aa, r0b, ub);
-//  minus3(x[ia], x[ib], rab);
-//  plus3(ua, rab, ua);
-//  minus3(ub, rab, ub);
-//  double D = aa + ab + aa * ab;
-//  double S = dot(r0a, ua) + dot(r0b, ub);
-//
-//  cross(ua, ub, fperp);
-//  scale3(fperp, dot(fdem, fperp)/dot(fperp, fperp));
-//  minus3(fdem, fperp, fpar);
-//  vperp[0] = fperp[0]; vperp[1] = fperp[1]; vperp[2] = fperp[2];
-//  scale3(vperp, dot(vdem, vperp)/dot(vperp, vperp));
-//  minus3(vdem, vperp, vpar);
-//
-//  double umoment[3], fmoment[3], vmoment[3];
-//  plus3(ua, ub, umoment);
-//  scale3(umoment, 1.0/S);
-//  cross(fpar, umoment, fmoment);
-//  cross(vpar, umoment, vmoment);
+  // re-project forces + momenta from i3 onto i0, i1, i2:
 
+  double mxcorr[3], pcorr[3], fcorr[3];
 
+  for (k = 0; k < 3; k++) {
+    fcorr[k] = f[i3][k];
+    pcorr[k] = mass3 * v[i3][k];
+  }
 
-//D  = a1 + a2 + a1*a2
-//u1 = (1+a2)*r1 - r2
-//u2 = (1+a1)*r2 - r1
-//S  = (1+a2)*dot(r1,r1) + (1+a1)*dot(r2,r2) - 2*dot(r1,r2)
-//
-//# Decompose F3
-//n  = cross(r1, r2)
-//Q  = dot(n, n)
-//n_hat    = n / sqrt(Q)
-//F3_perp  = dot(F3, n_hat) * n_hat
-//F3_para  = F3 - F3_perp
-//
-//# Solve for lambda
-//b  = a2*cross(F3_para, r1) + a1*cross(F3_para, r2)
-//lam = 2*b / S
-//
-//# Solve for forces
-//F1 = (a2*F3_para - 0.5*cross(lam, u1)) / D
-//F2 = (a1*F3_para - 0.5*cross(lam, u2)) / D
-//F0 = F3 - F1 - F2
+  for (k = 0; k < 3; k++) {
+    mxcorr[k] = pcorr[k] * dtv + fcorr[k] * dtfsq;
+  }
 
+  for (k = 0; k < 3; k++)
+    xshake[i0][k] += a0 * mxcorr[k] / mass0;
+  if (i0 < nlocal) {
+      for (k = 0; k < 3; k++)
+      v[i0][k] += a0 * pcorr[k] / mass0;
+      f[i0][k] += a0 * fcorr[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i1][k] += a1 * mxcorr[k] / mass1;
+  if (i1 < nlocal) {
+      for (k = 0; k < 3; k++)
+      v[i1][k] += a1 * pcorr[k] / mass1;
+      f[i1][k] += a1 * fcorr[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i2][k] += a2 * mxcorr[k] / mass2;
+  if (i2 < nlocal) {
+      for (k = 0; k < 3; k++)
+      v[i2][k] += a2 * pcorr[k] / mass2;
+      f[i2][k] += a2 * fcorr[k];
+    }
   if (i3 < nlocal)
     for (int k = 0; k < 3; k++) {
       f[i3][k] = 0.0;
       v[i3][k] = 0.0;
     }
+
   store_lamda_corrections = true;
 
-  shake3angle_solve(i0, ia, ib, ilist);
+  shake3angle_solve(i0, i1, i2, ilist);
   store_lamda_corrections = false;
 
-  double l00, m01, l11;
-  if (rmass) {
-    l00 = rigs_lm_atom[m][3];
-    m01 = rigs_lm_atom[m][4];
-    l11 = rigs_lm_atom[m][5];
-  } else {
-    int idx2 = ilist_to_idx[ilist];
-    l00 = lm_entries[idx2].data[3];
-    m01 = lm_entries[idx2].data[4];
-    l11 = lm_entries[idx2].data[5];
-  }
-
-  double r01[3], r02[3], r03[3], e1[3], e2[3], n[3];
-  for (int k = 0; k < 3; k++) {
-    r01[k] = xshake[i0][k] - xshake[ia][k];
-    r02[k] = xshake[i0][k] - xshake[ib][k];
+  double r01[3], r02[3], r03[3], n[3];
+  for (k = 0; k < 3; k++) {
+    r01[k] = xshake[i0][k] - xshake[i1][k];
+    r02[k] = xshake[i0][k] - xshake[i2][k];
     r03[k] = xshake[i0][k] - x[i3][k];
   }
-  //domain->minimum_image(FLERR, r01);
-  //domain->minimum_image(FLERR, r02);
-  //domain->minimum_image(FLERR, r03);
 
-  int idx3 = ilist_to_idx[ilist];
-  double l20 = L_entries[idx3].data[3];
-  double l21_ = L_entries[idx3].data[4];
-  double l22 = L_entries[idx3].data[5];
+  cross(r01, r02, n);
+  double nnorm = sqrt(dot3(n, n));
 
-  for (int k = 0; k < 3; k++) {
-    e1[k] = r01[k] / l00;
-    e2[k] = (r02[k] - m01 * r01[k]) / l11;
-  }
-  n[0] = e1[1] * e2[2] - e1[2] * e2[1];
-  n[1] = e1[2] * e2[0] - e1[0] * e2[2];
-  n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+  double sgn = (dot3(r03, n) < 0) ? -1.0 : 1.0;
 
-  double r03_dot_n = dot3(r03, n);
-  double sgn = (r03_dot_n < 0) ? -1.0 : 1.0;
+  double i3corr[3];
 
   for (int k = 0; k < 3; k++) {
-    x[i3][k] = xshake[i0][k] - (l20 * e1[k] + l21_ * e2[k] + sgn * l22 * n[k]);
+    i3corr[k] = r03[k] - (a1 * r01[k] + a2 * r02[k] + sgn * l22 * n[k] / nnorm);
+    x[i3][k] += i3corr[k];
   }
 }
 
