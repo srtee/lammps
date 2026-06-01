@@ -223,6 +223,39 @@ inline DChol3 inv_dchol(const SymMat3 &A)
   return {1.0/A.d00, 1.0/d1, 1.0/d2, -m01, -m02, -m12};
 }
 
+inline DChol3 dchol_pivot_one(const SymMat3 &A, int p)
+{
+  // Semi-pivoted LDL^T: swap row/column p to position 2 only.
+  // This ensures the first two columns always correspond to the
+  // two non-demoted bonds, while the demoted bond's direction is
+  // moved to position 2 where it can be safely eliminated.
+  double a00 = A.d00, a01 = A.d01, a02 = A.d02;
+  double a11 = A.d11, a12 = A.d12;
+  double a22 = A.d22;
+
+  if (p == 1) {
+    double tmp = a11; a11 = a22; a22 = tmp;
+    tmp = a01; a01 = a12; a12 = tmp;
+  } else if (p == 0) {
+    double tmp = a00; a00 = a22; a22 = tmp;
+    tmp = a01; a01 = a02; a02 = tmp;
+  }
+
+  double d0 = a00;
+  double m01 = a01 / d0;
+  double m02 = a02 / d0;
+
+  double c11 = a11 - m01 * a01;
+  double c12 = a12 - m01 * a02;
+
+  double d1 = c11;
+  double m12 = c12 / d1;
+  double d2 = a22 - m02 * a02 - m12 * c12;
+  if (d2 < 0.0) d2 = 0.0;
+
+  return {d0, d1, d2, m01, m02, m12};
+}
+
 inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
 {
   perm[0] = 0; perm[1] = 1; perm[2] = 2;

@@ -113,11 +113,11 @@ void FixRigs::lookup_or_compute_matrices()
         constexpr double demote_threshold = 1e-3;
 
         if (ratio_d2d0 < demote_threshold) {
-          int pd = perm_mlm[2] + 1;
-          demoted_tag[m] = shake_atom[m][pd];
+          int pos_smallest_d = perm_mlm[2] + 1;
+          demoted_tag[m] = shake_atom[m][pos_smallest_d];
 
           char key[256];
-          std::snprintf(key, sizeof(key), "5d:P%d:%d:%d:%d:%d:%d", pd, bt0, bt1, bt2, at0, at1, at2);
+          std::snprintf(key, sizeof(key), "5d:P%d:%d:%d:%d:%d:%d", pos_smallest_d, bt0, bt1, bt2, at0, at1, at2);
           std::string skey(key);
           auto it = cache_key_to_idx.find(skey);
           if (it == cache_key_to_idx.end()) {
@@ -126,10 +126,10 @@ void FixRigs::lookup_or_compute_matrices()
             double im0 = 1.0 / rmass[i0];
             double im1, im2;
             int tri_bt0, tri_bt1, tri_at;
-            if (pd == 1) {
+            if (pos_smallest_d == 1) {
               tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
               im1 = 1.0 / rmass[i2]; im2 = 1.0 / rmass[i3];
-            } else if (pd == 2) {
+            } else if (pos_smallest_d == 2) {
               tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
               im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i3];
             } else {
@@ -158,10 +158,10 @@ void FixRigs::lookup_or_compute_matrices()
           double im0 = 1.0 / rmass[i0];
           double im1, im2;
           int tri_bt0, tri_bt1, tri_at;
-          if (pd == 1) {
+          if (pos_smallest_d == 1) {
             tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
             im1 = 1.0 / rmass[i2]; im2 = 1.0 / rmass[i3];
-          } else if (pd == 2) {
+          } else if (pos_smallest_d == 2) {
             tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
             im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i3];
           } else {
@@ -347,15 +347,16 @@ void FixRigs::lookup_or_compute_matrices()
         double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
         constexpr double demote_threshold = 1e-3;
         if (ratio_d2d0 < demote_threshold) {
-          int pd = perm_mlm[2] + 1;
+          int pos_largest_d = perm_mlm[0] + 1;
+	  int pos_smallest_d = perm_mlm[2] + 1;
 
           double im0 = 1.0 / mass[t0];
           double im1, im2;
           int tri_bt0, tri_bt1, tri_at;
-          if (pd == 1) {
+          if (pos_smallest_d == 1) {
             tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
             im1 = 1.0 / mass[t2]; im2 = 1.0 / mass[t3];
-          } else if (pd == 2) {
+          } else if (pos_smallest_d == 2) {
             tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
             im1 = 1.0 / mass[t1]; im2 = 1.0 / mass[t3];
           } else {
@@ -372,11 +373,29 @@ void FixRigs::lookup_or_compute_matrices()
           lm_entries[idx].data[1] = dc3.d1;
           lm_entries[idx].data[2] = dc3.m01;
 
+          // Geometric parameters for the demoted virtual particle.
+          //
+          // Lref is the Gram matrix of the constraint vectors (bond0-bond2),
+          // stored in the ORIGINAL bond ordering to avoid reordering sensitive
+          // lists.  dchol_pivot_one swaps only the demoted bond's row/column
+          // to position 2, so the first two columns always correspond to the
+          // two non-demoted bonds in their original order.
+          //
+          // The semi-pivoted factorisation gives:
+          //   P Lref P^T = D^{1/2} Ltilde Ltilde^T D^{1/2}
+          // where P swaps only the demoted bond to position 2,
+          // D^{1/2} = diag(sqrt(d0), sqrt(d1), sqrt(d2)) and
+          // Ltilde = [[1, 0, 0], [m01, 1, 0], [m02, m12, 1]].
+          //
+          // The diagonal entries l00=d0^{1/2}, l11=d1^{1/2}, l22=d2^{1/2}
+          // and off-diagonal products m02*l00, m12*l11 are stored together
+          // with m01 as the decomposition used by shake4demoted to construct
+          // an orthonormal frame (e1, e2, n) from the two non-demoted
+          // constraint vectors and then position the demoted particle at
+          // xshake[i0] - (l20*e1 + l21*e2 + sgn*l22*n).
           SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                           bond1 * bond1, angle12, bond2 * bond2};
-          int permL[3];
-          DChol3 dcL = dchol_pivot(Lref, permL);
-
+          DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
           double l00_1 = sqrt(dcL.d0);
           double l11_1 = sqrt(dcL.d1);
           L_entries[idx].data[3] = dcL.m02 * l00_1;
@@ -386,8 +405,8 @@ void FixRigs::lookup_or_compute_matrices()
           lm_entries[idx].data[4] = dcL.m01;
           lm_entries[idx].data[5] = l11_1;
 
-          entry_demoted_pivot.push_back(pd);
-          demoted_tag[m] = shake_atom[m][pd];
+          entry_demoted_pivot.push_back(pos_smallest_d);
+          demoted_tag[m] = shake_atom[m][pos_smallest_d];
         } else {
           L_entries[idx].data[0] = bond0 * bond0;
           L_entries[idx].data[1] = angle01;
@@ -406,8 +425,8 @@ void FixRigs::lookup_or_compute_matrices()
         cache_key_to_idx[skey] = idx;
       } else {
         idx = it->second;
-        int pd = entry_demoted_pivot[idx];
-        if (pd > 0) demoted_tag[m] = shake_atom[m][pd];
+        int pos_smallest_d = entry_demoted_pivot[idx];
+        if (pd > 0) demoted_tag[m] = shake_atom[m][pos_smallest_d];
       }
       ilist_to_idx[ilist] = idx;
 
