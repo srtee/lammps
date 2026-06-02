@@ -7,18 +7,18 @@ create_box 3 box bond/types 2 angle/types 2 &
 
 mass 1 15.8994
 mass 2 1.008
-mass 3 0.5
+mass 3 1e-6
 
-pair_style lj/cut/coul/long 8.0
+pair_style lj/cut/coul/long 12.0
 pair_coeff 1 1 0.1550 3.1536
 pair_coeff 2 2 0.0    1.0
 pair_coeff 3 3 0.0    1.0
-kspace_style pppm 1e-4
+kspace_style pppm 1e-5
 bond_style zero
 bond_coeff 1 0.9574
 bond_coeff 2 0.15
 
-neigh_modify every 1 delay 0 check no
+neigh_modify every 1 delay 0
 
 angle_style zero
 angle_coeff 1 104.52
@@ -26,12 +26,12 @@ angle_coeff 2 52.26
 molecule water tip4p.mol
 create_atoms 0 random 33 34564 NULL mol water 25367 overlap 1.33
 
-timestep 1.0
-fix rigid all rigs 1e-6 1000 100 b 1 2 a 1 2
+timestep 4.0
+fix rigid all rigs 1e-12 1000 1000 b 1 2 a 1 2
 minimize 1e-8 1e-10 10000 100000
 write_data min_demoted.data nocoeff
 
-fix integrate all nvt temp 300.0 300.0 200.0
+fix integrate all nvt temp 300.0 300.0 100.0
 
 group o type 1
 group h type 2
@@ -40,7 +40,9 @@ compute keo o ke
 compute keh h ke
 compute kem m ke
 
+reset_timestep 0
+
 thermo_style custom step temp etotal pe ke c_keo c_keh c_kem
-thermo 10
-run 200
+thermo 100
+run 5000
 write_data tip4p-explicit.data nocoeff
