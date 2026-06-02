@@ -504,7 +504,7 @@ void FixRigs::shake4demoted(int ilist)
         i3 = closest_list[ilist][3];
       } // TODO: throw an error!
   }
-  
+
   int idx = ilist_to_idx[ilist];
   double a1 = L_entries[idx].data[3];
   double a2 = L_entries[idx].data[4];
@@ -520,46 +520,12 @@ void FixRigs::shake4demoted(int ilist)
     mass0 = mass[type[i0]]; mass1 = mass[type[i1]];
     mass2 = mass[type[i2]]; mass3 = mass[type[i3]];
   }
+  
+  //redistribute_forcemom_linear(ilist, i0, i1, i2, i3);
+  double fchange[3] = {f[i3][0], f[i3][1], f[i3][2]};
+  double vchange[3] = {v[i3][0], v[i3][1], v[i3][2]};
 
-  // re-project forces + momenta from i3 onto i0, i1, i2:
-
-  double mxcorr[3], pcorr[3], fcorr[3];
-
-  for (k = 0; k < 3; k++) {
-    fcorr[k] = f[i3][k];
-    pcorr[k] = mass3 * v[i3][k];
-  }
-
-  for (k = 0; k < 3; k++) {
-    mxcorr[k] = pcorr[k] * dtv + fcorr[k] * dtfsq;
-  }
-
-  for (k = 0; k < 3; k++)
-    xshake[i0][k] += a0 * mxcorr[k] / mass0;
-    if (i0 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i0][k] += a0 * pcorr[k] / mass0;
-      f[i0][k] += a0 * fcorr[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i1][k] += a1 * mxcorr[k] / mass1;
-    if (i1 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i1][k] += a1 * pcorr[k] / mass1;
-      f[i1][k] += a1 * fcorr[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i2][k] += a2 * mxcorr[k] / mass2;
-    if (i2 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i2][k] += a2 * pcorr[k] / mass2;
-      f[i2][k] += a2 * fcorr[k];
-    }
-  if (i3 < nlocal)
-    for (int k = 0; k < 3; k++) {
-      f[i3][k] = 0.0;
-      v[i3][k] = 0.0;
-    }
+  redistribute_forcemom_smw(i0, i1, i2, i3, fchange, vchange, false);
 
   store_lamda_corrections = true;
 
@@ -579,26 +545,27 @@ void FixRigs::shake4demoted(int ilist)
   double sgn = (RigsMath::dot3(r03, n) < 0) ? -1.0 : 1.0;
   double M012 = mass0 + mass1 + mass2;
 
+  double fcorr[3], vcorr[3];
   for (k = 0; k < 3; k++) {
     fcorr[k] = r03[k] - (a1 * r01[k] + a2 * r02[k] + sgn * l22 * n[k] / nnorm);
-    fcorr[k] *= mass3;
-    pcorr[k] = -fcorr[k] / dtv;
-    fcorr[k] *= 2 / dtfsq;
+    vcorr[k] = fcorr[k] / dtv;
+    fcorr[k] *= -2.0 * mass3 / dtfsq;
   }
-  
+ 
   if (in_setup) {
   // if firing during setup, update rule is a bit different
-    if (i3 < nlocal)
-      for (k = 0; k < 3; k++) {
-        f[i3][k] += 2 * fcorr[k];
-      }
-  } else {
-    if (i3 < nlocal)
-      for (k = 0; k < 3; k++) {
-        f[i3][k] += fcorr[k];
-        v[i3][k] += pcorr[k] / mass3;
-      }
+    fcorr[0] *= 2; fcorr[1] *= 2; fcorr[2] *= 2;
+    vcorr[0] = vcorr[1] = vcorr[2] = 0.0;
   }
+  
+  redistribute_forcemom_smw(i0, i1, i2, i3, fcorr, vcorr, true);
+
+//  if (i3 < nlocal)
+//    for (k = 0; k < 3; k++) {
+//      f[i3][k] -= fcorr[k];
+//      v[i3][k] -= vcorr[k];
+//    }
+  
 
   //if (i0 < nlocal) {
   //  for (k = 0; k < 3; k++) {
@@ -873,4 +840,176 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     for (int i = 0; i < 3; i++) f[i3][i] += force_scale * L_lam(3, i);
 }
 
+void FixRigs::redistribute_forcemom_linear(int ilist, int i0, int i1, int i2, int i3)
+{
+  int k;
+  int idx = ilist_to_idx[ilist];
+  double a1 = L_entries[idx].data[3];
+  double a2 = L_entries[idx].data[4];
+  double l22 = L_entries[idx].data[5];
+  double a0 = 1 - a1 - a2;
 
+  double mass0, mass1, mass2, mass3;
+
+  if (rmass) {
+    mass0 = rmass[i0]; mass1 = rmass[i1];
+    mass2 = rmass[i2]; mass3 = rmass[i3];
+  } else {
+    mass0 = mass[type[i0]]; mass1 = mass[type[i1]];
+    mass2 = mass[type[i2]]; mass3 = mass[type[i3]];
+  }
+
+  // re-project forces + momenta from i3 onto i0, i1, i2:
+
+  double mxcorr[3], pcorr[3], fcorr[3];
+
+  for (k = 0; k < 3; k++) {
+    fcorr[k] = f[i3][k];
+    pcorr[k] = mass3 * v[i3][k];
+  }
+
+  for (k = 0; k < 3; k++) {
+    mxcorr[k] = pcorr[k] * dtv + fcorr[k] * dtfsq;
+  }
+
+  for (k = 0; k < 3; k++)
+    xshake[i0][k] += a0 * mxcorr[k] / mass0;
+    if (i0 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i0][k] += a0 * pcorr[k] / mass0;
+      f[i0][k] += a0 * fcorr[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i1][k] += a1 * mxcorr[k] / mass1;
+    if (i1 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i1][k] += a1 * pcorr[k] / mass1;
+      f[i1][k] += a1 * fcorr[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i2][k] += a2 * mxcorr[k] / mass2;
+    if (i2 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i2][k] += a2 * pcorr[k] / mass2;
+      f[i2][k] += a2 * fcorr[k];
+    }
+  if (i3 < nlocal)
+    for (int k = 0; k < 3; k++) {
+      f[i3][k] = 0.0;
+      v[i3][k] = 0.0;
+    }
+}
+
+void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, double fchange[3], double vchange[3], bool use_xshake)
+{
+  int k;
+
+  double m0, m1, m2, m3;
+
+  if (rmass) {
+    m0 = rmass[i0]; m1 = rmass[i1];
+    m2 = rmass[i2]; m3 = rmass[i3];
+  } else {
+    m0 = mass[type[i0]]; m1 = mass[type[i1]];
+    m2 = mass[type[i2]]; m3 = mass[type[i3]];
+  }
+
+  // re-project forces + momenta from i3 onto i0, i1, i2:
+
+  double u0[3], u1[3], u2[3], r03[3];
+
+  if (use_xshake) {
+    u0[0] = (xshake[2][0] - xshake[1][0])/m0;
+    u0[1] = (xshake[2][1] - xshake[1][1])/m0;
+    u0[2] = (xshake[2][2] - xshake[1][2])/m0;
+  
+    u1[0] = (xshake[2][0] - xshake[0][0])/m1;
+    u1[1] = (xshake[2][1] - xshake[0][1])/m1;
+    u1[2] = (xshake[2][2] - xshake[0][2])/m1;
+   
+    u2[0] = (xshake[1][0] - xshake[0][0])/m2;
+    u2[1] = (xshake[1][1] - xshake[0][1])/m2;
+    u2[2] = (xshake[1][2] - xshake[0][2])/m2;
+  
+    r03[0] = (x[i3][0] - xshake[0][0]);
+    r03[1] = (x[i3][1] - xshake[0][1]);
+    r03[2] = (x[i3][2] - xshake[0][2]);
+  } else {
+    u0[0] = (x[i2][0] - x[i1][0])/m0;
+    u0[1] = (x[i2][1] - x[i1][1])/m0;
+    u0[2] = (x[i2][2] - x[i1][2])/m0;
+  
+    u1[0] = (x[i2][0] - x[i0][0])/m1;
+    u1[1] = (x[i2][1] - x[i0][1])/m1;
+    u1[2] = (x[i2][2] - x[i0][2])/m1;
+   
+    u2[0] = (x[i1][0] - x[i0][0])/m2;
+    u2[1] = (x[i1][1] - x[i0][1])/m2;
+    u2[2] = (x[i1][2] - x[i0][2])/m2;
+  
+    r03[0] = (x[i3][0] - x[i0][0]);
+    r03[1] = (x[i3][1] - x[i0][1]);
+    r03[2] = (x[i3][2] - x[i0][2]);
+  }
+
+  double a = normsq(u0) + normsq(u1) + normsq(u2);
+  SMWMat3 smw = {a, u0, u1, u2};
+  smw.invert_vectors();
+
+  double lever[3], fmult[3], vmult[3];
+  double M = m0*m0 + m1*m1 + m2*m2;
+  double Q = m1*m1*m2*m2 / M;
+  lever[0] = r03[0] - Q * (u1[0] + u2[0]);
+  lever[1] = r03[1] - Q * (u1[1] + u2[1]);
+  lever[2] = r03[2] - Q * (u1[2] + u2[2]);
+
+  cross(fchange, lever, fmult);
+  cross(vchange, lever, vmult);
+  smw.solve_inplace(fmult);
+  smw.solve_inplace(vmult);
+  
+  double fcorr0[3], fcorr1[3], fcorr2[3];
+  double vcorr0[0], vcorr1[3], vcorr2[3];
+  double tmp1[3], tmp0[3];
+  
+  cross(u0, fmult, tmp0);
+  cross(u2, fmult, tmp1);
+  for (k = 0; k < 3; k++) fcorr1[k] = fchange[k]*m1*m1/M + (tmp1[k]/m2 - tmp0[k]/m0);
+  cross(u1, fmult, tmp1);
+  for (k = 0; k < 3; k++) fcorr2[k] = fchange[k]*m2*m2/M + (tmp1[k]/m1 + tmp0[k]/m0);
+  for (k = 0; k < 3; k++) fcorr0[k] = fchange[k] - fcorr1[k] - fcorr2[k];
+  
+  cross(u0, vmult, tmp0);
+  cross(u2, vmult, tmp1);
+  for (k = 0; k < 3; k++) vcorr1[k] = vchange[k]*m1*m1/M + (tmp1[k]/m2 - tmp0[k]/m0);
+  cross(u1, vmult, tmp1);
+  for (k = 0; k < 3; k++) vcorr2[k] = vchange[k]*m2*m2/M + (tmp1[k]/m1 + tmp0[k]/m0);
+  for (k = 0; k < 3; k++) vcorr0[k] = vchange[k] - vcorr1[k] - vcorr2[k];
+
+  for (k = 0; k < 3; k++)
+    xshake[i0][k] += (dtv * vcorr0[k] * m3 + dtfsq * fcorr0[k]) / m0;
+    if (i0 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i0][k] += vcorr0[k] * m3 / m0;
+      f[i0][k] += fcorr0[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i1][k] += (dtv * vcorr1[k] * m3 + dtfsq * fcorr1[k]) / m1;
+    if (i1 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i1][k] += vcorr1[k] * m3 / m1;
+      f[i1][k] += fcorr1[k];
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i2][k] += (dtv * vcorr2[k] * m3 + dtfsq * fcorr2[k]) / m2;
+    if (i2 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i2][k] += vcorr2[k] * m3 / m2;
+      f[i2][k] += fcorr2[k];
+    }
+  if (i3 < nlocal)
+    for (int k = 0; k < 3; k++) {
+      f[i3][k] -= fchange[k];
+      v[i3][k] -= vchange[k];
+    }
+}
