@@ -23,6 +23,14 @@ namespace RigsMath {
 struct SymMat3 {
   double d00, d01, d02, d11, d12, d22;
 
+  static SymMat3 load(const double *p) {
+    return {p[0], p[1], p[2], p[3], p[4], p[5]};
+  }
+  void store(double *p) const {
+    p[0] = d00; p[1] = d01; p[2] = d02;
+    p[3] = d11; p[4] = d12; p[5] = d22;
+  }
+
   SymMat3 operator+(const SymMat3 &B) const {
     return {d00 + B.d00, d01 + B.d01, d02 + B.d02,
             d11 + B.d11, d12 + B.d12, d22 + B.d22};
@@ -134,6 +142,14 @@ inline void u_mul(const UTMat3 &U, Mat3 &M)
 
 struct DChol3 {
   double d0, d1, d2, m01, m02, m12;
+
+  static DChol3 load(const double *p) {
+    return {p[0], p[1], p[2], p[3], p[4], p[5]};
+  }
+  void store(double *p) const {
+    p[0] = d0; p[1] = d1; p[2] = d2;
+    p[3] = m01; p[4] = m02; p[5] = m12;
+  }
 };
 
 inline SymMat3 mtm(const Mat3 &M) // M^T M
@@ -343,9 +359,51 @@ inline void skew(const Mat3 &A, double out[3])
   out[2] = A(1, 0) - A(0, 1);
 }
 
+inline double dot3(const double a[3], const double b[3]) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
 inline double normsq(const double v[3]) {
   return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 }
+
+struct SMWMat3 {
+  double a;
+  double *ptr0, *ptr1, *ptr2;
+  double sigma[3];
+
+  void invert_vectors() {
+    sigma[0] = a + normsq(ptr0);
+
+    double tmp[3] = {ptr1[0], ptr1[1], ptr1[2]};
+    double wvs = (ptr0[0]*ptr1[0] + ptr0[1]*ptr1[1] + ptr0[2]*ptr1[2]) / sigma[0];
+    ptr1[0] -= ptr0[0] * wvs;
+    ptr1[1] -= ptr0[1] * wvs;
+    ptr1[2] -= ptr0[2] * wvs;
+    sigma[1] = a + tmp[0]*ptr1[0] + tmp[1]*ptr1[1] + tmp[2]*ptr1[2];
+
+    tmp[0] = ptr2[0]; tmp[1] = ptr2[1]; tmp[2] = ptr2[2];
+    double wvs0 = (ptr0[0]*ptr2[0] + ptr0[1]*ptr2[1] + ptr0[2]*ptr2[2]) / sigma[0];
+    double wvs1 = (ptr1[0]*ptr2[0] + ptr1[1]*ptr2[1] + ptr1[2]*ptr2[2]) / sigma[1];
+    ptr2[0] -= ptr0[0]*wvs0 + ptr1[0]*wvs1;
+    ptr2[1] -= ptr0[1]*wvs0 + ptr1[1]*wvs1;
+    ptr2[2] -= ptr0[2]*wvs0 + ptr1[2]*wvs1;
+    sigma[2] = a + tmp[0]*ptr2[0] + tmp[1]*ptr2[1] + tmp[2]*ptr2[2];
+  }
+
+  void find_solution(const double *y, double *x) const {
+    double inv_a = 1.0 / a;
+    x[0] = y[0]; x[1] = y[1]; x[2] = y[2];
+    const double *p[3] = {ptr0, ptr1, ptr2};
+    for (int k = 0; k < 3; k++) {
+      double d = (p[k][0]*y[0] + p[k][1]*y[1] + p[k][2]*y[2]) / sigma[k];
+      x[0] -= p[k][0] * d;
+      x[1] -= p[k][1] * d;
+      x[2] -= p[k][2] * d;
+    }
+    x[0] *= inv_a; x[1] *= inv_a; x[2] *= inv_a;
+  }
+};
 
 inline void cayley_rotate(const double v[3], ColMat3 &A)
 {

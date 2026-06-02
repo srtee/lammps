@@ -236,12 +236,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu23 = mu2 + 1.0 / rmass[i3];
         DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
         double *lm = rigs_lm_atom[m];
-        lm[0] = dc.d0;
-        lm[1] = dc.d1;
-        lm[2] = dc.d2;
-        lm[3] = dc.m01;
-        lm[4] = dc.m02;
-        lm[5] = dc.m12;
+        dc.store(lm);
       }
     }
     return;
@@ -397,12 +392,7 @@ void FixRigs::lookup_or_compute_matrices()
           L_entries[idx].data[3] = bond1 * bond1;
           L_entries[idx].data[4] = angle12;
           L_entries[idx].data[5] = bond2 * bond2;
-          lm_entries[idx].data[0] = dc.d0;
-          lm_entries[idx].data[1] = dc.d1;
-          lm_entries[idx].data[2] = dc.d2;
-          lm_entries[idx].data[3] = dc.m01;
-          lm_entries[idx].data[4] = dc.m02;
-          lm_entries[idx].data[5] = dc.m12;
+          dc.store(lm_entries[idx].data);
           entry_demoted_pivot.push_back(0);
         }
         cache_key_to_idx[skey] = idx;
@@ -447,12 +437,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu02 = mu0 + mu2;
         double mu23 = mu2 + 1.0 / mass[t3];
         DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
-        lm_entries[idx].data[0] = dc.d0;
-        lm_entries[idx].data[1] = dc.d1;
-        lm_entries[idx].data[2] = dc.d2;
-        lm_entries[idx].data[3] = dc.m01;
-        lm_entries[idx].data[4] = dc.m02;
-        lm_entries[idx].data[5] = dc.m12;
+        dc.store(lm_entries[idx].data);
         entry_demoted_pivot.push_back(0);
         cache_key_to_idx[skey] = idx;
       } else {
@@ -551,26 +536,26 @@ void FixRigs::shake4demoted(int ilist)
 
   for (k = 0; k < 3; k++)
     xshake[i0][k] += a0 * mxcorr[k] / mass0;
-  if (i0 < nlocal) {
-      for (k = 0; k < 3; k++)
+    if (i0 < nlocal)
+      for (k = 0; k < 3; k++) {
       v[i0][k] += a0 * pcorr[k] / mass0;
       f[i0][k] += a0 * fcorr[k];
     }
   for (k = 0; k < 3; k++)
     xshake[i1][k] += a1 * mxcorr[k] / mass1;
-  if (i1 < nlocal) {
-      for (k = 0; k < 3; k++)
+    if (i1 < nlocal)
+      for (k = 0; k < 3; k++) {
       v[i1][k] += a1 * pcorr[k] / mass1;
       f[i1][k] += a1 * fcorr[k];
     }
   for (k = 0; k < 3; k++)
     xshake[i2][k] += a2 * mxcorr[k] / mass2;
-  if (i2 < nlocal) {
-      for (k = 0; k < 3; k++)
+    if (i2 < nlocal)
+      for (k = 0; k < 3; k++) {
       v[i2][k] += a2 * pcorr[k] / mass2;
       f[i2][k] += a2 * fcorr[k];
     }
-  //if (i3 < nlocal)
+  if (i3 < nlocal)
     for (int k = 0; k < 3; k++) {
       f[i3][k] = 0.0;
       v[i3][k] = 0.0;
@@ -589,9 +574,9 @@ void FixRigs::shake4demoted(int ilist)
   }
 
   cross(r01, r02, n);
-  double nnorm = sqrt(dot3(n, n));
+  double nnorm = sqrt(normsq(n));
 
-  double sgn = (dot3(r03, n) < 0) ? -1.0 : 1.0;
+  double sgn = (RigsMath::dot3(r03, n) < 0) ? -1.0 : 1.0;
   double M012 = mass0 + mass1 + mass2;
 
   for (k = 0; k < 3; k++) {
@@ -600,11 +585,21 @@ void FixRigs::shake4demoted(int ilist)
     pcorr[k] = -fcorr[k] / dtv;
     fcorr[k] *= 2 / dtfsq;
   }
-  //if (i3 < nlocal)
-    for (k = 0; k < 3; k++) {
-      f[i3][k] += fcorr[k];
-      v[i3][k] += pcorr[k] / mass3;
-    }
+  
+  if (in_setup) {
+  // if firing during setup, update rule is a bit different
+    if (i3 < nlocal)
+      for (k = 0; k < 3; k++) {
+        f[i3][k] += 2 * fcorr[k];
+      }
+  } else {
+    if (i3 < nlocal)
+      for (k = 0; k < 3; k++) {
+        f[i3][k] += fcorr[k];
+        v[i3][k] += pcorr[k] / mass3;
+      }
+  }
+
   //if (i0 < nlocal) {
   //  for (k = 0; k < 3; k++) {
   //    f[i0][k] -= fcorr[k] * mass0 / M012;
@@ -848,9 +843,9 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   int idx = ilist_to_idx[ilist];
   const double *Lp = L_entries[idx].data;
   const double *lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
-  SymMat3 L_mat = {Lp[0], Lp[1], Lp[2], Lp[3], Lp[4], Lp[5]};
+  SymMat3 L_mat = SymMat3::load(Lp);
   SymMat3 diff = L_mat - ss;
-  DChol3 lm_chol = {lmp[0], lmp[1], lmp[2], lmp[3], lmp[4], lmp[5]};
+  DChol3 lm_chol = DChol3::load(lmp);
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);

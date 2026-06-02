@@ -87,29 +87,6 @@ class FixRigs : public FixShake {
   void min_post_force(int vflag) override;
   void stats() override;
 
-  inline double dot3(double* a, double* b) {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  }
-
-  inline void minus3(double* a, double* b, double* c) {
-    c[0] = a[0] - b[0];
-    c[1] = a[1] - b[1];
-    c[2] = a[2] - b[2];
-  }
-  
-  inline void plus3(double* a, double* b, double* c) {
-    c[0] = a[0] + b[0];
-    c[1] = a[1] + b[1];
-    c[2] = a[2] + b[2];
-  }
-
-  inline void scaleto3(double a, double *v, double *o) {
-    o[0] = v[0] * a; o[1] = v[1] * a; o[2] = v[2] * a;
-  }
-  
-  inline void scale3(double a, double *v) {
-    v[0] *= a; v[1] *= a; v[2] *= a;
-  }
 };
 
 }    // namespace LAMMPS_NS

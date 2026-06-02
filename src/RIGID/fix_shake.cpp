@@ -57,7 +57,8 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
     closest_list(nullptr), b_count(nullptr), b_count_all(nullptr), b_ave(nullptr), b_max(nullptr),
     b_min(nullptr), b_ave_all(nullptr), b_max_all(nullptr), b_min_all(nullptr), a_count(nullptr),
     a_count_all(nullptr), a_ave(nullptr), a_max(nullptr), a_min(nullptr), a_ave_all(nullptr),
-    a_max_all(nullptr), a_min_all(nullptr), atommols(nullptr), onemols(nullptr)
+    a_max_all(nullptr), a_min_all(nullptr), atommols(nullptr), onemols(nullptr),
+    in_setup(false)
 {
   rigsflag = utils::strmatch(style, "^rigs") ? 1 : 0;
   energy_global_flag = energy_peratom_flag = 1;
@@ -545,6 +546,7 @@ void FixShake::init()
 
 void FixShake::setup(int vflag)
 {
+  in_setup = true;
   pre_neighbor();
 
   if (output_every) stats();
@@ -590,6 +592,7 @@ void FixShake::setup(int vflag)
   // precalculate constraining forces for first integration step
 
   shake_end_of_step(vflag);
+  in_setup = false;
 }
 
 /* ----------------------------------------------------------------------

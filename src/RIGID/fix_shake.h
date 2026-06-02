@@ -189,6 +189,8 @@ class FixShake : public Fix {
   static int rendezvous_partners_info(int, char *, int &, int *&, char *&, void *);
   static int rendezvous_nshake(int, char *, int &, int *&, char *&, void *);
   static int rendezvous_shake(int, char *, int &, int *&, char *&, void *);
+
+  bool in_setup;
 };
 
 }    // namespace LAMMPS_NS
