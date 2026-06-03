@@ -20,6 +20,7 @@
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
+#include "vec3.h"
 
 #include <cmath>
 #include <cstring>
@@ -522,8 +523,8 @@ void FixRigs::shake4demoted(int ilist)
   }
   
   //redistribute_forcemom_linear(ilist, i0, i1, i2, i3);
-  double fchange[3] = {f[i3][0], f[i3][1], f[i3][2]};
-  double vchange[3] = {v[i3][0], v[i3][1], v[i3][2]};
+  Vec3 fchange = Vec3(f[i3]);
+  Vec3 vchange = Vec3(v[i3]);
 
   redistribute_forcemom_smw(i0, i1, i2, i3, fchange, vchange, false);
 
@@ -532,30 +533,22 @@ void FixRigs::shake4demoted(int ilist)
   shake3angle_solve(i0, i1, i2, ilist);
   store_lamda_corrections = false;
 
-  double r01[3], r02[3], r03[3], n[3];
-  for (k = 0; k < 3; k++) {
-    r01[k] = xshake[i0][k] - xshake[i1][k];
-    r02[k] = xshake[i0][k] - xshake[i2][k];
-    r03[k] = xshake[i0][k] - x[i3][k];
-  }
-
-  cross(r01, r02, n);
+  Vec3 r01 = Vec3(xshake[i0]) - xshake[i1];
+  Vec3 r02 = Vec3(xshake[i0]) - xshake[i2];
+  Vec3 r03 = Vec3(xshake[i0]) - x[i3];
+  Vec3 n = cross(r01, r02);
   double nnorm = sqrt(normsq(n));
 
-  double sgn = (RigsMath::dot3(r03, n) < 0) ? -1.0 : 1.0;
+  double sgn = (dot(r03, n) < 0) ? -1.0 : 1.0;
   double M012 = mass0 + mass1 + mass2;
 
-  double fcorr[3], vcorr[3];
-  for (k = 0; k < 3; k++) {
-    fcorr[k] = r03[k] - (a1 * r01[k] + a2 * r02[k] + sgn * l22 * n[k] / nnorm);
-    vcorr[k] = fcorr[k] / dtv;
-    fcorr[k] *= -2.0 * mass3 / dtfsq;
-  }
+  Vec3 fcorr = r03 - (a1 * r01 + a2 * r02 + (sgn * l22 / nnorm) * n);
+  Vec3 vcorr = fcorr / dtv;
+  fcorr *= -2.0 * mass3 / dtfsq;
  
   if (in_setup) {
-  // if firing during setup, update rule is a bit different
-    fcorr[0] *= 2; fcorr[1] *= 2; fcorr[2] *= 2;
-    vcorr[0] = vcorr[1] = vcorr[2] = 0.0;
+    fcorr *= 2;
+    vcorr = {0, 0, 0};
   }
   
   redistribute_forcemom_smw(i0, i1, i2, i3, fcorr, vcorr, true);
@@ -612,25 +605,10 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   int atomlist[3];
   double v[6];
 
-  double r01[3];
-  r01[0] = x[i0][0] - x[i1][0];
-  r01[1] = x[i0][1] - x[i1][1];
-  r01[2] = x[i0][2] - x[i1][2];
-
-  double r02[3];
-  r02[0] = x[i0][0] - x[i2][0];
-  r02[1] = x[i0][1] - x[i2][1];
-  r02[2] = x[i0][2] - x[i2][2];
-
-  double s01[3];
-  s01[0] = xshake[i0][0] - xshake[i1][0];
-  s01[1] = xshake[i0][1] - xshake[i1][1];
-  s01[2] = xshake[i0][2] - xshake[i1][2];
-
-  double s02[3];
-  s02[0] = xshake[i0][0] - xshake[i2][0];
-  s02[1] = xshake[i0][1] - xshake[i2][1];
-  s02[2] = xshake[i0][2] - xshake[i2][2];
+  Vec3 r01 = Vec3(x[i0]) - x[i1];
+  Vec3 r02 = Vec3(x[i0]) - x[i2];
+  Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
+  Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
   SymMat2 rr = sym_dot(r01, r02);
   SymMat2 ss = sym_dot(s01, s02);
@@ -639,10 +617,10 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   SymMat2 diff = Lm - ss;
 
   Mat2 chi;
-  chi(0, 0) = s01[0] * r01[0] + s01[1] * r01[1] + s01[2] * r01[2];
-  chi(1, 0) = s01[0] * r02[0] + s01[1] * r02[1] + s01[2] * r02[2];
-  chi(0, 1) = s02[0] * r01[0] + s02[1] * r01[1] + s02[2] * r01[2];
-  chi(1, 1) = s02[0] * r02[0] + s02[1] * r02[1] + s02[2] * r02[2];
+  chi(0, 0) = dot(s01, r01);
+  chi(1, 0) = dot(s01, r02);
+  chi(0, 1) = dot(s02, r01);
+  chi(1, 1) = dot(s02, r02);
 
   DChol2 lmc = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
 
@@ -684,23 +662,16 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
       m0 = mass[type[i0]]; m1 = mass[type[i1]];
       m2 = mass[type[i2]];
     }
-    double corr[3];
-    for (int i = 0; i < 3; i++) {
-      corr[i] = -(lamda01 + lamda12) * r01[i] - (lamda02 + lamda12) * r02[i];
-      xshake[i0][i] += corr[i] / m0;
-    }
+    Vec3 corr = -(lamda01 + lamda12) * r01 - (lamda02 + lamda12) * r02;
+    for (int i = 0; i < 3; i++) xshake[i0][i] += corr[i] / m0;
     if (i0 < nlocal)
       for (int i = 0; i < 3; i++) f[i0][i] += corr[i] / dtfsq;
-    for (int i = 0; i < 3; i++) {
-      corr[i] = lamda01 * r01[i] + lamda12 * r02[i];
-      xshake[i1][i] += corr[i] / m1;
-    }
+    corr = lamda01 * r01 + lamda12 * r02;
+    for (int i = 0; i < 3; i++) xshake[i1][i] += corr[i] / m1;
     if (i1 < nlocal)
       for (int i = 0; i < 3; i++) f[i1][i] += corr[i] / dtfsq;
-    for (int i = 0; i < 3; i++) {
-      corr[i] = lamda12 * r01[i] + lamda02 * r02[i];
-      xshake[i2][i] += corr[i] / m2;
-    }
+    corr = lamda12 * r01 + lamda02 * r02;
+    for (int i = 0; i < 3; i++) xshake[i2][i] += corr[i] / m2;
     if (i2 < nlocal)
       for (int i = 0; i < 3; i++) f[i2][i] += corr[i] / dtfsq;
     lamda01 /= dtfsq;
@@ -711,19 +682,16 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
     lamda02 /= dtfsq;
     lamda12 /= dtfsq;
     if (i0 < nlocal) {
-      f[i0][0] -= (lamda01 + lamda12) * r01[0] + (lamda02 + lamda12) * r02[0];
-      f[i0][1] -= (lamda01 + lamda12) * r01[1] + (lamda02 + lamda12) * r02[1];
-      f[i0][2] -= (lamda01 + lamda12) * r01[2] + (lamda02 + lamda12) * r02[2];
+      Vec3 fcorr = -(lamda01 + lamda12) * r01 - (lamda02 + lamda12) * r02;
+      for (int i = 0; i < 3; i++) f[i0][i] += fcorr[i];
     }
     if (i1 < nlocal) {
-      f[i1][0] += lamda01 * r01[0] + lamda12 * r02[0];
-      f[i1][1] += lamda01 * r01[1] + lamda12 * r02[1];
-      f[i1][2] += lamda01 * r01[2] + lamda12 * r02[2];
+      Vec3 fcorr = lamda01 * r01 + lamda12 * r02;
+      for (int i = 0; i < 3; i++) f[i1][i] += fcorr[i];
     }
     if (i2 < nlocal) {
-      f[i2][0] += lamda02 * r02[0] + lamda12 * r01[0];
-      f[i2][1] += lamda02 * r02[1] + lamda12 * r01[1];
-      f[i2][2] += lamda02 * r02[2] + lamda12 * r01[2];
+      Vec3 fcorr = lamda02 * r02 + lamda12 * r01;
+      for (int i = 0; i < 3; i++) f[i2][i] += fcorr[i];
     }
   }
   if (evflag) {
@@ -732,10 +700,7 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
     if (i1 < nlocal) atomlist[count++] = i1;
     if (i2 < nlocal) atomlist[count++] = i2;
 
-    double r12[3];
-    r12[0] = r02[0] - r01[0];
-    r12[1] = r02[1] - r01[1];
-    r12[2] = r02[2] - r01[2];
+    Vec3 r12 = r02 - r01;
 
     double lamda01_shake = -lamda01 - lamda12;
     double lamda02_shake = -lamda02 - lamda12;
@@ -796,12 +761,10 @@ void FixRigs::solve3x3(int ilist, Topology topo)
 
   Mat3 R, S;
   for (int row = 0; row < 3; row++) {
-    R(row, 0) = x[row_ia[row]][0] - x[row_ib[row]][0];
-    R(row, 1) = x[row_ia[row]][1] - x[row_ib[row]][1];
-    R(row, 2) = x[row_ia[row]][2] - x[row_ib[row]][2];
-    S(row, 0) = xshake[row_ia[row]][0] - xshake[row_ib[row]][0];
-    S(row, 1) = xshake[row_ia[row]][1] - xshake[row_ib[row]][1];
-    S(row, 2) = xshake[row_ia[row]][2] - xshake[row_ib[row]][2];
+    Vec3 rv = Vec3(x[row_ia[row]]) - x[row_ib[row]];
+    Vec3 sv = Vec3(xshake[row_ia[row]]) - xshake[row_ib[row]];
+    R(row, 0) = rv.x; R(row, 1) = rv.y; R(row, 2) = rv.z;
+    S(row, 0) = sv.x; S(row, 1) = sv.y; S(row, 2) = sv.z;
   }
 
   SymMat3 rr = mmt(R);
@@ -861,16 +824,10 @@ void FixRigs::redistribute_forcemom_linear(int ilist, int i0, int i1, int i2, in
 
   // re-project forces + momenta from i3 onto i0, i1, i2:
 
-  double mxcorr[3], pcorr[3], fcorr[3];
+  Vec3 fcorr = Vec3(f[i3]);
+  Vec3 pcorr = mass3 * Vec3(v[i3]);
 
-  for (k = 0; k < 3; k++) {
-    fcorr[k] = f[i3][k];
-    pcorr[k] = mass3 * v[i3][k];
-  }
-
-  for (k = 0; k < 3; k++) {
-    mxcorr[k] = pcorr[k] * dtv + fcorr[k] * dtfsq;
-  }
+  Vec3 mxcorr = pcorr * dtv + fcorr * dtfsq;
 
   for (k = 0; k < 3; k++)
     xshake[i0][k] += a0 * mxcorr[k] / mass0;
@@ -900,7 +857,7 @@ void FixRigs::redistribute_forcemom_linear(int ilist, int i0, int i1, int i2, in
     }
 }
 
-void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, double fchange[3], double vchange[3], bool use_xshake)
+void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, Vec3 fchange, Vec3 vchange, bool use_xshake)
 {
   int k;
 
@@ -916,75 +873,46 @@ void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, double f
 
   // re-project forces + momenta from i3 onto i0, i1, i2:
 
-  double u0[3], u1[3], u2[3], r03[3];
+  Vec3 u0, u1, u2, r03v;
 
   if (use_xshake) {
-    u0[0] = (xshake[2][0] - xshake[1][0])/m0;
-    u0[1] = (xshake[2][1] - xshake[1][1])/m0;
-    u0[2] = (xshake[2][2] - xshake[1][2])/m0;
-  
-    u1[0] = (xshake[2][0] - xshake[0][0])/m1;
-    u1[1] = (xshake[2][1] - xshake[0][1])/m1;
-    u1[2] = (xshake[2][2] - xshake[0][2])/m1;
-   
-    u2[0] = (xshake[1][0] - xshake[0][0])/m2;
-    u2[1] = (xshake[1][1] - xshake[0][1])/m2;
-    u2[2] = (xshake[1][2] - xshake[0][2])/m2;
-  
-    r03[0] = (x[i3][0] - xshake[0][0]);
-    r03[1] = (x[i3][1] - xshake[0][1]);
-    r03[2] = (x[i3][2] - xshake[0][2]);
+    u0 = (Vec3(xshake[2]) - Vec3(xshake[1])) / m0;
+    u1 = (Vec3(xshake[2]) - Vec3(xshake[0])) / m1;
+    u2 = (Vec3(xshake[1]) - Vec3(xshake[0])) / m2;
+    r03v = Vec3(x[i3]) - Vec3(xshake[0]);
   } else {
-    u0[0] = (x[i2][0] - x[i1][0])/m0;
-    u0[1] = (x[i2][1] - x[i1][1])/m0;
-    u0[2] = (x[i2][2] - x[i1][2])/m0;
-  
-    u1[0] = (x[i2][0] - x[i0][0])/m1;
-    u1[1] = (x[i2][1] - x[i0][1])/m1;
-    u1[2] = (x[i2][2] - x[i0][2])/m1;
-   
-    u2[0] = (x[i1][0] - x[i0][0])/m2;
-    u2[1] = (x[i1][1] - x[i0][1])/m2;
-    u2[2] = (x[i1][2] - x[i0][2])/m2;
-  
-    r03[0] = (x[i3][0] - x[i0][0]);
-    r03[1] = (x[i3][1] - x[i0][1]);
-    r03[2] = (x[i3][2] - x[i0][2]);
+    u0 = (Vec3(x[i2]) - Vec3(x[i1])) / m0;
+    u1 = (Vec3(x[i2]) - Vec3(x[i0])) / m1;
+    u2 = (Vec3(x[i1]) - Vec3(x[i0])) / m2;
+    r03v = Vec3(x[i3]) - Vec3(x[i0]);
   }
 
   double a = normsq(u0) + normsq(u1) + normsq(u2);
-  SMWMat3 smw = {a, u0, u1, u2};
+  SMWMat3 smw = {a, u0.data(), u1.data(), u2.data()};
   smw.invert_vectors();
 
-  double lever[3], fmult[3], vmult[3];
   double M = m0*m0 + m1*m1 + m2*m2;
   double Q = m1*m1*m2*m2 / M;
-  lever[0] = r03[0] - Q * (u1[0] + u2[0]);
-  lever[1] = r03[1] - Q * (u1[1] + u2[1]);
-  lever[2] = r03[2] - Q * (u1[2] + u2[2]);
+  Vec3 lever = r03v - Q * (u1 + u2);
 
-  cross(fchange, lever, fmult);
-  cross(vchange, lever, vmult);
-  smw.solve_inplace(fmult);
-  smw.solve_inplace(vmult);
+  Vec3 fmult = cross(Vec3(fchange), lever);
+  Vec3 vmult = cross(Vec3(vchange), lever);
+  smw.solve_inplace(fmult.data());
+  smw.solve_inplace(vmult.data());
   
-  double fcorr0[3], fcorr1[3], fcorr2[3];
-  double vcorr0[0], vcorr1[3], vcorr2[3];
-  double tmp1[3], tmp0[3];
+  Vec3 tmp0 = cross(u0, fmult);
+  Vec3 tmp1 = cross(u2, fmult);
+  Vec3 fcorr1 = Vec3(fchange) * (m1*m1/M) + tmp1/m2 - tmp0/m0;
+  tmp1 = cross(u1, fmult);
+  Vec3 fcorr2 = Vec3(fchange) * (m2*m2/M) + tmp1/m1 + tmp0/m0;
+  Vec3 fcorr0 = Vec3(fchange) - fcorr1 - fcorr2;
   
-  cross(u0, fmult, tmp0);
-  cross(u2, fmult, tmp1);
-  for (k = 0; k < 3; k++) fcorr1[k] = fchange[k]*m1*m1/M + (tmp1[k]/m2 - tmp0[k]/m0);
-  cross(u1, fmult, tmp1);
-  for (k = 0; k < 3; k++) fcorr2[k] = fchange[k]*m2*m2/M + (tmp1[k]/m1 + tmp0[k]/m0);
-  for (k = 0; k < 3; k++) fcorr0[k] = fchange[k] - fcorr1[k] - fcorr2[k];
-  
-  cross(u0, vmult, tmp0);
-  cross(u2, vmult, tmp1);
-  for (k = 0; k < 3; k++) vcorr1[k] = vchange[k]*m1*m1/M + (tmp1[k]/m2 - tmp0[k]/m0);
-  cross(u1, vmult, tmp1);
-  for (k = 0; k < 3; k++) vcorr2[k] = vchange[k]*m2*m2/M + (tmp1[k]/m1 + tmp0[k]/m0);
-  for (k = 0; k < 3; k++) vcorr0[k] = vchange[k] - vcorr1[k] - vcorr2[k];
+  tmp0 = cross(u0, vmult);
+  tmp1 = cross(u2, vmult);
+  Vec3 vcorr1 = Vec3(vchange) * (m1*m1/M) + tmp1/m2 - tmp0/m0;
+  tmp1 = cross(u1, vmult);
+  Vec3 vcorr2 = Vec3(vchange) * (m2*m2/M) + tmp1/m1 + tmp0/m0;
+  Vec3 vcorr0 = Vec3(vchange) - vcorr1 - vcorr2;
 
   for (k = 0; k < 3; k++)
     xshake[i0][k] += (dtv * vcorr0[k] * m3 + dtfsq * fcorr0[k]) / m0;

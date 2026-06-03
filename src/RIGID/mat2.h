@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+#include "vec3.h"
+
 namespace RigsMath {
 
 struct LTMat2 {
@@ -86,6 +88,11 @@ inline SymMat2 sym_dot(const double r1[3], const double r2[3])
   return {r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2],
           r1[0] * r2[0] + r1[1] * r2[1] + r1[2] * r2[2],
           r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]};
+}
+
+inline SymMat2 sym_dot(const Vec3 &r1, const Vec3 &r2)
+{
+  return {dot(r1, r1), dot(r1, r2), dot(r2, r2)};
 }
 
 inline SymMat2 mtm(const Mat2 &M)
