@@ -367,55 +367,6 @@ inline double normsq(const double v[3]) {
   return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 }
 
-struct SMWMat3 {
-  double a;
-  double *ptr0, *ptr1, *ptr2;
-  double sigma[3];
-
-  void invert_vectors() {
-    sigma[0] = a - normsq(ptr0);
-
-    double tmp[3] = {ptr1[0], ptr1[1], ptr1[2]};
-    double wvs = (ptr0[0]*ptr1[0] + ptr0[1]*ptr1[1] + ptr0[2]*ptr1[2]) / sigma[0];
-    ptr1[0] += ptr0[0] * wvs;
-    ptr1[1] += ptr0[1] * wvs;
-    ptr1[2] += ptr0[2] * wvs;
-    sigma[1] = a - tmp[0]*ptr1[0] - tmp[1]*ptr1[1] - tmp[2]*ptr1[2];
-
-    tmp[0] = ptr2[0]; tmp[1] = ptr2[1]; tmp[2] = ptr2[2];
-    double wvs0 = (ptr0[0]*ptr2[0] + ptr0[1]*ptr2[1] + ptr0[2]*ptr2[2]) / sigma[0];
-    double wvs1 = (ptr1[0]*ptr2[0] + ptr1[1]*ptr2[1] + ptr1[2]*ptr2[2]) / sigma[1];
-    ptr2[0] += ptr0[0]*wvs0 + ptr1[0]*wvs1;
-    ptr2[1] += ptr0[1]*wvs0 + ptr1[1]*wvs1;
-    ptr2[2] += ptr0[2]*wvs0 + ptr1[2]*wvs1;
-    sigma[2] = a - tmp[0]*ptr2[0] - tmp[1]*ptr2[1] - tmp[2]*ptr2[2];
-  }
-
-  void find_solution(const double *y, double *x) const {
-    double inv_a = 1.0 / a;
-    x[0] = y[0]; x[1] = y[1]; x[2] = y[2];
-    const double *p[3] = {ptr0, ptr1, ptr2};
-    for (int k = 0; k < 3; k++) {
-      double d = (p[k][0]*y[0] + p[k][1]*y[1] + p[k][2]*y[2]) / sigma[k];
-      x[0] -= p[k][0] * d;
-      x[1] -= p[k][1] * d;
-      x[2] -= p[k][2] * d;
-    }
-    x[0] *= inv_a; x[1] *= inv_a; x[2] *= inv_a;
-  }
-
-  void solve_inplace(double *y) const {
-    double inv_a = 1.0 / a;
-    const double *p[3] = {ptr0, ptr1, ptr2};
-    double d[3];
-    for (int k = 0; k < 3; k++)
-      d[k] = (p[k][0]*y[0] + p[k][1]*y[1] + p[k][2]*y[2]) / sigma[k];
-    for (int k = 0; k < 3; k++)
-      y[k] -= p[0][k]*d[0] + p[1][k]*d[1] + p[2][k]*d[2];
-    y[0] *= inv_a; y[1] *= inv_a; y[2] *= inv_a;
-  }
-};
-
 inline void cayley_rotate(const double v[3], ColMat3 &A)
 {
   double w = sqrt(1.0 - normsq(v));
