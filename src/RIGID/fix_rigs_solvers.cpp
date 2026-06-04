@@ -525,7 +525,10 @@ void FixRigs::shake4demoted(int ilist)
   //Vec3 fchange = Vec3(f[i3]);
   //Vec3 vchange = Vec3(v[i3]);
 
-  redistribute_forcemom_smw(i0, i1, i2, i3, f[i3], v[i3], false);
+  Vec3 voff = {0.01, 0.01, 0.01};
+  Vec3 vdel = Vec3(v[i3]); //- voff;
+
+  redistribute_forcemom_smw(i0, i1, i2, i3, f[i3], vdel.data(), false);
 
   store_lamda_corrections = true;
 
@@ -540,17 +543,44 @@ void FixRigs::shake4demoted(int ilist)
 
   double sgn = (dot(r03, n) < 0) ? -1.0 : 1.0;
   double M012 = mass0 + mass1 + mass2;
+  double ratio012 = M012 / (M012 + mass3);
 
-  Vec3 fcorr = r03 - (a1 * r01 + a2 * r02 + (sgn * l22 / nnorm) * n);
-  Vec3 vcorr = fcorr / dtv;
-  fcorr *= -2.0 * mass3 / dtfsq;
- 
+  Vec3 xcorr = (a1 * r01 + a2 * r02 + (sgn * l22 / nnorm) * n) - r03;
+  Vec3 vcorr = ratio012 * xcorr / dtv;
+  Vec3 fcorr = -2.0 * mass3 * vcorr * dtv / dtfsq;
+
   if (in_setup) {
     fcorr *= 2;
-    vcorr = {0, 0, 0};
+    vcorr = -1.0 * Vec3(v[i3]);
   }
   
-  redistribute_forcemom_smw(i0, i1, i2, i3, fcorr.data(), vcorr.data(), true);
+  if (i3 < nlocal) {
+    f[i3][0] += fcorr.x; f[i3][1] += fcorr.y; f[i3][2] += fcorr.z;
+    v[i3][0] += vcorr.x; v[i3][1] += vcorr.y; v[i3][2] += vcorr.z;
+  }
+
+  Vec3 acorr = fcorr / M012;
+  vcorr *= mass3 / M012;
+
+  if (i0 < nlocal) {
+    f[i0][0] -= acorr.x * mass0; f[i0][1] -= acorr.y * mass0;
+    f[i0][2] -= acorr.z * mass0;
+    v[i0][0] -= vcorr.x; v[i0][1] -= vcorr.y; v[i0][2] -= vcorr.z;
+  }
+  if (i1 < nlocal) {
+    f[i1][0] -= acorr.x * mass1; f[i1][1] -= acorr.y * mass1;
+    f[i1][2] -= acorr.z * mass1;
+    v[i1][0] -= vcorr.x; v[i1][1] -= vcorr.y; v[i1][2] -= vcorr.z;
+  }
+  if (i2 < nlocal) {
+    f[i2][0] -= acorr.x * mass2; f[i2][1] -= acorr.y * mass2;
+    f[i2][2] -= acorr.z * mass2;
+    v[i2][0] -= vcorr.x; v[i2][1] -= vcorr.y; v[i2][2] -= vcorr.z;
+  }
+
+
+
+  //redistribute_forcemom_smw(i0, i1, i2, i3, fcorr.data(), vcorr.data(), true);
 
 }
 
