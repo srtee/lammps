@@ -1127,7 +1127,8 @@ bigint FixShake::dof(int igroup)
     if (shake_flag[i] == 1) n += 3;
     else if (shake_flag[i] == 2) n += 1;
     else if (shake_flag[i] == 3) n += 2;
-    else if (shake_flag[i] == 4 || shake_flag[i] == 5 || shake_flag[i] == 6) n += 3;
+    else if (shake_flag[i] == 4) n += 3;
+    else if (shake_flag[i] == 5 || shake_flag[i] == 6) n += 6;
   }
 
   bigint nall;

@@ -221,29 +221,30 @@ void FixRigs::min_post_force(int vflag)
 {
   FixShake::min_post_force(vflag);
 
-  int atom2, atom3, atom4;
+  int atom1, atom2, atom3, atom4;
 
   for (int i = 0; i < nlocal; i++) {
-    if (shake_flag[i] != 5 && shake_flag[i] != -5) continue;
-    if (shake_atom[i][0] != atom->tag[i]) continue;
-
+    if (shake_flag[i] != 5 && shake_flag[i] != 6) continue;
+    atom1 = atom->map(shake_atom[i][0]);
     atom2 = atom->map(shake_atom[i][1]);
     atom3 = atom->map(shake_atom[i][2]);
     atom4 = atom->map(shake_atom[i][3]);
-    if (atom2 == -1 || atom3 == -1 || atom4 == -1)
+    if (atom1 == -1 || atom2 == -1 || atom3 == -1 || atom4 == -1)
       error->one(FLERR, "RIGS atoms {} {} {} missing on proc {} at step {}{}",
                  shake_atom[i][1], shake_atom[i][2], shake_atom[i][3],
                  comm->me, update->ntimestep, utils::errorurl(5));
+    atom1 = domain->closest_image(i, atom1);
     atom2 = domain->closest_image(i, atom2);
     atom3 = domain->closest_image(i, atom3);
     atom4 = domain->closest_image(i, atom4);
-
-    if (rigs_type[i][0] > 0)
-      bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
-    if (rigs_type[i][1] > 0)
-      bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
-    if (rigs_type[i][2] > 0)
-      bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
+    if (i <= atom1 && i <= atom2 && i <= atom3 && i <= atom4) {
+      if (rigs_type[i][0] > 0)
+        bond_force(atom2, atom3, rigs_angle_distance[rigs_type[i][0]]);
+      if (rigs_type[i][1] > 0)
+        bond_force(atom2, atom4, rigs_angle_distance[rigs_type[i][1]]);
+      if (rigs_type[i][2] > 0)
+        bond_force(atom3, atom4, rigs_angle_distance[rigs_type[i][2]]);
+    }
   }
 }
 
