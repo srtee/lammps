@@ -522,13 +522,41 @@ void FixRigs::shake4demoted(int ilist)
   }
   
   //redistribute_forcemom_linear(ilist, i0, i1, i2, i3);
-  //Vec3 fchange = Vec3(f[i3]);
-  //Vec3 vchange = Vec3(v[i3]);
+  double M012 = mass0 + mass1 + mass2;
+  double ratio012 = M012 / (M012 + mass3);
+  Vec3 fchange = Vec3(f[i3]) * ratio012;
+  Vec3 vchange = Vec3(v[i3]) * mass3 * ratio012;
+  Vec3 xchange = dtv * vchange + dtfsq * fchange;
 
-  Vec3 voff = {0.01, 0.01, 0.01};
-  Vec3 vdel = Vec3(v[i3]); //- voff;
+  double mult0 = (1 - a1 - a2) / mass0;
+  double mult1 = a1 / mass1;
+  double mult2 = a2 / mass2;
 
-  redistribute_forcemom_smw(i0, i1, i2, i3, f[i3], vdel.data(), false);
+  for (k = 0; k < 3; k++)
+    xshake[i0][k] += xchange[k] * mult0;
+    if (i0 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i0][k] += vchange[k] * mult0;
+      f[i0][k] += fchange[k] * mult0 * mass0;
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i1][k] += xchange[k] * mult1;
+    if (i1 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i1][k] += vchange[k] * mult1;
+      f[i1][k] += fchange[k] * mult1 * mass1;
+    }
+  for (k = 0; k < 3; k++)
+    xshake[i2][k] += xchange[k] * mult2;
+    if (i2 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i2][k] += vchange[k] * mult2;
+      f[i2][k] += fchange[k] * mult2 * mass2;
+    }
+  for (int k = 0; k < 3; k++) {
+    f[i3][k] -= fchange[k];
+    v[i3][k] -= vchange[k] / mass3;
+  }
 
   store_lamda_corrections = true;
 
@@ -542,41 +570,56 @@ void FixRigs::shake4demoted(int ilist)
   double nnorm = sqrt(normsq(n));
 
   double sgn = (dot(r03, n) < 0) ? -1.0 : 1.0;
-  double M012 = mass0 + mass1 + mass2;
-  double ratio012 = M012 / (M012 + mass3);
 
   Vec3 xcorr = (a1 * r01 + a2 * r02 + (sgn * l22 / nnorm) * n) - r03;
-  Vec3 vcorr = ratio012 * xcorr / dtv;
-  Vec3 fcorr = -2.0 * mass3 * vcorr * dtv / dtfsq;
-
+  Vec3 vcorr, fcorr;
   if (in_setup) {
-    fcorr *= 2;
-    vcorr = -1.0 * Vec3(v[i3]);
+    vcorr = -1.0 * Vec3(v[i3]); // zero out velocities
+    fcorr = -4.0 * mass3 * xcorr / dtfsq - Vec3(f[i3]);
+  } else {
+      vcorr = (xcorr / dtv + Vec3(v[i3]));
+      fcorr = -2.0 * mass3 * vcorr * dtv / dtfsq - Vec3(f[i3]);
   }
-  
+
   if (i3 < nlocal) {
     f[i3][0] += fcorr.x; f[i3][1] += fcorr.y; f[i3][2] += fcorr.z;
     v[i3][0] += vcorr.x; v[i3][1] += vcorr.y; v[i3][2] += vcorr.z;
   }
 
-  Vec3 acorr = fcorr / M012;
   vcorr *= mass3 / M012;
-
-  if (i0 < nlocal) {
-    f[i0][0] -= acorr.x * mass0; f[i0][1] -= acorr.y * mass0;
-    f[i0][2] -= acorr.z * mass0;
-    v[i0][0] -= vcorr.x; v[i0][1] -= vcorr.y; v[i0][2] -= vcorr.z;
-  }
-  if (i1 < nlocal) {
-    f[i1][0] -= acorr.x * mass1; f[i1][1] -= acorr.y * mass1;
-    f[i1][2] -= acorr.z * mass1;
-    v[i1][0] -= vcorr.x; v[i1][1] -= vcorr.y; v[i1][2] -= vcorr.z;
-  }
-  if (i2 < nlocal) {
-    f[i2][0] -= acorr.x * mass2; f[i2][1] -= acorr.y * mass2;
-    f[i2][2] -= acorr.z * mass2;
-    v[i2][0] -= vcorr.x; v[i2][1] -= vcorr.y; v[i2][2] -= vcorr.z;
-  }
+    if (i0 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i0][k] -= vcorr[k];
+      f[i0][k] -= fcorr[k] * mass0 / M012;
+    }
+    if (i1 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i1][k] -= vcorr[k];
+      f[i1][k] -= fcorr[k] * mass1 / M012;
+    }
+    if (i2 < nlocal)
+      for (k = 0; k < 3; k++) {
+      v[i2][k] -= vcorr[k];
+      f[i2][k] -= fcorr[k] * mass2 / M012;
+    }
+//  Vec3 acorr = fcorr / M012;
+//  vcorr *= mass3 / M012;
+//
+//  if (i0 < nlocal) {
+//    f[i0][0] -= acorr.x * mass0; f[i0][1] -= acorr.y * mass0;
+//    f[i0][2] -= acorr.z * mass0;
+//    v[i0][0] -= vcorr.x; v[i0][1] -= vcorr.y; v[i0][2] -= vcorr.z;
+//  }
+//  if (i1 < nlocal) {
+//    f[i1][0] -= acorr.x * mass1; f[i1][1] -= acorr.y * mass1;
+//    f[i1][2] -= acorr.z * mass1;
+//    v[i1][0] -= vcorr.x; v[i1][1] -= vcorr.y; v[i1][2] -= vcorr.z;
+//  }
+//  if (i2 < nlocal) {
+//    f[i2][0] -= acorr.x * mass2; f[i2][1] -= acorr.y * mass2;
+//    f[i2][2] -= acorr.z * mass2;
+//    v[i2][0] -= vcorr.x; v[i2][1] -= vcorr.y; v[i2][2] -= vcorr.z;
+//  }
 
 
 
