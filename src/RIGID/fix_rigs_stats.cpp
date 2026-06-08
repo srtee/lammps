@@ -27,6 +27,8 @@
 #include "molecule.h"
 #include "update.h"
 
+#include <cmath>
+
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
@@ -264,87 +266,201 @@ void FixRigs::stats()
     a_min[i] = BIG;
   }
 
-  double **x = atom->x;
+  double **xx = atom->x;
   int nlocal = atom->nlocal;
 
   for (int ii = 0; ii < nlist; ++ii) {
     int i = list[ii];
-    if (shake_flag[i] != 5 && shake_flag[i] != -5) continue;
+    int n = shake_flag[i];
+    if (n == 0) continue;
 
-    int i0 = closest_list[ii][0];
-    int i1 = closest_list[ii][1];
-    int i2 = closest_list[ii][2];
-    int i3 = closest_list[ii][3];
-
-    if (rigs_type[i][0] > 0) {
-      double r01 = 0.0, r02 = 0.0, r12 = 0.0;
-      for (int d = 0; d < 3; d++) {
-        double d01 = x[i0][d] - x[i1][d];
-        double d02 = x[i0][d] - x[i2][d];
-        double d12 = x[i1][d] - x[i2][d];
-        r01 += d01 * d01;
-        r02 += d02 * d02;
-        r12 += d12 * d12;
-      }
-      r01 = sqrt(r01); r02 = sqrt(r02); r12 = sqrt(r12);
-      double ang = acos((r01*r01 + r02*r02 - r12*r12) / (2.0*r01*r02)) * (180.0/MY_PI);
-      int m = rigs_type[i][0];
-      int n = 0;
-      if (i0 < nlocal) n++;
-      if (i1 < nlocal) n++;
-      if (i2 < nlocal) n++;
-      a_count[m] += n;
-      a_ave[m] += n * ang;
-      a_max[m] = MAX(a_max[m], ang);
-      a_min[m] = MIN(a_min[m], ang);
+    // bond stats for all cluster types
+    if (n == 1) n = 3;
+    else if (n > 4) n = 4;
+    int iatom = closest_list[ii][0];
+    for (int j = 1; j < n; j++) {
+      int jatom = closest_list[ii][j];
+      if (jatom >= nlocal) continue;
+      double delx = xx[iatom][0] - xx[jatom][0];
+      double dely = xx[iatom][1] - xx[jatom][1];
+      double delz = xx[iatom][2] - xx[jatom][2];
+      double r = sqrt(delx*delx + dely*dely + delz*delz);
+      int m = shake_type[i][j-1];
+      b_count[m]++;
+      b_ave[m] += r;
+      b_max[m] = MAX(b_max[m],r);
+      b_min[m] = MIN(b_min[m],r);
     }
 
-    if (rigs_type[i][1] > 0) {
-      double r01 = 0.0, r03 = 0.0, r13 = 0.0;
-      for (int d = 0; d < 3; d++) {
-        double d01 = x[i0][d] - x[i1][d];
-        double d03 = x[i0][d] - x[i3][d];
-        double d13 = x[i1][d] - x[i3][d];
-        r01 += d01 * d01;
-        r03 += d03 * d03;
-        r13 += d13 * d13;
-      }
-      r01 = sqrt(r01); r03 = sqrt(r03); r13 = sqrt(r13);
-      double ang = acos((r01*r01 + r03*r03 - r13*r13) / (2.0*r01*r03)) * (180.0/MY_PI);
-      int m = rigs_type[i][1];
-      int n = 0;
-      if (i0 < nlocal) n++;
-      if (i1 < nlocal) n++;
-      if (i3 < nlocal) n++;
-      a_count[m] += n;
-      a_ave[m] += n * ang;
-      a_max[m] = MAX(a_max[m], ang);
-      a_min[m] = MIN(a_min[m], ang);
+    // angle stats for shake_flag==1 (standard 3-atom angle clusters)
+    if (shake_flag[i] == 1) {
+      int i0 = closest_list[ii][0];
+      int i1 = closest_list[ii][1];
+      int i2 = closest_list[ii][2];
+      int nc = 0;
+      if (i0 < nlocal) ++nc;
+      if (i1 < nlocal) ++nc;
+      if (i2 < nlocal) ++nc;
+
+      double delx = xx[i0][0] - xx[i1][0];
+      double dely = xx[i0][1] - xx[i1][1];
+      double delz = xx[i0][2] - xx[i1][2];
+      double r1 = sqrt(delx*delx + dely*dely + delz*delz);
+
+      delx = xx[i0][0] - xx[i2][0];
+      dely = xx[i0][1] - xx[i2][1];
+      delz = xx[i0][2] - xx[i2][2];
+      double r2 = sqrt(delx*delx + dely*dely + delz*delz);
+
+      delx = xx[i1][0] - xx[i2][0];
+      dely = xx[i1][1] - xx[i2][1];
+      delz = xx[i1][2] - xx[i2][2];
+      double r3 = sqrt(delx*delx + dely*dely + delz*delz);
+
+      double angle = acos((r1*r1 + r2*r2 - r3*r3) / (2.0*r1*r2)) * (180.0/MY_PI);
+      int m = shake_type[i][2];
+      a_count[m] += nc;
+      a_ave[m] += nc*angle;
+      a_max[m] = MAX(a_max[m],angle);
+      a_min[m] = MIN(a_min[m],angle);
     }
 
-    if (rigs_type[i][2] > 0) {
-      double r02 = 0.0, r03 = 0.0, r23 = 0.0;
-      for (int d = 0; d < 3; d++) {
-        double d02 = x[i0][d] - x[i2][d];
-        double d03 = x[i0][d] - x[i3][d];
-        double d23 = x[i2][d] - x[i3][d];
-        r02 += d02 * d02;
-        r03 += d03 * d03;
-        r23 += d23 * d23;
+    // angle stats for shake_flag==5 (improper clusters)
+    if (shake_flag[i] == 5) {
+      int i0 = closest_list[ii][0];
+      int i1 = closest_list[ii][1];
+      int i2 = closest_list[ii][2];
+      int i3 = closest_list[ii][3];
+
+      if (rigs_type[i][0] > 0) {
+        double r01 = 0.0, r02 = 0.0, r12 = 0.0;
+        for (int d = 0; d < 3; d++) {
+          double d01 = xx[i0][d] - xx[i1][d];
+          double d02 = xx[i0][d] - xx[i2][d];
+          double d12 = xx[i1][d] - xx[i2][d];
+          r01 += d01 * d01;
+          r02 += d02 * d02;
+          r12 += d12 * d12;
+        }
+        r01 = sqrt(r01); r02 = sqrt(r02); r12 = sqrt(r12);
+        double ang = acos((r01*r01 + r02*r02 - r12*r12) / (2.0*r01*r02)) * (180.0/MY_PI);
+        int m = rigs_type[i][0];
+        int nc = 0;
+        if (i0 < nlocal) nc++;
+        if (i1 < nlocal) nc++;
+        if (i2 < nlocal) nc++;
+        a_count[m] += nc;
+        a_ave[m] += nc * ang;
+        a_max[m] = MAX(a_max[m], ang);
+        a_min[m] = MIN(a_min[m], ang);
       }
-      r02 = sqrt(r02); r03 = sqrt(r03); r23 = sqrt(r23);
-      double ang = acos((r02*r02 + r03*r03 - r23*r23) / (2.0*r02*r03)) * (180.0/MY_PI);
-      int m = rigs_type[i][2];
-      int n = 0;
-      if (i0 < nlocal) n++;
-      if (i2 < nlocal) n++;
-      if (i3 < nlocal) n++;
-      a_count[m] += n;
-      a_ave[m] += n * ang;
-      a_max[m] = MAX(a_max[m], ang);
-      a_min[m] = MIN(a_min[m], ang);
+
+      if (rigs_type[i][1] > 0) {
+        double r01 = 0.0, r03 = 0.0, r13 = 0.0;
+        for (int d = 0; d < 3; d++) {
+          double d01 = xx[i0][d] - xx[i1][d];
+          double d03 = xx[i0][d] - xx[i3][d];
+          double d13 = xx[i1][d] - xx[i3][d];
+          r01 += d01 * d01;
+          r03 += d03 * d03;
+          r13 += d13 * d13;
+        }
+        r01 = sqrt(r01); r03 = sqrt(r03); r13 = sqrt(r13);
+        double ang = acos((r01*r01 + r03*r03 - r13*r13) / (2.0*r01*r03)) * (180.0/MY_PI);
+        int m = rigs_type[i][1];
+        int nc = 0;
+        if (i0 < nlocal) nc++;
+        if (i1 < nlocal) nc++;
+        if (i3 < nlocal) nc++;
+        a_count[m] += nc;
+        a_ave[m] += nc * ang;
+        a_max[m] = MAX(a_max[m], ang);
+        a_min[m] = MIN(a_min[m], ang);
+      }
+
+      if (rigs_type[i][2] > 0) {
+        double r02 = 0.0, r03 = 0.0, r23 = 0.0;
+        for (int d = 0; d < 3; d++) {
+          double d02 = xx[i0][d] - xx[i2][d];
+          double d03 = xx[i0][d] - xx[i3][d];
+          double d23 = xx[i2][d] - xx[i3][d];
+          r02 += d02 * d02;
+          r03 += d03 * d03;
+          r23 += d23 * d23;
+        }
+        r02 = sqrt(r02); r03 = sqrt(r03); r23 = sqrt(r23);
+        double ang = acos((r02*r02 + r03*r03 - r23*r23) / (2.0*r02*r03)) * (180.0/MY_PI);
+        int m = rigs_type[i][2];
+        int nc = 0;
+        if (i0 < nlocal) nc++;
+        if (i2 < nlocal) nc++;
+        if (i3 < nlocal) nc++;
+        a_count[m] += nc;
+        a_ave[m] += nc * ang;
+        a_max[m] = MAX(a_max[m], ang);
+        a_min[m] = MIN(a_min[m], ang);
+      }
+    }
+
+    // angle stats for shake_flag==6 (dihedral clusters)
+    if (shake_flag[i] == 6) {
+      int i0 = closest_list[ii][0];
+      int i1 = closest_list[ii][1];
+      int i2 = closest_list[ii][2];
+      int i3 = closest_list[ii][3];
+
+      if (rigs_type[i][0] > 0) {
+        double r01 = 0.0, r02 = 0.0, r12 = 0.0;
+        for (int d = 0; d < 3; d++) {
+          double d01 = xx[i1][d] - xx[i0][d];
+          double d02 = xx[i0][d] - xx[i2][d];
+          double d12 = xx[i2][d] - xx[i1][d];
+          r01 += d01 * d01;
+          r02 += d02 * d02;
+          r12 += d12 * d12;
+        }
+        r01 = sqrt(r01); r02 = sqrt(r02); r12 = sqrt(r12);
+        double ang = acos((r01*r01 + r02*r02 - r12*r12) / (2.0*r01*r02)) * (180.0/MY_PI);
+        int m = rigs_type[i][0];
+        int nc = 0;
+        if (i0 < nlocal) nc++;
+        if (i1 < nlocal) nc++;
+        if (i2 < nlocal) nc++;
+        a_count[m] += nc;
+        a_ave[m] += nc * ang;
+        a_max[m] = MAX(a_max[m], ang);
+        a_min[m] = MIN(a_min[m], ang);
+      }
+
+      if (rigs_type[i][1] > 0) {
+        double r02 = 0.0, r23 = 0.0, r03 = 0.0;
+        for (int d = 0; d < 3; d++) {
+          double d02 = xx[i0][d] - xx[i2][d];
+          double d23 = xx[i2][d] - xx[i3][d];
+          double d03 = xx[i3][d] - xx[i0][d];
+          r02 += d02 * d02;
+          r23 += d23 * d23;
+          r03 += d03 * d03;
+        }
+        r02 = sqrt(r02); r23 = sqrt(r23); r03 = sqrt(r03);
+        double ang = acos((r02*r02 + r23*r23 - r03*r03) / (2.0*r02*r23)) * (180.0/MY_PI);
+        int m = rigs_type[i][1];
+        int nc = 0;
+        if (i0 < nlocal) nc++;
+        if (i2 < nlocal) nc++;
+        if (i3 < nlocal) nc++;
+        a_count[m] += nc;
+        a_ave[m] += nc * ang;
+        a_max[m] = MAX(a_max[m], ang);
+        a_min[m] = MIN(a_min[m], ang);
+      }
     }
   }
+
+  MPI_Allreduce(b_count, b_count_all, nb, MPI_LMP_BIGINT, MPI_SUM, world);
+  MPI_Allreduce(b_ave, b_ave_all, nb, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(b_max, b_max_all, nb, MPI_DOUBLE, MPI_MAX, world);
+  MPI_Allreduce(b_min, b_min_all, nb, MPI_DOUBLE, MPI_MIN, world);
 
   MPI_Allreduce(a_count, a_count_all, na, MPI_LMP_BIGINT, MPI_SUM, world);
   MPI_Allreduce(a_ave, a_ave_all, na, MPI_DOUBLE, MPI_SUM, world);
@@ -352,15 +468,22 @@ void FixRigs::stats()
   MPI_Allreduce(a_min, a_min_all, na, MPI_DOUBLE, MPI_MIN, world);
 
   if (comm->me == 0) {
-    const int width = (int) log10((double) na) + 2;
-    utils::logmesg(lmp, "\nrigs_stats summary: a_count[1]={} a_count[2]={}\n", a_count[1], a_count[2]);
-    utils::logmesg(lmp, "RIGS stats (type/ave/delta/count) on step {}\n", update->ntimestep);
+    const int width = (int) log10((double)(MAX(MAX(1,nb),na))) + 2;
+    auto mesg = fmt::format("{} stats (type/ave/delta/count) on step {}\n",
+                            utils::uppercase(style), update->ntimestep);
+    for (int i = 1; i < nb; i++) {
+      const auto bcnt = b_count_all[i];
+      if (bcnt)
+        mesg += fmt::format("Bond:  {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
+                            b_ave_all[i]/bcnt,b_max_all[i]-b_min_all[i],bcnt);
+    }
     for (int i = 1; i < na; i++) {
       const auto acnt = a_count_all[i];
       if (acnt)
-        utils::logmesg(lmp, "Angle: {:>{}d}   {:.6} {:.6} {:>8d}\n", i, width,
-                       a_ave_all[i]/acnt, a_max_all[i]-a_min_all[i], acnt/3);
+        mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
+                            a_ave_all[i]/acnt,a_max_all[i]-a_min_all[i],acnt/3);
     }
+    utils::logmesg(lmp,mesg);
   }
 
   next_output += output_every;
