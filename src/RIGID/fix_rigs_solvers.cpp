@@ -563,6 +563,15 @@ void FixRigs::shake4demoted(int ilist)
   shake3angle_solve(i0, i1, i2, ilist);
   store_lamda_corrections = false;
 
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]]++;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]]++;
+    iter_b_count[shake_type[m][2]]++; iter_b_total[shake_type[m][2]]++;
+    if (rigs_type[m][0] > 0) { iter_a_count[rigs_type[m][0]]++; iter_a_total[rigs_type[m][0]]++; }
+    if (rigs_type[m][1] > 0) { iter_a_count[rigs_type[m][1]]++; iter_a_total[rigs_type[m][1]]++; }
+    if (rigs_type[m][2] > 0) { iter_a_count[rigs_type[m][2]]++; iter_a_total[rigs_type[m][2]]++; }
+  }
+
   Vec3 r01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 r02 = Vec3(xshake[i0]) - xshake[i2];
   Vec3 r03 = Vec3(xshake[i0]) - x[i3];
@@ -639,6 +648,11 @@ void FixRigs::shake3angle(int ilist)
   int i2 = closest_list[ilist][2];
 
   shake3angle_solve(i0, i1, i2, ilist);
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]]++;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]]++;
+    iter_a_count[shake_type[m][2]]++; iter_a_total[shake_type[m][2]]++;
+  }
 }
 
 void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
@@ -788,6 +802,7 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
+  int niter = 0;
 
   // row_source[k] = {ia, ib} means R(k,*) = x[ia] - x[ib]
   // dihedral: row 0 = B-A (i1-i0), row 1 = A-C (i0-i2), row 2 = C-D (i2-i3)
@@ -831,7 +846,20 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   LTMat3 sc = mul_dl(chol_lower(sigma), lm_chol);
   mul_ltdl(chi, lm_chol);
 
-  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance);
+  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance, &niter);
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
+    iter_b_count[shake_type[m][2]]++; iter_b_total[shake_type[m][2]] += niter;
+    if (topo == IMPROPER) {
+      if (rigs_type[m][0] > 0) { iter_a_count[rigs_type[m][0]]++; iter_a_total[rigs_type[m][0]] += niter; }
+      if (rigs_type[m][1] > 0) { iter_a_count[rigs_type[m][1]]++; iter_a_total[rigs_type[m][1]] += niter; }
+      if (rigs_type[m][2] > 0) { iter_a_count[rigs_type[m][2]]++; iter_a_total[rigs_type[m][2]] += niter; }
+    } else {
+      if (rigs_type[m][0] > 0) { iter_a_count[rigs_type[m][0]]++; iter_a_total[rigs_type[m][0]] += niter; }
+      if (rigs_type[m][1] > 0) { iter_a_count[rigs_type[m][1]]++; iter_a_total[rigs_type[m][1]] += niter; }
+    }
+  }
   lamda += chi;
 
   Mat43 L_lam = (topo == IMPROPER) ? improper_L_lambda(lamda)

@@ -132,6 +132,12 @@ class FixShake : public Fix {
   double *a_ave, *a_max, *a_min;
   double *a_ave_all, *a_max_all, *a_min_all;
 
+  // iteration statistics (per bond/angle type)
+  bigint *iter_b_count, *iter_b_count_all;        // # of solves contributing to each bond type
+  bigint *iter_b_total, *iter_b_total_all;        // total iterations for each bond type
+  bigint *iter_a_count, *iter_a_count_all;        // ditto for angle types
+  bigint *iter_a_total, *iter_a_total_all;
+
   class Molecule **atommols;    // atom style template pointer
   class Molecule **onemols;     // molecule added on-the-fly
   int nmol;

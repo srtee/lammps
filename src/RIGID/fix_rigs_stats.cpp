@@ -467,23 +467,44 @@ void FixRigs::stats()
   MPI_Allreduce(a_max, a_max_all, na, MPI_DOUBLE, MPI_MAX, world);
   MPI_Allreduce(a_min, a_min_all, na, MPI_DOUBLE, MPI_MIN, world);
 
+  MPI_Allreduce(iter_b_count, iter_b_count_all, nb, MPI_LMP_BIGINT, MPI_SUM, world);
+  MPI_Allreduce(iter_b_total, iter_b_total_all, nb, MPI_LMP_BIGINT, MPI_SUM, world);
+  MPI_Allreduce(iter_a_count, iter_a_count_all, na, MPI_LMP_BIGINT, MPI_SUM, world);
+  MPI_Allreduce(iter_a_total, iter_a_total_all, na, MPI_LMP_BIGINT, MPI_SUM, world);
+
   if (comm->me == 0) {
     const int width = (int) log10((double)(MAX(MAX(1,nb),na))) + 2;
-    auto mesg = fmt::format("{} stats (type/ave/delta/count) on step {}\n",
+    auto mesg = fmt::format("{} stats (type/ave/delta/count/ave_iters) on step {}\n",
                             utils::uppercase(style), update->ntimestep);
     for (int i = 1; i < nb; i++) {
       const auto bcnt = b_count_all[i];
-      if (bcnt)
-        mesg += fmt::format("Bond:  {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
-                            b_ave_all[i]/bcnt,b_max_all[i]-b_min_all[i],bcnt);
+      if (bcnt) {
+        double ave_iters = (iter_b_count_all[i] > 0) ?
+          (double) iter_b_total_all[i] / (double) iter_b_count_all[i] : 0.0;
+        mesg += fmt::format("Bond:  {:>{}d}   {:<9.6} {:<11.6} {:>8d}   {:<9.3f}\n",i,width,
+                            b_ave_all[i]/bcnt,b_max_all[i]-b_min_all[i],bcnt,ave_iters);
+      }
     }
     for (int i = 1; i < na; i++) {
       const auto acnt = a_count_all[i];
-      if (acnt)
-        mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
-                            a_ave_all[i]/acnt,a_max_all[i]-a_min_all[i],acnt/3);
+      if (acnt) {
+        double ave_iters = (iter_a_count_all[i] > 0) ?
+          (double) iter_a_total_all[i] / (double) iter_a_count_all[i] : 0.0;
+        mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}   {:<9.3f}\n",i,width,
+                            a_ave_all[i]/acnt,a_max_all[i]-a_min_all[i],acnt/3,ave_iters);
+      }
     }
     utils::logmesg(lmp,mesg);
+  }
+
+  // reset iteration accumulators for next stats period
+  for (int i = 0; i < nb; i++) {
+    iter_b_count[i] = 0;
+    iter_b_total[i] = 0;
+  }
+  for (int i = 0; i < na; i++) {
+    iter_a_count[i] = 0;
+    iter_a_total[i] = 0;
   }
 
   next_output += output_every;

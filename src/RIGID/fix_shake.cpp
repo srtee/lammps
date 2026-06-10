@@ -57,7 +57,10 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
     closest_list(nullptr), b_count(nullptr), b_count_all(nullptr), b_ave(nullptr), b_max(nullptr),
     b_min(nullptr), b_ave_all(nullptr), b_max_all(nullptr), b_min_all(nullptr), a_count(nullptr),
     a_count_all(nullptr), a_ave(nullptr), a_max(nullptr), a_min(nullptr), a_ave_all(nullptr),
-    a_max_all(nullptr), a_min_all(nullptr), atommols(nullptr), onemols(nullptr),
+    a_max_all(nullptr), a_min_all(nullptr), iter_b_count(nullptr), iter_b_count_all(nullptr),
+    iter_b_total(nullptr), iter_b_total_all(nullptr), iter_a_count(nullptr),
+    iter_a_count_all(nullptr), iter_a_total(nullptr), iter_a_total_all(nullptr),
+    atommols(nullptr), onemols(nullptr),
     in_setup(false)
 {
   rigsflag = utils::strmatch(style, "^rigs") ? 1 : 0;
@@ -300,6 +303,15 @@ FixShake::FixShake(LAMMPS *lmp, int narg, char **arg) :
     a_max_all = new double[na];
     a_min = new double[na];
     a_min_all = new double[na];
+
+    iter_b_count = new bigint[nb]();
+    iter_b_count_all = new bigint[nb]();
+    iter_b_total = new bigint[nb]();
+    iter_b_total_all = new bigint[nb]();
+    iter_a_count = new bigint[na]();
+    iter_a_count_all = new bigint[na]();
+    iter_a_total = new bigint[na]();
+    iter_a_total_all = new bigint[na]();
   }
 
   // SHAKE vs RATTLE
@@ -399,6 +411,15 @@ FixShake::~FixShake()
     delete[] a_max_all;
     delete[] a_min;
     delete[] a_min_all;
+
+    delete[] iter_b_count;
+    delete[] iter_b_count_all;
+    delete[] iter_b_total;
+    delete[] iter_b_total_all;
+    delete[] iter_a_count;
+    delete[] iter_a_count_all;
+    delete[] iter_a_total;
+    delete[] iter_a_total_all;
   }
 
   memory->destroy(list);
@@ -2296,6 +2317,11 @@ void FixShake::shake(int ilist)
 
   lamda /= dtfsq;
 
+  if (output_every) {
+    int bt = shake_type[m][0];
+    iter_b_count[bt]++; iter_b_total[bt]++;
+  }
+
   if (i0 < nlocal) {
     f[i0][0] += lamda*r01[0];
     f[i0][1] += lamda*r01[1];
@@ -2433,6 +2459,7 @@ void FixShake::shake3(int ilist)
   while (!done && niter < max_iter) {
     quad1 = quad1_0101 * lamda01*lamda01 + quad1_0202 * lamda02*lamda02 +
       quad1_0102 * lamda01*lamda02;
+
     quad2 = quad2_0101 * lamda01*lamda01 + quad2_0202 * lamda02*lamda02 +
       quad2_0102 * lamda01*lamda02;
 
@@ -2455,6 +2482,11 @@ void FixShake::shake3(int ilist)
     if (fabs(lamda01) > 1e150 || fabs(lamda02) > 1e150) done = 1;
 
     niter++;
+  }
+
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
   }
 
   // update forces if atom is owned by this processor
@@ -2698,6 +2730,12 @@ void FixShake::shake4(int ilist)
         || fabs(lamda03) > 1e150) done = 1;
 
     niter++;
+  }
+
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
+    iter_b_count[shake_type[m][2]]++; iter_b_total[shake_type[m][2]] += niter;
   }
 
   // update forces if atom is owned by this processor
@@ -2950,6 +2988,12 @@ void FixShake::shake3angle(int ilist)
     niter++;
   }
 
+  if (output_every) {
+    iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
+    iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
+    iter_a_count[shake_type[m][2]]++; iter_a_total[shake_type[m][2]] += niter;
+  }
+
   // update forces if atom is owned by this processor
 
   lamda01 = lamda01/dtfsq;
@@ -3167,25 +3211,46 @@ void FixShake::stats()
   MPI_Allreduce(a_max,a_max_all,na,MPI_DOUBLE,MPI_MAX,world);
   MPI_Allreduce(a_min,a_min_all,na,MPI_DOUBLE,MPI_MIN,world);
 
+  MPI_Allreduce(iter_b_count,iter_b_count_all,nb,MPI_LMP_BIGINT,MPI_SUM,world);
+  MPI_Allreduce(iter_b_total,iter_b_total_all,nb,MPI_LMP_BIGINT,MPI_SUM,world);
+  MPI_Allreduce(iter_a_count,iter_a_count_all,na,MPI_LMP_BIGINT,MPI_SUM,world);
+  MPI_Allreduce(iter_a_total,iter_a_total_all,na,MPI_LMP_BIGINT,MPI_SUM,world);
+
   // print stats only for non-zero counts
 
   if (comm->me == 0) {
     const int width = (int) log10((double)(MAX(MAX(1,nb),na))) + 2;
-    auto mesg = fmt::format("{} stats (type/ave/delta/count) on step {}\n",
+    auto mesg = fmt::format("{} stats (type/ave/delta/count/ave_iters) on step {}\n",
                             utils::uppercase(style), update->ntimestep);
     for (int i = 1; i < nb; i++) {
       const auto bcnt = b_count_all[i];
-      if (bcnt)
-        mesg += fmt::format("Bond:  {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
-                            b_ave_all[i]/bcnt,b_max_all[i]-b_min_all[i],bcnt);
+      if (bcnt) {
+        double ave_iters = (iter_b_count_all[i] > 0) ?
+          (double) iter_b_total_all[i] / (double) iter_b_count_all[i] : 0.0;
+        mesg += fmt::format("Bond:  {:>{}d}   {:<9.6} {:<11.6} {:>8d}   {:<9.3f}\n",i,width,
+                            b_ave_all[i]/bcnt,b_max_all[i]-b_min_all[i],bcnt,ave_iters);
+      }
     }
     for (int i = 1; i < na; i++) {
       const auto acnt = a_count_all[i];
-      if (acnt)
-        mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}\n",i,width,
-                            a_ave_all[i]/acnt,a_max_all[i]-a_min_all[i],acnt/3);
+      if (acnt) {
+        double ave_iters = (iter_a_count_all[i] > 0) ?
+          (double) iter_a_total_all[i] / (double) iter_a_count_all[i] : 0.0;
+        mesg += fmt::format("Angle: {:>{}d}   {:<9.6} {:<11.6} {:>8d}   {:<9.3f}\n",i,width,
+                            a_ave_all[i]/acnt,a_max_all[i]-a_min_all[i],acnt/3,ave_iters);
+      }
     }
     utils::logmesg(lmp,mesg);
+  }
+
+  // reset iteration accumulators for next stats period
+  for (int i = 0; i < nb; i++) {
+    iter_b_count[i] = 0;
+    iter_b_total[i] = 0;
+  }
+  for (int i = 0; i < na; i++) {
+    iter_a_count[i] = 0;
+    iter_a_total[i] = 0;
   }
 
   // next timestep for stats

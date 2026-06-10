@@ -397,7 +397,7 @@ inline void negskew_ut_mul(const UTMat3 &rc, const ColMat3 &sc, double out[3])
 }
 
 inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
-                            int max_iters = 10, double tol = 1e-6)
+                            int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
 {
   LTMat3 G;
   G.l00 = 2.0 * (rc.u11 * sc.l22 + rc.u22 * sc.l11);
@@ -417,7 +417,8 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
   double tol_sq = 3.0 * tol * tol;
 
   double negSkewGam[3], rotvec[3];
-  for (int niter = 0; niter < max_iters; niter++) {
+  int niter;
+  for (niter = 0; niter < max_iters; niter++) {
     negskew_ut_mul(rc, scm, negSkewGam);
     negSkewGam[0] -= skewChi[0];
     negSkewGam[1] -= skewChi[1];
@@ -433,6 +434,8 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
     }
     cayley_rotate(rotvec, scm);
   }
+
+  if (niter_out) *niter_out = niter;
 
   Mat3 gamma = scm;
   u_mul(rc, gamma);
