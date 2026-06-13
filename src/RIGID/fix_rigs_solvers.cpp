@@ -686,6 +686,7 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   UTMat2 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
   SymMat2 sigma = diff + mtm(chi);
+  // sigma != L because R^T R is NOT rank 3 ...?
   u_mul(rc, chi);
 
   lslt_mul(sigma, lmc);
@@ -828,22 +829,21 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   }
 
   SymMat3 rr = mmt(R);
-  SymMat3 ss = mmt(S);
 
   int idx = ilist_to_idx[ilist];
   const double *Lp = L_entries[idx].data;
-  const double *lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
+  const double *Lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
   SymMat3 L_mat = SymMat3::load(Lp);
-  SymMat3 diff = L_mat - ss;
-  DChol3 lm_chol = DChol3::load(lmp);
+  DChol3 lm_chol = DChol3::load(Lmp);
 
   Mat3 chi = mat_dot(R, S);
   UTMat3 rc = inv_chol_upper(rr);
   ut_mul(rc, chi);
-  SymMat3 sigma = diff + mtm(chi);
   u_mul(rc, chi);
-  lslt_mul(sigma, lm_chol);
-  LTMat3 sc = mul_dl(chol_lower(sigma), lm_chol);
+  
+  // for full rank R^T R, L = sigma!
+  lslt_mul(L_mat, lm_chol);
+  LTMat3 sc = mul_dl(chol_lower(L_mat), lm_chol);
   mul_ltdl(chi, lm_chol);
 
   Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance, &niter);
