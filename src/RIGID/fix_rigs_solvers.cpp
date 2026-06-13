@@ -1020,3 +1020,101 @@ void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, double* 
       v[i3][k] -= vchange[k];
     }
 }
+
+/* ----------------------------------------------------------------------
+   calculate SHAKE constraint forces for size 2 cluster = single bond
+------------------------------------------------------------------------- */
+
+void FixRigs::shake(int ilist)
+{
+  int atomlist[2];
+  double v[6];
+  double invmass0,invmass1;
+
+  // local atom IDs and constraint distances
+
+  int m = list[ilist];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  double bond1 = bond_distance[shake_type[m][0]];
+
+  // r01 = distance vec between atoms
+
+  double r01[3];
+  r01[0] = x[i0][0] - x[i1][0];
+  r01[1] = x[i0][1] - x[i1][1];
+  r01[2] = x[i0][2] - x[i1][2];
+
+  // s01 = distance vec after unconstrained update
+
+  double s01[3];
+  s01[0] = xshake[i0][0] - xshake[i1][0];
+  s01[1] = xshake[i0][1] - xshake[i1][1];
+  s01[2] = xshake[i0][2] - xshake[i1][2];
+
+  // scalar distances between atoms
+  double rr = r01[0]*r01[0] + r01[1]*r01[1] + r01[2]*r01[2];
+  double ss = s01[0]*s01[0] + s01[1]*s01[1] + s01[2]*s01[2];
+  double rs = r01[0]*s01[0] + r01[1]*s01[1] + r01[2]*s01[2];
+
+  double mu;
+
+  if (rmass) {
+    mu = 1.0 / rmass[i0] + 1.0 / rmass[i1];
+  } else {
+    mu = 1.0 / mass[type[i0]] + 1.0 / mass[type[i1]];
+  }
+
+  double project = rs / rr;
+  double determ = 1 - (ss - bond1*bond1) / (project * rs);
+
+  // error check
+
+  if (determ < 0.0) {
+    error->warning(FLERR,"RIGS determinant < 0.0");
+    determ = 0.0;
+  }
+
+  // exact quadratic solution for lamda
+
+  double mult = sqrt(determ) - 1.; 
+  double lamda = project * mult / (mu * dtfsq);
+
+  // update forces if atom is owned by this processor
+
+  if (output_every) {
+    int bt = shake_type[m][0];
+    iter_b_count[bt]++; iter_b_total[bt]++;
+  }
+
+  if (i0 < nlocal) {
+    f[i0][0] += lamda*r01[0];
+    f[i0][1] += lamda*r01[1];
+    f[i0][2] += lamda*r01[2];
+  }
+
+  if (i1 < nlocal) {
+    f[i1][0] -= lamda*r01[0];
+    f[i1][1] -= lamda*r01[1];
+    f[i1][2] -= lamda*r01[2];
+  }
+
+  if (evflag) {
+    int count = 0;
+    if (i0 < nlocal) atomlist[count++] = i0;
+    if (i1 < nlocal) atomlist[count++] = i1;
+
+    v[0] = lamda*r01[0]*r01[0];
+    v[1] = lamda*r01[1]*r01[1];
+    v[2] = lamda*r01[2]*r01[2];
+    v[3] = lamda*r01[0]*r01[1];
+    v[4] = lamda*r01[0]*r01[2];
+    v[5] = lamda*r01[1]*r01[2];
+
+    double fpairlist[] = {lamda};
+    double dellist[][3]  = {{r01[0], r01[1], r01[2]}};
+    int pairlist[][2] = {{i0,i1}};
+    v_tally(count,atomlist,2.0,v,nlocal,1,pairlist,fpairlist,dellist);
+  }
+}
+

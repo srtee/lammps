@@ -152,7 +152,7 @@ class FixShake : public Fix {
   int masscheck(double);
   virtual void unconstrained_update();
   void unconstrained_update_respa(int);
-  void shake(int);
+  virtual void shake(int);
   void shake3(int);
   virtual void shake4(int);
   virtual void shake3angle(int);

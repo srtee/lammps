@@ -74,6 +74,7 @@ class FixRigs : public FixShake {
     { transform_clusters(from_flag, to_flag, false, propagate_shake_data); }
   // void check_rank3(int ilist);
   enum Topology { IMPROPER, DIHEDRAL };
+  void shake(int) override;
   void shake3angle(int) override;
   void shake3angle_solve(int i0, int i1, int i2, int ilist);
   void shake4(int ilist) override;
