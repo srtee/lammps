@@ -246,7 +246,7 @@ inline void lt_sandwich_left(Mat3 &M, const LDLT3 &L)
   }
 }
 
-inline void lt_sandwich_fwd(Mat3 &M, const LDLT3 &L)
+inline void rmul_ldlt(Mat3 &M, const LDLT3 &L)
 {
   for (int i = 0; i < 3; i++) {
     M(i, 2) += M(i, 1) * L.l21 + M(i, 0) * L.l20;

@@ -34,420 +34,25 @@ void FixRigs::lookup_or_compute_matrices()
   int nsize = nlist;
   if (nsize > (int)ilist_to_idx.size()) ilist_to_idx.resize(nsize);
 
-  if (rmass) {
-    for (int ilist = 0; ilist < nlist; ilist++) {
-      int m = list[ilist];
-      int idx;
-
-      if (shake_flag[m] == 1) {
-        int bt0 = shake_type[m][0];
-        int bt1 = shake_type[m][1];
-        int at = shake_type[m][2];
-
-        char key[128];
-        std::snprintf(key, sizeof(key), "1:%d:%d:%d", bt0, bt1, at);
-        std::string skey(key);
-        auto it = cache_key_to_idx.find(skey);
-        if (it == cache_key_to_idx.end()) {
-          idx = L_entries.size();
-          L_entries.emplace_back();
-          double bond1 = bond_distance[bt0];
-          double bond2 = bond_distance[bt1];
-          L_entries[idx].data[0] = bond1 * bond1;
-          L_entries[idx].data[1] = rigs_angle[at];
-          L_entries[idx].data[2] = bond2 * bond2;
-          cache_key_to_idx[skey] = idx;
-        } else {
-          idx = it->second;
-        }
-        ilist_to_idx[ilist] = idx;
-
-        double *lm = rigs_lm_atom[m];
-        int i0 = closest_list[ilist][0];
-        int i1 = closest_list[ilist][1];
-        int i2 = closest_list[ilist][2];
-        double invmass0 = 1.0 / rmass[i0];
-        double invmass01 = invmass0 + 1.0 / rmass[i1];
-        double invmass02 = invmass0 + 1.0 / rmass[i2];
-        LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
-        lm[0] = dc.d0;
-        lm[1] = dc.d1;
-        lm[2] = dc.l10;
-
-      } else if (shake_flag[m] == 5) {
-        int bt0 = shake_type[m][0];
-        int bt1 = shake_type[m][1];
-        int bt2 = shake_type[m][2];
-        int at0 = rigs_type[m][0];
-        int at1 = rigs_type[m][1];
-        int at2 = rigs_type[m][2];
-        int i0 = closest_list[ilist][0];
-        int i1 = closest_list[ilist][1];
-        int i2 = closest_list[ilist][2];
-        int i3 = closest_list[ilist][3];
-
-        double mu0 = 1.0 / rmass[i0];
-        double mu01 = mu0 + 1.0 / rmass[i1];
-        double mu02 = mu0 + 1.0 / rmass[i2];
-        double mu03 = mu0 + 1.0 / rmass[i3];
-        LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
-
-        double bond0 = bond_distance[bt0];
-        double bond1 = bond_distance[bt1];
-        double bond2 = bond_distance[bt2];
-        double angle01 = rigs_angle[at0];
-        double angle02 = rigs_angle[at1];
-        double angle12 = rigs_angle[at2];
-        double d0 = bond1;
-        double u01 = angle01 / d0;
-        double u02 = angle02 / d0;
-        double dd1 = sqrt(bond1 * bond1 - u01 * u01);
-        double u12 = (angle12 - u01 * u02) / dd1;
-        double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
-        Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
-        lt_sandwich_fwd(rt_LM, dc);
-        SymMat3 MLM = mtm(rt_LM);
-        int perm_mlm[3];
-        LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
-        double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
-        constexpr double demote_threshold = 1e-3;
-
-        if (ratio_d2d0 < demote_threshold) {
-          int pos_smallest_d = perm_mlm[2] + 1;
-          demoted_tag[m] = shake_atom[m][pos_smallest_d];
-
-          char key[256];
-          std::snprintf(key, sizeof(key), "5d:P%d:%d:%d:%d:%d:%d", pos_smallest_d, bt0, bt1, bt2, at0, at1, at2);
-          std::string skey(key);
-          auto it = cache_key_to_idx.find(skey);
-          if (it == cache_key_to_idx.end()) {
-            idx = L_entries.size();
-            L_entries.emplace_back();
-            double im0 = 1.0 / rmass[i0];
-            double im1, im2;
-            int tri_bt0, tri_bt1, tri_at;
-            if (pos_smallest_d == 1) {
-              tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
-              im1 = 1.0 / rmass[i2]; im2 = 1.0 / rmass[i3];
-            } else if (pos_smallest_d == 2) {
-              tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
-              im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i3];
-            } else {
-              tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
-              im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i2];
-            }
-            L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
-            L_entries[idx].data[1] = rigs_angle[tri_at];
-            L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
-            SymMat3 Lref = {bond0 * bond0, angle01, angle02,
-                            bond1 * bond1, angle12, bond2 * bond2};
-            LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
-            L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-            L_entries[idx].data[4] = dcL.l21;
-            L_entries[idx].data[5] = sqrt(dcL.d2);
-            cache_key_to_idx[skey] = idx;
-          } else {
-            idx = it->second;
-          }
-          ilist_to_idx[ilist] = idx;
-
-          double *lm = rigs_lm_atom[m];
-          double im0 = 1.0 / rmass[i0];
-          double im1, im2;
-          int tri_bt0, tri_bt1, tri_at;
-          if (pos_smallest_d == 1) {
-            tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
-            im1 = 1.0 / rmass[i2]; im2 = 1.0 / rmass[i3];
-          } else if (pos_smallest_d == 2) {
-            tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
-            im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i3];
-          } else {
-            tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
-            im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i2];
-          }
-          LDLT2 dc3 = inv_ldlt(SymMat2{im0 + im1, im0, im0 + im2});
-          lm[0] = dc3.d0;
-          lm[1] = dc3.d1;
-          lm[2] = dc3.l10;
-
-        } else {
-          char key[256];
-          std::snprintf(key, sizeof(key), "5:%d:%d:%d:%d:%d:%d", bt0, bt1, bt2, at0, at1, at2);
-          std::string skey(key);
-          auto it = cache_key_to_idx.find(skey);
-          if (it == cache_key_to_idx.end()) {
-            idx = L_entries.size();
-            L_entries.emplace_back();
-            L_entries[idx].data[0] = bond0 * bond0;
-            L_entries[idx].data[1] = angle01;
-            L_entries[idx].data[2] = angle02;
-            L_entries[idx].data[3] = bond1 * bond1;
-            L_entries[idx].data[4] = angle12;
-            L_entries[idx].data[5] = bond2 * bond2;
-            cache_key_to_idx[skey] = idx;
-          } else {
-            idx = it->second;
-          }
-          ilist_to_idx[ilist] = idx;
-
-          double *lm = rigs_lm_atom[m];
-          lm[0] = dc.d0;
-          lm[1] = dc.d1;
-          lm[2] = dc.d2;
-          lm[3] = dc.l10;
-          lm[4] = dc.l20;
-          lm[5] = dc.l21;
-        }
-
-      } else if (shake_flag[m] == 6) {
-        int bt0 = shake_type[m][0];
-        int bt1 = shake_type[m][1];
-        int bt2 = shake_type[m][2];
-
-        char key[128];
-        std::snprintf(key, sizeof(key), "6:%d:%d:%d", bt0, bt1, bt2);
-        std::string skey(key);
-        auto it = cache_key_to_idx.find(skey);
-        if (it == cache_key_to_idx.end()) {
-          idx = L_entries.size();
-          L_entries.emplace_back();
-          double bond1 = bond_distance[bt0];
-          double bond2 = bond_distance[bt1];
-          double bond3 = bond_distance[bt2];
-          L_entries[idx].data[0] = bond1 * bond1;
-          L_entries[idx].data[1] = bond1 * bond2;
-          L_entries[idx].data[2] = bond1 * bond3;
-          L_entries[idx].data[3] = bond2 * bond2;
-          L_entries[idx].data[4] = bond2 * bond3;
-          L_entries[idx].data[5] = bond3 * bond3;
-          cache_key_to_idx[skey] = idx;
-        } else {
-          idx = it->second;
-        }
-        ilist_to_idx[ilist] = idx;
-
-        int i0 = closest_list[ilist][0];
-        int i1 = closest_list[ilist][1];
-        int i2 = closest_list[ilist][2];
-        int i3 = closest_list[ilist][3];
-        double mu0 = 1.0 / rmass[i0];
-        double mu2 = 1.0 / rmass[i2];
-        double mu10 = 1.0 / rmass[i1] + mu0;
-        double mu02 = mu0 + mu2;
-        double mu23 = mu2 + 1.0 / rmass[i3];
-        LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
-        double *lm = rigs_lm_atom[m];
-        dc.store(lm);
-      }
-    }
-    return;
-  }
-
   for (int ilist = 0; ilist < nlist; ilist++) {
     int m = list[ilist];
     int idx;
-
-    if (shake_flag[m] == 1) {
-      int bt0 = shake_type[m][0];
-      int bt1 = shake_type[m][1];
-      int at = shake_type[m][2];
-      int i0 = closest_list[ilist][0];
-      int i1 = closest_list[ilist][1];
-      int i2 = closest_list[ilist][2];
-      int t0 = type[i0], t1 = type[i1], t2 = type[i2];
-
-      char key[128];
-      std::snprintf(key, sizeof(key), "1:%d:%d:%d:%d:%d:%d", bt0, bt1, at, t0, t1, t2);
-      std::string skey(key);
-      auto it = cache_key_to_idx.find(skey);
-      if (it == cache_key_to_idx.end()) {
-        idx = L_entries.size();
-        L_entries.emplace_back();
-        lm_entries.emplace_back();
-        double bond1 = bond_distance[bt0];
-        double bond2 = bond_distance[bt1];
-        L_entries[idx].data[0] = bond1 * bond1;
-        L_entries[idx].data[1] = rigs_angle[at];
-        L_entries[idx].data[2] = bond2 * bond2;
-        double invmass0 = 1.0 / mass[t0];
-        double invmass01 = invmass0 + 1.0 / mass[t1];
-        double invmass02 = invmass0 + 1.0 / mass[t2];
-        LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
-        lm_entries[idx].data[0] = dc.d0;
-        lm_entries[idx].data[1] = dc.d1;
-        lm_entries[idx].data[2] = dc.l10;
-        entry_demoted_pivot.push_back(0);
-        cache_key_to_idx[skey] = idx;
-      } else {
-        idx = it->second;
-      }
-      ilist_to_idx[ilist] = idx;
-
-     } else if (shake_flag[m] == 5) {
-      int bt0 = shake_type[m][0];
-      int bt1 = shake_type[m][1];
-      int bt2 = shake_type[m][2];
-      int at0 = rigs_type[m][0];
-      int at1 = rigs_type[m][1];
-      int at2 = rigs_type[m][2];
-      int i0 = closest_list[ilist][0];
-      int i1 = closest_list[ilist][1];
-      int i2 = closest_list[ilist][2];
-      int i3 = closest_list[ilist][3];
-      int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
-
-      char key[256];
-      std::snprintf(key, sizeof(key), "5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
-                    bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
-      std::string skey(key);
-      auto it = cache_key_to_idx.find(skey);
-      if (it == cache_key_to_idx.end()) {
-        idx = L_entries.size();
-        L_entries.emplace_back();
-        lm_entries.emplace_back();
-        double mu0 = 1.0 / mass[t0];
-        double mu01 = mu0 + 1.0 / mass[t1];
-        double mu02 = mu0 + 1.0 / mass[t2];
-        double mu03 = mu0 + 1.0 / mass[t3];
-        LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
-        double bond0 = bond_distance[bt0];
-        double bond1 = bond_distance[bt1];
-        double bond2 = bond_distance[bt2];
-        double angle01 = rigs_angle[at0];
-        double angle02 = rigs_angle[at1];
-        double angle12 = rigs_angle[at2];
-
-        double d0 = bond1;
-        double u01 = angle01 / d0;
-        double u02 = angle02 / d0;
-        double d1 = sqrt(bond1 * bond1 - u01 * u01);
-        double u12 = (angle12 - u01 * u02) / d1;
-        double d2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
-        Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, d1, u12, d2});
-        lt_sandwich_fwd(rt_LM, dc);
-        SymMat3 MLM = mtm(rt_LM);
-        int perm_mlm[3];
-        LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
-
-        double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
-        constexpr double demote_threshold = 1e-3;
-        if (ratio_d2d0 < demote_threshold) {
-          int pos_smallest_d = perm_mlm[2] + 1;
-
-          double im0 = 1.0 / mass[t0];
-          double im1, im2;
-          int tri_bt0, tri_bt1, tri_at;
-          if (pos_smallest_d == 1) {
-            tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
-            im1 = 1.0 / mass[t2]; im2 = 1.0 / mass[t3];
-          } else if (pos_smallest_d == 2) {
-            tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
-            im1 = 1.0 / mass[t1]; im2 = 1.0 / mass[t3];
-          } else {
-            tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
-            im1 = 1.0 / mass[t1]; im2 = 1.0 / mass[t2];
-          }
-
-          L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
-          L_entries[idx].data[1] = rigs_angle[tri_at];
-          L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
-
-          LDLT2 dc3 = inv_ldlt(SymMat2{im0 + im1, im0, im0 + im2});
-          lm_entries[idx].data[0] = dc3.d0;
-          lm_entries[idx].data[1] = dc3.d1;
-          lm_entries[idx].data[2] = dc3.l10;
-
-          // Geometric parameters for the demoted virtual particle.
-          //
-          // Lref is the Gram matrix of the constraint vectors (bond0-bond2),
-          // stored in the ORIGINAL bond ordering to avoid reordering sensitive
-          // lists.  ldlt_pivot_one swaps only the demoted bond's row/column
-          // to position 2, so the first two columns always correspond to the
-          // two non-demoted bonds in their original order.
-          //
-          // The semi-pivoted factorisation gives:
-          //   P Lref P^T = D^{1/2} Ltilde Ltilde^T D^{1/2}
-          // where P swaps only the demoted bond to position 2,
-          // D^{1/2} = diag(sqrt(d0), sqrt(d1), sqrt(d2)) and
-          // Ltilde = [[1, 0, 0], [m01, 1, 0], [m02, m12, 1]].
-          //
-          // The diagonal entries l00=d0^{1/2}, l11=d1^{1/2}, l22=d2^{1/2}
-          // and off-diagonal products m02*l00, m12*l11 are stored together
-          // with m01 as the decomposition used by shake4demoted to construct
-          // an orthonormal frame (e1, e2, n) from the two non-demoted
-          // constraint vectors and then position the demoted particle at
-          // xshake[i0] - (l20*e1 + l21*e2 + sgn*l22*n).
-          SymMat3 Lref = {bond0 * bond0, angle01, angle02,
-                          bond1 * bond1, angle12, bond2 * bond2};
-          LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
-          L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-          L_entries[idx].data[4] = dcL.l21;
-          L_entries[idx].data[5] = sqrt(dcL.d2);
-
-          entry_demoted_pivot.push_back(pos_smallest_d);
-          demoted_tag[m] = shake_atom[m][pos_smallest_d];
-        } else {
-          L_entries[idx].data[0] = bond0 * bond0;
-          L_entries[idx].data[1] = angle01;
-          L_entries[idx].data[2] = angle02;
-          L_entries[idx].data[3] = bond1 * bond1;
-          L_entries[idx].data[4] = angle12;
-          L_entries[idx].data[5] = bond2 * bond2;
-          dc.store(lm_entries[idx].data);
-          entry_demoted_pivot.push_back(0);
-        }
-        cache_key_to_idx[skey] = idx;
-      } else {
-        idx = it->second;
-        int pos_smallest_d = entry_demoted_pivot[idx];
-        if (pos_smallest_d > 0) demoted_tag[m] = shake_atom[m][pos_smallest_d];
-      }
-      ilist_to_idx[ilist] = idx;
-
-    } else if (shake_flag[m] == 6) {
-      int bt0 = shake_type[m][0];
-      int bt1 = shake_type[m][1];
-      int bt2 = shake_type[m][2];
-      int i0 = closest_list[ilist][0];
-      int i1 = closest_list[ilist][1];
-      int i2 = closest_list[ilist][2];
-      int i3 = closest_list[ilist][3];
-      int t0 = type[i0]; int t1 = type[i1]; int t2 = type[i2]; int t3 = type[i3];
-
-      char key[128];
-      std::snprintf(key, sizeof(key), "6:%d:%d:%d:%d:%d:%d:%d",
-                    bt0, bt1, bt2, t0, t1, t2, t3);
-      std::string skey(key);
-      auto it = cache_key_to_idx.find(skey);
-      if (it == cache_key_to_idx.end()) {
-        idx = L_entries.size();
-        L_entries.emplace_back();
-        lm_entries.emplace_back();
-        double bond1 = bond_distance[bt0];
-        double bond2 = bond_distance[bt1];
-        double bond3 = bond_distance[bt2];
-        L_entries[idx].data[0] = bond1 * bond1;
-        L_entries[idx].data[1] = bond1 * bond2;
-        L_entries[idx].data[2] = bond1 * bond3;
-        L_entries[idx].data[3] = bond2 * bond2;
-        L_entries[idx].data[4] = bond2 * bond3;
-        L_entries[idx].data[5] = bond3 * bond3;
-        double mu0 = 1.0 / mass[t0];
-        double mu2 = 1.0 / mass[t2];
-        double mu10 = 1.0 / mass[t1] + mu0;
-        double mu02 = mu0 + mu2;
-        double mu23 = mu2 + 1.0 / mass[t3];
-        LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
-        dc.store(lm_entries[idx].data);
-        entry_demoted_pivot.push_back(0);
-        cache_key_to_idx[skey] = idx;
-      } else {
-        idx = it->second;
-      }
-      ilist_to_idx[ilist] = idx;
-    }
+    if (shake_flag[m] == 1)
+      idx = lookup_or_compute_angle(ilist);
+    else if (shake_flag[m] == 5)
+      idx = lookup_or_compute_improper(ilist);
+    else if (shake_flag[m] == 6)
+      idx = lookup_or_compute_dihedral(ilist);
+    else
+      continue;
+    ilist_to_idx[ilist] = idx;
   }
 
+  propagate_demoted_tags();
+}
+
+void FixRigs::propagate_demoted_tags()
+{
   for (int ilist = 0; ilist < nlist; ilist++) {
     int m = list[ilist];
     if (shake_flag[m] != 5) continue;
@@ -459,6 +64,327 @@ void FixRigs::lookup_or_compute_matrices()
         demoted_tag[pidx] = demoted_tag[m];
     }
   }
+}
+
+int FixRigs::lookup_or_compute_angle(int ilist)
+{
+  int m = list[ilist];
+  int bt0 = shake_type[m][0];
+  int bt1 = shake_type[m][1];
+  int at = shake_type[m][2];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+
+  double invmass0 = get_inv_mass(i0);
+  double invmass01 = invmass0 + get_inv_mass(i1);
+  double invmass02 = invmass0 + get_inv_mass(i2);
+  LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
+
+  if (rmass) {
+    char key[128];
+    std::snprintf(key, sizeof(key), "1:%d:%d:%d", bt0, bt1, at);
+    std::string skey(key);
+    auto it = cache_key_to_idx.find(skey);
+    int idx;
+    if (it == cache_key_to_idx.end()) {
+      idx = L_entries.size();
+      L_entries.emplace_back();
+      double bond1 = bond_distance[bt0];
+      double bond2 = bond_distance[bt1];
+      L_entries[idx].data[0] = bond1 * bond1;
+      L_entries[idx].data[1] = rigs_angle[at];
+      L_entries[idx].data[2] = bond2 * bond2;
+      cache_key_to_idx[skey] = idx;
+    } else {
+      idx = it->second;
+    }
+
+    double *lm = rigs_lm_atom[m];
+    lm[0] = dc.d0;
+    lm[1] = dc.d1;
+    lm[2] = dc.l10;
+    return idx;
+  }
+
+  int t0 = type[i0], t1 = type[i1], t2 = type[i2];
+  char key[128];
+  std::snprintf(key, sizeof(key), "1:%d:%d:%d:%d:%d:%d", bt0, bt1, at, t0, t1, t2);
+  std::string skey(key);
+  auto it = cache_key_to_idx.find(skey);
+  if (it != cache_key_to_idx.end()) return it->second;
+
+  int idx = L_entries.size();
+  L_entries.emplace_back();
+  lm_entries.emplace_back();
+  double bond1 = bond_distance[bt0];
+  double bond2 = bond_distance[bt1];
+  L_entries[idx].data[0] = bond1 * bond1;
+  L_entries[idx].data[1] = rigs_angle[at];
+  L_entries[idx].data[2] = bond2 * bond2;
+  lm_entries[idx].data[0] = dc.d0;
+  lm_entries[idx].data[1] = dc.d1;
+  lm_entries[idx].data[2] = dc.l10;
+  entry_demoted_pivot.push_back(0);
+  cache_key_to_idx[skey] = idx;
+  return idx;
+}
+
+int FixRigs::lookup_or_compute_improper(int ilist)
+{
+  int m = list[ilist];
+  int bt0 = shake_type[m][0];
+  int bt1 = shake_type[m][1];
+  int bt2 = shake_type[m][2];
+  int at0 = rigs_type[m][0];
+  int at1 = rigs_type[m][1];
+  int at2 = rigs_type[m][2];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+  int i3 = closest_list[ilist][3];
+
+  double mu0 = get_inv_mass(i0);
+  double mu01 = mu0 + get_inv_mass(i1);
+  double mu02 = mu0 + get_inv_mass(i2);
+  double mu03 = mu0 + get_inv_mass(i3);
+  LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+
+  double bond0 = bond_distance[bt0];
+  double bond1 = bond_distance[bt1];
+  double bond2 = bond_distance[bt2];
+  double angle01 = rigs_angle[at0];
+  double angle02 = rigs_angle[at1];
+  double angle12 = rigs_angle[at2];
+
+  double d0 = bond1;
+  double u01 = angle01 / d0;
+  double u02 = angle02 / d0;
+  double dd1 = sqrt(bond1 * bond1 - u01 * u01);
+  double u12 = (angle12 - u01 * u02) / dd1;
+  double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
+  Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
+  rmul_ldlt(rt_LM, dc);
+  SymMat3 MLM = mtm(rt_LM);
+  int perm_mlm[3];
+  LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
+  double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
+  constexpr double demote_threshold = 1e-3;
+
+  if (ratio_d2d0 < demote_threshold) {
+    int pos_smallest_d = perm_mlm[2] + 1;
+    demoted_tag[m] = shake_atom[m][pos_smallest_d];
+
+    double im1, im2;
+    int tri_bt0, tri_bt1, tri_at;
+    if (pos_smallest_d == 1) {
+      tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
+      im1 = get_inv_mass(i2); im2 = get_inv_mass(i3);
+    } else if (pos_smallest_d == 2) {
+      tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
+      im1 = get_inv_mass(i1); im2 = get_inv_mass(i3);
+    } else {
+      tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
+      im1 = get_inv_mass(i1); im2 = get_inv_mass(i2);
+    }
+
+    if (rmass) {
+      char key[256];
+      std::snprintf(key, sizeof(key), "5d:P%d:%d:%d:%d:%d:%d:%d", pos_smallest_d, bt0, bt1, bt2, at0, at1, at2);
+      std::string skey(key);
+      auto it = cache_key_to_idx.find(skey);
+      int idx;
+      if (it == cache_key_to_idx.end()) {
+        idx = L_entries.size();
+        L_entries.emplace_back();
+        L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
+        L_entries[idx].data[1] = rigs_angle[tri_at];
+        L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
+        SymMat3 Lref = {bond0 * bond0, angle01, angle02,
+                        bond1 * bond1, angle12, bond2 * bond2};
+        LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
+        L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+        L_entries[idx].data[4] = dcL.l21;
+        L_entries[idx].data[5] = sqrt(dcL.d2);
+        cache_key_to_idx[skey] = idx;
+      } else {
+        idx = it->second;
+      }
+
+      LDLT2 dc3 = inv_ldlt(SymMat2{mu0 + im1, mu0, mu0 + im2});
+      double *lm = rigs_lm_atom[m];
+      lm[0] = dc3.d0;
+      lm[1] = dc3.d1;
+      lm[2] = dc3.l10;
+      return idx;
+    }
+
+    // non-rmass path
+    char key[256];
+    std::snprintf(key, sizeof(key), "5d:P%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                  pos_smallest_d, bt0, bt1, bt2, at0, at1, at2,
+                  type[i0], type[i1], type[i2], type[i3]);
+    std::string skey(key);
+    auto it = cache_key_to_idx.find(skey);
+    if (it != cache_key_to_idx.end()) {
+      int pos_saved = entry_demoted_pivot[it->second];
+      if (pos_saved > 0) demoted_tag[m] = shake_atom[m][pos_saved];
+      return it->second;
+    }
+
+    int idx = L_entries.size();
+    L_entries.emplace_back();
+    lm_entries.emplace_back();
+    L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
+    L_entries[idx].data[1] = rigs_angle[tri_at];
+    L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
+
+    LDLT2 dc3 = inv_ldlt(SymMat2{mu0 + im1, mu0, mu0 + im2});
+    lm_entries[idx].data[0] = dc3.d0;
+    lm_entries[idx].data[1] = dc3.d1;
+    lm_entries[idx].data[2] = dc3.l10;
+
+    SymMat3 Lref = {bond0 * bond0, angle01, angle02,
+                    bond1 * bond1, angle12, bond2 * bond2};
+    LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
+    L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+    L_entries[idx].data[4] = dcL.l21;
+    L_entries[idx].data[5] = sqrt(dcL.d2);
+
+    entry_demoted_pivot.push_back(pos_smallest_d);
+    cache_key_to_idx[skey] = idx;
+    return idx;
+  }
+
+  // not demoted
+  if (rmass) {
+    char key[256];
+    std::snprintf(key, sizeof(key), "5:%d:%d:%d:%d:%d:%d", bt0, bt1, bt2, at0, at1, at2);
+    std::string skey(key);
+    auto it = cache_key_to_idx.find(skey);
+    int idx;
+    if (it == cache_key_to_idx.end()) {
+      idx = L_entries.size();
+      L_entries.emplace_back();
+      L_entries[idx].data[0] = bond0 * bond0;
+      L_entries[idx].data[1] = angle01;
+      L_entries[idx].data[2] = angle02;
+      L_entries[idx].data[3] = bond1 * bond1;
+      L_entries[idx].data[4] = angle12;
+      L_entries[idx].data[5] = bond2 * bond2;
+      cache_key_to_idx[skey] = idx;
+    } else {
+      idx = it->second;
+    }
+
+    double *lm = rigs_lm_atom[m];
+    lm[0] = dc.d0;
+    lm[1] = dc.d1;
+    lm[2] = dc.d2;
+    lm[3] = dc.l10;
+    lm[4] = dc.l20;
+    lm[5] = dc.l21;
+    return idx;
+  }
+
+  // non-rmass path
+  int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+  char key[256];
+  std::snprintf(key, sizeof(key), "5:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+                bt0, bt1, bt2, at0, at1, at2, t0, t1, t2, t3);
+  std::string skey(key);
+  auto it = cache_key_to_idx.find(skey);
+  if (it != cache_key_to_idx.end()) {
+    int pos_saved = entry_demoted_pivot[it->second];
+    if (pos_saved > 0) demoted_tag[m] = shake_atom[m][pos_saved];
+    return it->second;
+  }
+
+  int idx = L_entries.size();
+  L_entries.emplace_back();
+  lm_entries.emplace_back();
+  L_entries[idx].data[0] = bond0 * bond0;
+  L_entries[idx].data[1] = angle01;
+  L_entries[idx].data[2] = angle02;
+  L_entries[idx].data[3] = bond1 * bond1;
+  L_entries[idx].data[4] = angle12;
+  L_entries[idx].data[5] = bond2 * bond2;
+  dc.store(lm_entries[idx].data);
+  entry_demoted_pivot.push_back(0);
+  cache_key_to_idx[skey] = idx;
+  return idx;
+}
+
+int FixRigs::lookup_or_compute_dihedral(int ilist)
+{
+  int m = list[ilist];
+  int bt0 = shake_type[m][0];
+  int bt1 = shake_type[m][1];
+  int bt2 = shake_type[m][2];
+  int i0 = closest_list[ilist][0];
+  int i1 = closest_list[ilist][1];
+  int i2 = closest_list[ilist][2];
+  int i3 = closest_list[ilist][3];
+
+  double mu0 = get_inv_mass(i0);
+  double mu2 = get_inv_mass(i2);
+  double mu10 = get_inv_mass(i1) + mu0;
+  double mu02 = mu0 + mu2;
+  double mu23 = mu2 + get_inv_mass(i3);
+  LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+
+  if (rmass) {
+    char key[128];
+    std::snprintf(key, sizeof(key), "6:%d:%d:%d", bt0, bt1, bt2);
+    std::string skey(key);
+    auto it = cache_key_to_idx.find(skey);
+    int idx;
+    if (it == cache_key_to_idx.end()) {
+      idx = L_entries.size();
+      L_entries.emplace_back();
+      double bond1 = bond_distance[bt0];
+      double bond2 = bond_distance[bt1];
+      double bond3 = bond_distance[bt2];
+      L_entries[idx].data[0] = bond1 * bond1;
+      L_entries[idx].data[1] = bond1 * bond2;
+      L_entries[idx].data[2] = bond1 * bond3;
+      L_entries[idx].data[3] = bond2 * bond2;
+      L_entries[idx].data[4] = bond2 * bond3;
+      L_entries[idx].data[5] = bond3 * bond3;
+      cache_key_to_idx[skey] = idx;
+    } else {
+      idx = it->second;
+    }
+
+    double *lm = rigs_lm_atom[m];
+    dc.store(lm);
+    return idx;
+  }
+
+  int t0 = type[i0], t1 = type[i1], t2 = type[i2], t3 = type[i3];
+  char key[128];
+  std::snprintf(key, sizeof(key), "6:%d:%d:%d:%d:%d:%d:%d",
+                bt0, bt1, bt2, t0, t1, t2, t3);
+  std::string skey(key);
+  auto it = cache_key_to_idx.find(skey);
+  if (it != cache_key_to_idx.end()) return it->second;
+
+  int idx = L_entries.size();
+  L_entries.emplace_back();
+  lm_entries.emplace_back();
+  double bond1 = bond_distance[bt0];
+  double bond2 = bond_distance[bt1];
+  double bond3 = bond_distance[bt2];
+  L_entries[idx].data[0] = bond1 * bond1;
+  L_entries[idx].data[1] = bond1 * bond2;
+  L_entries[idx].data[2] = bond1 * bond3;
+  L_entries[idx].data[3] = bond2 * bond2;
+  L_entries[idx].data[4] = bond2 * bond3;
+  L_entries[idx].data[5] = bond3 * bond3;
+  dc.store(lm_entries[idx].data);
+  entry_demoted_pivot.push_back(0);
+  cache_key_to_idx[skey] = idx;
+  return idx;
 }
 
 void FixRigs::shake4(int ilist)
@@ -695,7 +621,7 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
     s01 = s01 - ltmp(0,0) * r01 - ltmp(0,1) * r02;
     s02 = s02 - ltmp(0,1) * r01 - ltmp(1,1) * r02;
    
-    lt_sandwich_fwd(ltmp, M_ldlt);
+    rmul_ldlt(ltmp, M_ldlt);
     lamda01 += ltmp(0,0);
     lamda02 += ltmp(1,1);
     lamda12 += ltmp(0,1);
@@ -724,7 +650,7 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
   // lower-triangular and is the factor used in the orthogonal solve.
   LTMat2 L_sigma_M = mul_dl(chol_lower(sigma), M_ldlt);
-  lt_sandwich_fwd(chi, M_ldlt);
+  rmul_ldlt(chi, M_ldlt);
   
   Mat2 phiCos = inv_chol_C * L_sigma_M;
 
@@ -883,7 +809,7 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   while ((chi(0,0)*chi(0,0) + chi(1,1)*chi(1,1) + chi(2,2)*chi(2,2)) > d_thresh) {
     Mat3 ltmp = gram_cross;
     trimmed_solve(ltmp, metric_C, 1);
-    lt_sandwich_fwd(ltmp, M_ldlt);
+    rmul_ldlt(ltmp, M_ldlt);
     symmetrize(ltmp);
     lamda += ltmp;
 
@@ -904,7 +830,7 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
   // lower-triangular and is the factor used in the Cayley iteration.
   LTMat3 L_sigma_M = mul_dl(chol_lower(gram_target), M_ldlt);
-  lt_sandwich_fwd(chi, M_ldlt);
+  rmul_ldlt(chi, M_ldlt);
 
   lamda += cayley_converge(inv_chol_C, L_sigma_M, chi, max_iter, tolerance, &niter);
   if (output_every) {

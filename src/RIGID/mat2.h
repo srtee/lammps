@@ -166,7 +166,7 @@ inline LTMat2 mul_dl(const LTMat2 &A, const LDLT2 &L)
   return {l00, l10, l11};
 }
 
-inline void lt_sandwich_fwd(Mat2 &M, const LDLT2 &L)
+inline void rmul_ldlt(Mat2 &M, const LDLT2 &L)
 {
   M(0, 1) += M(0, 0) * L.l10;
   M(1, 1) += M(1, 0) * L.l10;

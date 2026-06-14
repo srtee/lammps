@@ -67,6 +67,13 @@ class FixRigs : public FixShake {
   bool store_lamda_corrections;
 
   void lookup_or_compute_matrices();
+  int lookup_or_compute_angle(int ilist);
+  int lookup_or_compute_improper(int ilist);
+  int lookup_or_compute_dihedral(int ilist);
+  void propagate_demoted_tags();
+  inline double get_inv_mass(int i) const {
+    return rmass ? 1.0 / rmass[i] : 1.0 / mass[type[i]];
+  }
   void transform_clusters(int from_flag, int to_flag, bool global, bool propagate_shake_data);
   inline void transform_clusters_global(int from_flag, int to_flag)
     { transform_clusters(from_flag, to_flag, true, false); }
