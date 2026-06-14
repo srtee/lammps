@@ -69,10 +69,10 @@ void FixRigs::lookup_or_compute_matrices()
         double invmass0 = 1.0 / rmass[i0];
         double invmass01 = invmass0 + 1.0 / rmass[i1];
         double invmass02 = invmass0 + 1.0 / rmass[i2];
-        DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+        LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
         lm[0] = dc.d0;
         lm[1] = dc.d1;
-        lm[2] = dc.m01;
+        lm[2] = dc.l10;
 
       } else if (shake_flag[m] == 5) {
         int bt0 = shake_type[m][0];
@@ -90,7 +90,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu01 = mu0 + 1.0 / rmass[i1];
         double mu02 = mu0 + 1.0 / rmass[i2];
         double mu03 = mu0 + 1.0 / rmass[i3];
-        DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+        LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
 
         double bond0 = bond_distance[bt0];
         double bond1 = bond_distance[bt1];
@@ -105,10 +105,10 @@ void FixRigs::lookup_or_compute_matrices()
         double u12 = (angle12 - u01 * u02) / dd1;
         double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
         Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
-        mul_ltdl(rt_LM, dc);
+        lt_sandwich_fwd(rt_LM, dc);
         SymMat3 MLM = mtm(rt_LM);
         int perm_mlm[3];
-        DChol3 dc_MLM = dchol_pivot(MLM, perm_mlm);
+        LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
         double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
         constexpr double demote_threshold = 1e-3;
 
@@ -141,9 +141,9 @@ void FixRigs::lookup_or_compute_matrices()
             L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
             SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                             bond1 * bond1, angle12, bond2 * bond2};
-            DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
-            L_entries[idx].data[3] = dcL.m02 - dcL.m01 * dcL.m12;
-            L_entries[idx].data[4] = dcL.m12;
+            LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
+            L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+            L_entries[idx].data[4] = dcL.l21;
             L_entries[idx].data[5] = sqrt(dcL.d2);
             cache_key_to_idx[skey] = idx;
           } else {
@@ -165,10 +165,10 @@ void FixRigs::lookup_or_compute_matrices()
             tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
             im1 = 1.0 / rmass[i1]; im2 = 1.0 / rmass[i2];
           }
-          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1, im0, im0 + im2});
+          LDLT2 dc3 = inv_ldlt(SymMat2{im0 + im1, im0, im0 + im2});
           lm[0] = dc3.d0;
           lm[1] = dc3.d1;
-          lm[2] = dc3.m01;
+          lm[2] = dc3.l10;
 
         } else {
           char key[256];
@@ -194,9 +194,9 @@ void FixRigs::lookup_or_compute_matrices()
           lm[0] = dc.d0;
           lm[1] = dc.d1;
           lm[2] = dc.d2;
-          lm[3] = dc.m01;
-          lm[4] = dc.m02;
-          lm[5] = dc.m12;
+          lm[3] = dc.l10;
+          lm[4] = dc.l20;
+          lm[5] = dc.l21;
         }
 
       } else if (shake_flag[m] == 6) {
@@ -235,7 +235,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu10 = 1.0 / rmass[i1] + mu0;
         double mu02 = mu0 + mu2;
         double mu23 = mu2 + 1.0 / rmass[i3];
-        DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+        LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
         double *lm = rigs_lm_atom[m];
         dc.store(lm);
       }
@@ -272,10 +272,10 @@ void FixRigs::lookup_or_compute_matrices()
         double invmass0 = 1.0 / mass[t0];
         double invmass01 = invmass0 + 1.0 / mass[t1];
         double invmass02 = invmass0 + 1.0 / mass[t2];
-        DChol2 dc = inv_dchol(SymMat2{invmass01, invmass0, invmass02});
+        LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
         lm_entries[idx].data[0] = dc.d0;
         lm_entries[idx].data[1] = dc.d1;
-        lm_entries[idx].data[2] = dc.m01;
+        lm_entries[idx].data[2] = dc.l10;
         entry_demoted_pivot.push_back(0);
         cache_key_to_idx[skey] = idx;
       } else {
@@ -309,7 +309,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu01 = mu0 + 1.0 / mass[t1];
         double mu02 = mu0 + 1.0 / mass[t2];
         double mu03 = mu0 + 1.0 / mass[t3];
-        DChol3 dc = inv_dchol(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+        LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
         double bond0 = bond_distance[bt0];
         double bond1 = bond_distance[bt1];
         double bond2 = bond_distance[bt2];
@@ -324,10 +324,10 @@ void FixRigs::lookup_or_compute_matrices()
         double u12 = (angle12 - u01 * u02) / d1;
         double d2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
         Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, d1, u12, d2});
-        mul_ltdl(rt_LM, dc);
+        lt_sandwich_fwd(rt_LM, dc);
         SymMat3 MLM = mtm(rt_LM);
         int perm_mlm[3];
-        DChol3 dc_MLM = dchol_pivot(MLM, perm_mlm);
+        LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
 
         double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
         constexpr double demote_threshold = 1e-3;
@@ -352,16 +352,16 @@ void FixRigs::lookup_or_compute_matrices()
           L_entries[idx].data[1] = rigs_angle[tri_at];
           L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
 
-          DChol2 dc3 = inv_dchol(SymMat2{im0 + im1, im0, im0 + im2});
+          LDLT2 dc3 = inv_ldlt(SymMat2{im0 + im1, im0, im0 + im2});
           lm_entries[idx].data[0] = dc3.d0;
           lm_entries[idx].data[1] = dc3.d1;
-          lm_entries[idx].data[2] = dc3.m01;
+          lm_entries[idx].data[2] = dc3.l10;
 
           // Geometric parameters for the demoted virtual particle.
           //
           // Lref is the Gram matrix of the constraint vectors (bond0-bond2),
           // stored in the ORIGINAL bond ordering to avoid reordering sensitive
-          // lists.  dchol_pivot_one swaps only the demoted bond's row/column
+          // lists.  ldlt_pivot_one swaps only the demoted bond's row/column
           // to position 2, so the first two columns always correspond to the
           // two non-demoted bonds in their original order.
           //
@@ -379,9 +379,9 @@ void FixRigs::lookup_or_compute_matrices()
           // xshake[i0] - (l20*e1 + l21*e2 + sgn*l22*n).
           SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                           bond1 * bond1, angle12, bond2 * bond2};
-          DChol3 dcL = dchol_pivot_one(Lref, pos_smallest_d - 1);
-          L_entries[idx].data[3] = dcL.m02 - dcL.m01 * dcL.m12;
-          L_entries[idx].data[4] = dcL.m12;
+          LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
+          L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+          L_entries[idx].data[4] = dcL.l21;
           L_entries[idx].data[5] = sqrt(dcL.d2);
 
           entry_demoted_pivot.push_back(pos_smallest_d);
@@ -437,7 +437,7 @@ void FixRigs::lookup_or_compute_matrices()
         double mu10 = 1.0 / mass[t1] + mu0;
         double mu02 = mu0 + mu2;
         double mu23 = mu2 + 1.0 / mass[t3];
-        DChol3 dc = inv_dchol(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+        LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
         dc.store(lm_entries[idx].data);
         entry_demoted_pivot.push_back(0);
         cache_key_to_idx[skey] = idx;
@@ -664,55 +664,88 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   int atomlist[3];
   double v[6];
 
+  double lamda01, lamda02, lamda12;
+  lamda01 = lamda02 = lamda12 = 0.0;
+  
+  SymMat2 gram_target = {L_ptr[0], L_ptr[1], L_ptr[2]};
+  LDLT2 M_ldlt = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
+
   Vec3 r01 = Vec3(x[i0]) - x[i1];
   Vec3 r02 = Vec3(x[i0]) - x[i2];
+  SymMat2 metric_C = sym_dot(r01, r02);
+  UTMat2 inv_chol_C = inv_chol_upper(metric_C);
+  
   Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
-  SymMat2 rr = sym_dot(r01, r02);
-  SymMat2 ss = sym_dot(s01, s02);
-
-  SymMat2 Lm = {L_ptr[0], L_ptr[1], L_ptr[2]};
-  SymMat2 diff = Lm - ss;
-
   Mat2 chi;
-  chi(0, 0) = dot(s01, r01);
-  chi(1, 0) = dot(s01, r02);
-  chi(0, 1) = dot(s02, r01);
-  chi(1, 1) = dot(s02, r02);
+  chi(0, 0) = dot(r01, s01);
+  chi(0, 1) = dot(r01, s02);
+  chi(1, 0) = dot(r02, s01);
+  chi(1, 1) = dot(r02, s02);
 
-  DChol2 lmc = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
+  ut_mul(inv_chol_C, chi);
+  u_mul(inv_chol_C, chi);
+ 
+  const double d_thresh = 2.0;
+  while (chi(0,0)*chi(0,0) > d_thresh ||  chi(1,1)*chi(1,1)> d_thresh) {
+    Mat2 ltmp = chi;
+    ltmp(0,1) = 0.5 * (chi(0,1) + chi(1,0));
+    ltmp(1,0) = ltmp(0,1);
+    s01 = s01 - ltmp(0,0) * r01 - ltmp(0,1) * r02;
+    s02 = s02 - ltmp(0,1) * r01 - ltmp(1,1) * r02;
+   
+    lt_sandwich_fwd(ltmp, M_ldlt);
+    lamda01 += ltmp(0,0);
+    lamda02 += ltmp(1,1);
+    lamda12 += ltmp(0,1);
 
-  UTMat2 rc = inv_chol_upper(rr);
-  ut_mul(rc, chi);
-  SymMat2 sigma = diff + mtm(chi);
-  // sigma != L because R^T R is NOT rank 3 ...?
-  u_mul(rc, chi);
+    chi(0, 0) = dot(r01, s01);
+    chi(0, 1) = dot(r01, s02);
+    chi(1, 0) = dot(r02, s01);
+    chi(1, 1) = dot(r02, s02);
 
-  lslt_mul(sigma, lmc);
-  LTMat2 sc = mul_dl(chol_lower(sigma),lmc);
-  mul_ltdl(chi, lmc);
+    ut_mul(inv_chol_C, chi);
+    u_mul(inv_chol_C, chi);
+  }
 
-  Mat2 phiC = rc * sc;
+  Vec3 n = cross(r01, r02);
+  double nn = normsq(n);
+  double p1 = dot(s01, n);
+  double p2 = dot(s02, n);
+  SymMat2 gram_Sperp = {p1 * p1 / nn, p1 * p2 / nn, p2 * p2 / nn};
+  SymMat2 sigma = gram_target - gram_Sperp;
+
+  // Mass-weight sigma in-place: sigma <- M sigma M.
+  // This must precede Cholesky decomposition so that chol_lower
+  // produces a lower-triangular factor of the mass-weighted matrix.
+  inv_lt_sandwich(sigma, M_ldlt);
+  // L_σ L_σ^T = M sigma M, then right-multiply by M^{-1} factors
+  // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
+  // lower-triangular and is the factor used in the orthogonal solve.
+  LTMat2 L_sigma_M = mul_dl(chol_lower(sigma), M_ldlt);
+  lt_sandwich_fwd(chi, M_ldlt);
+  
+  Mat2 phiCos = inv_chol_C * L_sigma_M;
 
   Mat2 J;
   J(0, 0) = 0.0;  J(0, 1) = -1.0;
   J(1, 0) = 1.0;  J(1, 1) = 0.0;
-  Mat2 phiS = rc * (J * sc);
+  Mat2 phiSin = inv_chol_C * (J * L_sigma_M);
 
-  double skewC = skew(phiC);
+  double skewCos = skew(phiCos);
   double skewChi = skew(chi);
-  double skewS = skew(phiS);
+  double skewSin = skew(phiSin);
 
-  double Asq = skewC * skewC + skewS * skewS;
+  double Asq = skewCos * skewCos + skewSin * skewSin;
   double sinsqp = Asq - skewChi*skewChi;
   double sinp = sinsqp > 0.0 ? sqrt(sinsqp) : 0.0;
-  double sskew = -(skewS * skewChi + skewC * sinp) / Asq;
-  double cskew = (skewS * sinp - skewChi * skewC) / Asq;
+  double ssin = -(skewSin * skewChi + skewCos * sinp) / Asq;
+  double ccos = (skewSin * sinp - skewChi * skewCos) / Asq;
 
-  double lamda01 = chi(0, 0) + cskew * phiC(0, 0) + sskew * phiS(0, 0);
-  double lamda02 = chi(1, 1) + cskew * phiC(1, 1);
-  double lamda12 = chi(0, 1) + cskew * phiC(0, 1) + sskew * phiS(0, 1);
+  lamda01 += chi(0, 0) + ccos * phiCos(0, 0) + ssin * phiSin(0, 0);
+  lamda02 += chi(1, 1) + ccos * phiCos(1, 1);
+  lamda12 += chi(0, 1) + ccos * phiCos(0, 1) + ssin * phiSin(0, 1);
 
   if (store_lamda_corrections) {
     double m0, m1, m2;
@@ -828,25 +861,52 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     S(row, 0) = sv.x; S(row, 1) = sv.y; S(row, 2) = sv.z;
   }
 
-  SymMat3 rr = mmt(R);
+  SymMat3 metric_C = mmt(R);
 
   int idx = ilist_to_idx[ilist];
   const double *Lp = L_entries[idx].data;
   const double *Lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
-  SymMat3 L_mat = SymMat3::load(Lp);
-  DChol3 lm_chol = DChol3::load(Lmp);
+  SymMat3 gram_target = SymMat3::load(Lp);
+  LDLT3 M_ldlt = LDLT3::load(Lmp);
 
-  Mat3 chi = mat_dot(R, S);
-  UTMat3 rc = inv_chol_upper(rr);
-  ut_mul(rc, chi);
-  u_mul(rc, chi);
+  Mat3 lamda;
+  lamda(0,0) = 0.; lamda(0,1) = 0.; lamda(0,2) = 0.;
+  lamda(1,0) = 0.; lamda(1,1) = 0.; lamda(1,2) = 0.;
+  lamda(2,0) = 0.; lamda(2,1) = 0.; lamda(2,2) = 0.;
+  UTMat3 inv_chol_C = inv_chol_upper(metric_C);
+  Mat3 gram_cross = cross_gram(R, S);
+  Mat3 chi = gram_cross;
+  ut_mul(inv_chol_C, chi);
+  u_mul(inv_chol_C, chi);
   
-  // for full rank R^T R, L = sigma!
-  lslt_mul(L_mat, lm_chol);
-  LTMat3 sc = mul_dl(chol_lower(L_mat), lm_chol);
-  mul_ltdl(chi, lm_chol);
+  const double d_thresh = 3 * 9;
+  while ((chi(0,0)*chi(0,0) + chi(1,1)*chi(1,1) + chi(2,2)*chi(2,2)) > d_thresh) {
+    Mat3 ltmp = gram_cross;
+    trimmed_solve(ltmp, metric_C, 1);
+    lt_sandwich_fwd(ltmp, M_ldlt);
+    symmetrize(ltmp);
+    lamda += ltmp;
 
-  Mat3 lamda = cayley_converge(rc, sc, chi, max_iter, tolerance, &niter);
+    inv_lt_solve(M_ldlt, ltmp);
+    S -= mat_mul(ltmp, R);
+   
+    gram_cross = cross_gram(R, S);
+    chi = gram_cross;
+    ut_mul(inv_chol_C, chi);
+    u_mul(inv_chol_C, chi);
+  }
+  
+  // Mass-weight gram_target in-place: gram_target <- M gram_target M.
+  // This must precede Cholesky decomposition so that chol_lower
+  // produces a lower-triangular factor of the mass-weighted matrix.
+  inv_lt_sandwich(gram_target, M_ldlt);
+  // L_σ L_σ^T = M gram_target M, then right-multiply by M^{-1} factors
+  // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
+  // lower-triangular and is the factor used in the Cayley iteration.
+  LTMat3 L_sigma_M = mul_dl(chol_lower(gram_target), M_ldlt);
+  lt_sandwich_fwd(chi, M_ldlt);
+
+  lamda += cayley_converge(inv_chol_C, L_sigma_M, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
     iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;

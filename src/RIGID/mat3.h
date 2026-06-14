@@ -30,15 +30,6 @@ struct SymMat3 {
     p[0] = d00; p[1] = d01; p[2] = d02;
     p[3] = d11; p[4] = d12; p[5] = d22;
   }
-
-  SymMat3 operator+(const SymMat3 &B) const {
-    return {d00 + B.d00, d01 + B.d01, d02 + B.d02,
-            d11 + B.d11, d12 + B.d12, d22 + B.d22};
-  }
-  SymMat3 operator-(const SymMat3 &B) const {
-    return {d00 - B.d00, d01 - B.d01, d02 - B.d02,
-            d11 - B.d11, d12 - B.d12, d22 - B.d22};
-  }
 };
 
 struct Mat3;
@@ -61,6 +52,13 @@ struct Mat3 {
     for (int i = 0; i < 3; i++)
       for (int j = 0; j < 3; j++)
         d[i][j] += B(i, j);
+    return *this;
+  }
+  
+  Mat3 &operator-=(const Mat3 &B) {
+    for (int i = 0; i < 3; i++)
+      for (int j = 0; j < 3; j++)
+        d[i][j] -= B(i, j);
     return *this;
   }
 };
@@ -140,17 +138,30 @@ inline void u_mul(const UTMat3 &U, Mat3 &M)
   }
 }
 
-struct DChol3 {
-  double d0, d1, d2, m01, m02, m12;
+struct LDLT3 {
+  double d0, d1, d2, l10, l20, l21;
 
-  static DChol3 load(const double *p) {
+  static LDLT3 load(const double *p) {
     return {p[0], p[1], p[2], p[3], p[4], p[5]};
   }
   void store(double *p) const {
     p[0] = d0; p[1] = d1; p[2] = d2;
-    p[3] = m01; p[4] = m02; p[5] = m12;
+    p[3] = l10; p[4] = l20; p[5] = l21;
   }
 };
+
+inline void symmetrize(Mat3 &M) // (M + M^T)/2
+{
+  M(0,1) += M(1,0);
+  M(0,1) *= 0.5;
+  M(0,2) += M(2,0);
+  M(0,2) *= 0.5;
+  M(1,2) += M(2,1);
+  M(1,2) *= 0.5;
+  M(1,0) = M(0,1);
+  M(2,0) = M(0,2);
+  M(2,1) = M(1,2);
+}
 
 inline SymMat3 mtm(const Mat3 &M) // M^T M
 {
@@ -172,7 +183,7 @@ inline SymMat3 mmt(const Mat3 &M) // M M^T
            M(2, 0) * M(2, 0) + M(2, 1) * M(2, 1) + M(2, 2) * M(2, 2)};
 }
 
-inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R S^T
+inline Mat3 cross_gram(const Mat3 &R, const Mat3 &S) // R S^T
 {
   Mat3 QR;
   for (int i = 0; i < 3; i++)
@@ -181,27 +192,34 @@ inline Mat3 mat_dot(const Mat3 &R, const Mat3 &S) // R S^T
   return QR;
 }
 
-inline void lslt_mul(SymMat3 &S, const DChol3 &L)
+inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S) // R S
 {
-  // S <- S L^T
-  S.d02 += S.d01 * L.m12 + S.d00 * L.m02;
-  S.d12 += S.d11 * L.m12 + S.d01 * L.m02;
-  S.d22 += S.d12 * L.m12 + S.d02 * L.m02;
-  S.d01 += S.d00 * L.m01; 
-  S.d11 += S.d01 * L.m01; 
-  S.d12 += S.d02 * L.m01; 
-  // <- L S L^T
-  S.d22 += L.m02 * S.d02 + L.m12 * S.d12;
-  S.d12 += L.m01 * S.d02;
-  S.d11 += L.m01 * S.d01;
+  Mat3 RS;
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 3; j++)
+      RS(i, j) = R(i, 0) * S(0, j) + R(i, 1) * S(1, j) + R(i, 2) * S(2, j);
+  return RS;
 }
 
-inline LTMat3 mul_dl(const LTMat3 &L, const DChol3 &DL)
+inline void inv_lt_sandwich(SymMat3 &S, const LDLT3 &L)
+{
+  S.d02 += S.d01 * L.l21 + S.d00 * L.l20;
+  S.d12 += S.d11 * L.l21 + S.d01 * L.l20;
+  S.d22 += S.d12 * L.l21 + S.d02 * L.l20;
+  S.d01 += S.d00 * L.l10; 
+  S.d11 += S.d01 * L.l10; 
+  S.d12 += S.d02 * L.l10; 
+  S.d22 += L.l20 * S.d02 + L.l21 * S.d12;
+  S.d12 += L.l10 * S.d02;
+  S.d11 += L.l10 * S.d01;
+}
+
+inline LTMat3 mul_dl(const LTMat3 &L, const LDLT3 &DL)
 {
   LTMat3 M = L;
-  M.l10 += DL.m01 * M.l11;
-  M.l20 += DL.m01 * M.l21 + DL.m02 * M.l22;
-  M.l21 += DL.m12 * M.l22;
+  M.l10 += DL.l10 * M.l11;
+  M.l20 += DL.l10 * M.l21 + DL.l20 * M.l22;
+  M.l21 += DL.l21 * M.l22;
   M.l22 *= DL.d2;
   M.l11 *= DL.d1;
   M.l21 *= DL.d1;
@@ -211,35 +229,67 @@ inline LTMat3 mul_dl(const LTMat3 &L, const DChol3 &DL)
   return M;
 }
 
-inline void mul_ltdl(Mat3 &M, const DChol3 &L)
+inline void lt_sandwich_left(Mat3 &M, const LDLT3 &L)
 {
-  // M <- M L^T <- M L^T D
   for (int i = 0; i < 3; i++) {
-    M(i, 2) += M(i, 1) * L.m12 + M(i, 0) * L.m02;
+    M(i, 1) += L.l10 * M(i, 0);
+    M(i, 2) += L.l21 * M(i, 1) + L.l20 * M(i, 0);
+  }
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) *= L.d0;
+    M(i, 1) *= L.d1;
     M(i, 2) *= L.d2;
-    M(i, 1) += M(i, 0) * L.m01; 
+  }
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) += L.l10 * M(i, 1) + L.l20 * M(i, 2);
+    M(i, 1) += L.l21 * M(i, 2);
+  }
+}
+
+inline void lt_sandwich_fwd(Mat3 &M, const LDLT3 &L)
+{
+  for (int i = 0; i < 3; i++) {
+    M(i, 2) += M(i, 1) * L.l21 + M(i, 0) * L.l20;
+    M(i, 2) *= L.d2;
+    M(i, 1) += M(i, 0) * L.l10; 
     M(i, 1) *= L.d1;
     M(i, 0) *= L.d0;
   }
-  // <- M L^T D L
   for (int i = 0; i < 3; i++) {
-    M(i, 0) += L.m01 * M(i, 1) + L.m02 * M(i, 2);
-    M(i, 1) += L.m12 * M(i, 2);
+    M(i, 0) += L.l10 * M(i, 1) + L.l20 * M(i, 2);
+    M(i, 1) += L.l21 * M(i, 2);
   }
 }
 
-inline DChol3 inv_dchol(const SymMat3 &A)
+inline void inv_lt_solve(const LDLT3 &L, Mat3 &M)
 {
-  double m01 = A.d01 / A.d00;
-  double m12 = (A.d12 - m01 * A.d02) / (A.d11 - m01 * A.d01);
-  double m02 = A.d02 / A.d00;
-  double d1 = A.d11 - m01 * A.d01;
-  double d2 = A.d22 - m02 * A.d02 - m12 * (A.d12 - m01 * A.d02);
-  m02 -= m01 * m12; // U^{-1}_{02} = u01*u12 - u02
-  return {1.0/A.d00, 1.0/d1, 1.0/d2, -m01, -m02, -m12};
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) -= L.l10 * M(i, 1) + L.l20 * M(i, 2);
+    M(i, 1) -= L.l21 * M(i, 2);
+  }
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) /= L.d0;
+    M(i, 1) /= L.d1;
+    M(i, 2) /= L.d2;
+  }
+  for (int i = 0; i < 3; i++) {
+    M(i, 1) -= L.l10 * M(i, 0);
+    M(i, 2) -= L.l21 * M(i, 1) + L.l20 * M(i, 0);
+  }
 }
 
-inline DChol3 dchol_pivot_one(const SymMat3 &A, int p)
+inline LDLT3 inv_ldlt(const SymMat3 &A)
+{
+  double l10 = A.d01 / A.d00;
+  double l21 = (A.d12 - l10 * A.d02) / (A.d11 - l10 * A.d01);
+  double l20 = A.d02 / A.d00;
+  double d1 = A.d11 - l10 * A.d01;
+  double d2 = A.d22 - l20 * A.d02 - l21 * (A.d12 - l10 * A.d02);
+  l20 -= l10 * l21;
+  return {1.0/A.d00, 1.0/d1, 1.0/d2, -l10, -l20, -l21};
+}
+
+inline LDLT3 ldlt_pivot_one(const SymMat3 &A, int p)
 {
   // Semi-pivoted LDL^T: swap row/column p to position 2 only.
   // This ensures the first two columns always correspond to the
@@ -272,7 +322,14 @@ inline DChol3 dchol_pivot_one(const SymMat3 &A, int p)
   return {d0, d1, d2, m01, m02, m12};
 }
 
-inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
+// Fully-pivoted LDL^T factorization of 3x3 symmetric matrix A.
+// Returns P A P^T = L D L^T in compact LDLT3 form, where:
+//   - D = diag(d0, d1, d2) is the diagonal
+//   - L is unit lower-triangular with sub-diagonal entries m01, m02, m12
+//   - P is the row/column permutation recorded in perm[]
+// Pivoting selects the largest |diag| at each elimination step for stability.
+// Negative d2 is clamped to zero (positive semi-definite projection).
+inline LDLT3 ldlt_pivot3(const SymMat3 &A, int perm[3])
 {
   perm[0] = 0; perm[1] = 1; perm[2] = 2;
 
@@ -280,6 +337,7 @@ inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
   double a11 = A.d11, a12 = A.d12;
   double a22 = A.d22;
 
+  // Pivot 1: swap largest |diag| to position 0
   {
     double alpha = std::fabs(a00), beta = std::fabs(a11), gamma = std::fabs(a22);
     if (beta > alpha && beta >= gamma) {
@@ -293,6 +351,7 @@ inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
     }
   }
 
+  // Eliminate column 0: compute d0, multipliers m01, m02, and Schur complement
   double d0 = a00;
   double m01 = a01 / d0;
   double m02 = a02 / d0;
@@ -301,18 +360,76 @@ inline DChol3 dchol_pivot(const SymMat3 &A, int perm[3])
   double c12 = a12 - m01 * a02;
   double c22 = a22 - m02 * a02;
 
+  // Pivot 2: swap larger |diag| of 2x2 Schur complement to position 1
   if (std::fabs(c22) > std::fabs(c11)) {
     int t = perm[1]; perm[1] = perm[2]; perm[2] = t;
     double tmp = c11; c11 = c22; c22 = tmp;
     tmp = m01; m01 = m02; m02 = tmp;
   }
 
+  // Eliminate column 1: complete the factorization
   double d1 = c11;
   double m12 = c12 / d1;
   double d2 = c22 - m12 * c12;
-  if (d2 < 0.0) d2 = 0.0;
+  if (d2 < 0.0) d2 = 0.0; // clamp for positive semi-definiteness
 
   return {d0, d1, d2, m01, m02, m12};
+}
+
+// Compute M <- A^{-1} M (or trimmed pseudo-inverse) for symmetric A.
+// ntrim: 0 = full inverse, 1 = drop smallest |diag| direction,
+//        2 = drop two smallest |diag| directions.
+// Internally performs pivoted LDL^T, so diagonals are |d0|>=|d1|>=|d2|.
+inline void trimmed_solve(Mat3 &M, const SymMat3 &A, int ntrim = 0)
+{
+  int perm[3];
+  LDLT3 DL = ldlt_pivot3(A, perm);
+
+  double tmp_row[3];
+  int p[3] = {perm[0], perm[1], perm[2]};
+  for (int i = 0; i < 3; i++) {
+    while (p[i] != i) {
+      int j = p[i];
+      for (int k = 0; k < 3; k++) {
+        tmp_row[k] = M(i, k);
+        M(i, k) = M(j, k);
+        M(j, k) = tmp_row[k];
+      }
+      p[i] = p[j]; p[j] = j;
+    }
+  }
+
+  for (int j = 0; j < 3; j++) {
+    M(1, j) -= DL.l10 * M(0, j);
+    M(2, j) -= DL.l20 * M(0, j) + DL.l21 * M(1, j);
+  }
+
+  int skip = (ntrim == 1 || ntrim == 2) ? ntrim : 0;
+
+  for (int j = 0; j < 3; j++) {
+    M(0, j) = M(0, j) / DL.d0;
+    M(1, j) = ((skip == 2) ? 0.6 : 1.0) * M(1, j) / DL.d1;
+    M(2, j) = ((skip >= 1) ? 0.05 : 1.0) * M(2, j) / DL.d2;
+  }
+
+  for (int j = 0; j < 3; j++) {
+    M(0, j) -= DL.l10 * M(1, j) + DL.l20 * M(2, j);
+    M(1, j) -= DL.l21 * M(2, j);
+  }
+
+  int inv[3] = {0, 1, 2};
+  for (int i = 0; i < 3; i++) inv[perm[i]] = i;
+  for (int i = 0; i < 3; i++) {
+    while (inv[i] != i) {
+      int j = inv[i];
+      for (int k = 0; k < 3; k++) {
+        tmp_row[k] = M(i, k);
+        M(i, k) = M(j, k);
+        M(j, k) = tmp_row[k];
+      }
+      inv[i] = inv[j]; inv[j] = j;
+    }
+  }
 }
 
 inline LTMat3 chol_lower(const SymMat3 &A)
@@ -357,10 +474,6 @@ inline void skew(const Mat3 &A, double out[3])
   out[0] = A(2, 1) - A(1, 2);
   out[1] = A(0, 2) - A(2, 0);
   out[2] = A(1, 0) - A(0, 1);
-}
-
-inline double dot3(const double a[3], const double b[3]) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 inline double normsq(const double v[3]) {
@@ -482,21 +595,6 @@ inline Mat43 dihedral_L_lambda(const Mat3 &lam) {
   L(3,0) = L(3,1) = 0.0;  L(3,2) =  1.0;
   L *= lam;
   return L;
-}
-
-inline void chol_frame3(const double *L, double *R)
-{
-  double b1 = sqrt(L[0]);
-  double r10 = L[1] / b1;
-  double b2sq = L[3] - r10 * r10;
-  double b2 = sqrt(b2sq);
-  double r20 = L[2] / b1;
-  double r21 = (L[4] - r10 * r20) / b2;
-  double b3sq = L[5] - r20 * r20 - r21 * r21;
-  double b3 = sqrt(b3sq);
-  R[0] = b1;  R[1] = 0.0; R[2] = 0.0;
-  R[3] = r10; R[4] = b2;  R[5] = 0.0;
-  R[6] = r20; R[7] = r21; R[8] = b3;
 }
 
 }

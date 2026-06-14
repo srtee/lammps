@@ -95,13 +95,6 @@ inline SymMat2 sym_dot(const Vec3 &r1, const Vec3 &r2)
   return {dot(r1, r1), dot(r1, r2), dot(r2, r2)};
 }
 
-inline SymMat2 mtm(const Mat2 &M)
-{
-  return {M(0, 0) * M(0, 0) + M(1, 0) * M(1, 0),
-	  M(0, 0) * M(0, 1) + M(1, 0) * M(1, 1),
-	  M(0, 1) * M(0, 1) + M(1, 1) * M(1, 1)};
-}
-
 inline SymMat2 mmt(const Mat2 &M)
 {
   return {M(0, 0) * M(0, 0) + M(0, 1) * M(0, 1),
@@ -147,78 +140,42 @@ inline LTMat2 chol_lower(const SymMat2 &A)
   return {l00, l10, l11};
 }
 
-struct DChol2 {
-  double d0, d1, m01;
+struct LDLT2 {
+  double d0, d1, l10;
 };
 
-inline DChol2 inv_dchol(const SymMat2 &A)
+inline LDLT2 inv_ldlt(const SymMat2 &A)
 {
-  double m01 = A.d01 / A.d00;
-  double d1 = A.d11 - m01 * A.d01;
-  return {1/A.d00, 1/d1, -m01};
+  double l10 = A.d01 / A.d00;
+  double d1 = A.d11 - l10 * A.d01;
+  return {1/A.d00, 1/d1, -l10};
 }
 
-inline DChol2 dchol_pivot(const SymMat2 &A, int perm[2])
+inline void inv_lt_sandwich(SymMat2 &S, const LDLT2 &L)
 {
-  perm[0] = 0; perm[1] = 1;
-  double d0, d1, m01;
-  if (std::fabs(A.d00) >= std::fabs(A.d11)) {
-    d0 = A.d00;
-    m01 = A.d01 / d0;
-    d1 = A.d11 - m01 * A.d01;
-  } else {
-    perm[0] = 1; perm[1] = 0;
-    d0 = A.d11;
-    m01 = A.d01 / d0;
-    d1 = A.d00 - m01 * A.d01;
-  }
-  return {d0, d1, m01};
+  S.d11 += S.d01 * L.l10;
+  S.d01 += S.d00 * L.l10;
+  S.d11 += S.d01 * L.l10;
 }
 
-inline void lslt_mul(SymMat2 &S, const DChol2 &L)
-{
-  // S <- S * L^T
-  S.d11 += S.d01 * L.m01;
-  S.d01 += S.d00 * L.m01;
-  // <- L * S * L^T
-  S.d11 += S.d01 * L.m01;
-}
-
-inline LTMat2 mul_dl(const LTMat2 &A, const DChol2 &L)
+inline LTMat2 mul_dl(const LTMat2 &A, const LDLT2 &L)
 {
   double l00 = A.l00 * L.d0;
   double l11 = A.l11 * L.d1;
-  double l10 = A.l10 * L.d0 + l11 * L.m01;
+  double l10 = A.l10 * L.d0 + l11 * L.l10;
   return {l00, l10, l11};
 }
 
-
-inline LTMat2 operator*(const LTMat2 &A, const LTMat2 &B)
+inline void lt_sandwich_fwd(Mat2 &M, const LDLT2 &L)
 {
-  return {A.l00 * B.l00,
-          A.l10 * B.l00 + A.l11 * B.l10,
-          A.l11 * B.l11};
-}
-
-inline void mul_ltdl(Mat2 &M, const DChol2 &L)
-{
-  M(0, 1) += M(0, 0) * L.m01;
-  M(1, 1) += M(1, 0) * L.m01;
+  M(0, 1) += M(0, 0) * L.l10;
+  M(1, 1) += M(1, 0) * L.l10;
   M(0, 0) *= L.d0;
   M(1, 0) *= L.d0;
   M(0, 1) *= L.d1;
   M(1, 1) *= L.d1;
-  M(0, 0) += M(0, 1) * L.m01;
-  M(1, 0) += M(1, 1) * L.m01;
-}
-
-inline void chol_frame2(const double *L, double *R)
-{
-  double b1 = sqrt(L[0]);
-  double r10 = L[1] / b1;
-  double b2 = sqrt(L[2] - r10 * r10);
-  R[0] = b1;  R[1] = 0.0;
-  R[2] = r10; R[3] = b2;
+  M(0, 0) += M(0, 1) * L.l10;
+  M(1, 0) += M(1, 1) * L.l10;
 }
 
 }
