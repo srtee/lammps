@@ -79,7 +79,10 @@ int FixRigs::lookup_or_compute_angle(int ilist)
   double invmass0 = get_inv_mass(i0);
   double invmass01 = invmass0 + get_inv_mass(i1);
   double invmass02 = invmass0 + get_inv_mass(i2);
-  LDLT2 dc = inv_ldlt(SymMat2{invmass01, invmass0, invmass02});
+  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
+  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
+  // yielding a MASS matrix (not an inverse mass matrix).
+  LTDL2 dc = invert_to_ltdl(SymMat2{invmass01, invmass0, invmass02});
 
   if (rmass) {
     char key[128];
@@ -88,19 +91,19 @@ int FixRigs::lookup_or_compute_angle(int ilist)
     auto it = cache_key_to_idx.find(skey);
     int idx;
     if (it == cache_key_to_idx.end()) {
-      idx = L_entries.size();
-      L_entries.emplace_back();
+      idx = Lsq_cached.size();
+      Lsq_cached.emplace_back();
       double bond1 = bond_distance[bt0];
       double bond2 = bond_distance[bt1];
-      L_entries[idx].data[0] = bond1 * bond1;
-      L_entries[idx].data[1] = rigs_angle[at];
-      L_entries[idx].data[2] = bond2 * bond2;
+      Lsq_cached[idx].data[0] = bond1 * bond1;
+      Lsq_cached[idx].data[1] = rigs_angle[at];
+      Lsq_cached[idx].data[2] = bond2 * bond2;
       cache_key_to_idx[skey] = idx;
     } else {
       idx = it->second;
     }
 
-    double *lm = rigs_lm_atom[m];
+    double *lm = reduced_rmass_ltdl[m];
     lm[0] = dc.d0;
     lm[1] = dc.d1;
     lm[2] = dc.l10;
@@ -114,17 +117,17 @@ int FixRigs::lookup_or_compute_angle(int ilist)
   auto it = cache_key_to_idx.find(skey);
   if (it != cache_key_to_idx.end()) return it->second;
 
-  int idx = L_entries.size();
-  L_entries.emplace_back();
-  lm_entries.emplace_back();
+  int idx = Lsq_cached.size();
+  Lsq_cached.emplace_back();
+  reduced_mass_ltdl_cached.emplace_back();
   double bond1 = bond_distance[bt0];
   double bond2 = bond_distance[bt1];
-  L_entries[idx].data[0] = bond1 * bond1;
-  L_entries[idx].data[1] = rigs_angle[at];
-  L_entries[idx].data[2] = bond2 * bond2;
-  lm_entries[idx].data[0] = dc.d0;
-  lm_entries[idx].data[1] = dc.d1;
-  lm_entries[idx].data[2] = dc.l10;
+  Lsq_cached[idx].data[0] = bond1 * bond1;
+  Lsq_cached[idx].data[1] = rigs_angle[at];
+  Lsq_cached[idx].data[2] = bond2 * bond2;
+  reduced_mass_ltdl_cached[idx].data[0] = dc.d0;
+  reduced_mass_ltdl_cached[idx].data[1] = dc.d1;
+  reduced_mass_ltdl_cached[idx].data[2] = dc.l10;
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -148,7 +151,10 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   double mu01 = mu0 + get_inv_mass(i1);
   double mu02 = mu0 + get_inv_mass(i2);
   double mu03 = mu0 + get_inv_mass(i3);
-  LDLT3 dc = inv_ldlt(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
+  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
+  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
+  // yielding a MASS matrix (not an inverse mass matrix).
+  LTDL3 dc = invert_to_ltdl(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
 
   double bond0 = bond_distance[bt0];
   double bond1 = bond_distance[bt1];
@@ -164,10 +170,10 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   double u12 = (angle12 - u01 * u02) / dd1;
   double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
   Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
-  rmul_ldlt(rt_LM, dc);
+  rmul_ltdl(rt_LM, dc);
   SymMat3 MLM = mtm(rt_LM);
   int perm_mlm[3];
-  LDLT3 dc_MLM = ldlt_pivot3(MLM, perm_mlm);
+  LTDL3 dc_MLM = ltdl_pivot3(MLM, perm_mlm);
   double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
   constexpr double demote_threshold = 1e-3;
 
@@ -195,24 +201,24 @@ int FixRigs::lookup_or_compute_improper(int ilist)
       auto it = cache_key_to_idx.find(skey);
       int idx;
       if (it == cache_key_to_idx.end()) {
-        idx = L_entries.size();
-        L_entries.emplace_back();
-        L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
-        L_entries[idx].data[1] = rigs_angle[tri_at];
-        L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
+        idx = Lsq_cached.size();
+        Lsq_cached.emplace_back();
+        Lsq_cached[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
+        Lsq_cached[idx].data[1] = rigs_angle[tri_at];
+        Lsq_cached[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
         SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                         bond1 * bond1, angle12, bond2 * bond2};
-        LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
-        L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-        L_entries[idx].data[4] = dcL.l21;
-        L_entries[idx].data[5] = sqrt(dcL.d2);
+        LTDL3 dcL = ltdl_pivot_one(Lref, pos_smallest_d - 1);
+        Lsq_cached[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+        Lsq_cached[idx].data[4] = dcL.l21;
+        Lsq_cached[idx].data[5] = sqrt(dcL.d2);
         cache_key_to_idx[skey] = idx;
       } else {
         idx = it->second;
       }
 
-      LDLT2 dc3 = inv_ldlt(SymMat2{mu0 + im1, mu0, mu0 + im2});
-      double *lm = rigs_lm_atom[m];
+      LTDL2 dc3 = invert_to_ltdl(SymMat2{mu0 + im1, mu0, mu0 + im2});  // demoted-path reduced_mass_ltdl
+      double *lm = reduced_rmass_ltdl[m];
       lm[0] = dc3.d0;
       lm[1] = dc3.d1;
       lm[2] = dc3.l10;
@@ -232,24 +238,24 @@ int FixRigs::lookup_or_compute_improper(int ilist)
       return it->second;
     }
 
-    int idx = L_entries.size();
-    L_entries.emplace_back();
-    lm_entries.emplace_back();
-    L_entries[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
-    L_entries[idx].data[1] = rigs_angle[tri_at];
-    L_entries[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
+    int idx = Lsq_cached.size();
+    Lsq_cached.emplace_back();
+    reduced_mass_ltdl_cached.emplace_back();
+    Lsq_cached[idx].data[0] = bond_distance[tri_bt0] * bond_distance[tri_bt0];
+    Lsq_cached[idx].data[1] = rigs_angle[tri_at];
+    Lsq_cached[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
 
-    LDLT2 dc3 = inv_ldlt(SymMat2{mu0 + im1, mu0, mu0 + im2});
-    lm_entries[idx].data[0] = dc3.d0;
-    lm_entries[idx].data[1] = dc3.d1;
-    lm_entries[idx].data[2] = dc3.l10;
+    LTDL2 dc3 = invert_to_ltdl(SymMat2{mu0 + im1, mu0, mu0 + im2});  // demoted-path reduced_mass_ltdl
+    reduced_mass_ltdl_cached[idx].data[0] = dc3.d0;
+    reduced_mass_ltdl_cached[idx].data[1] = dc3.d1;
+    reduced_mass_ltdl_cached[idx].data[2] = dc3.l10;
 
     SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                     bond1 * bond1, angle12, bond2 * bond2};
-    LDLT3 dcL = ldlt_pivot_one(Lref, pos_smallest_d - 1);
-    L_entries[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-    L_entries[idx].data[4] = dcL.l21;
-    L_entries[idx].data[5] = sqrt(dcL.d2);
+    LTDL3 dcL = ltdl_pivot_one(Lref, pos_smallest_d - 1);
+    Lsq_cached[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
+    Lsq_cached[idx].data[4] = dcL.l21;
+    Lsq_cached[idx].data[5] = sqrt(dcL.d2);
 
     entry_demoted_pivot.push_back(pos_smallest_d);
     cache_key_to_idx[skey] = idx;
@@ -264,20 +270,20 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     auto it = cache_key_to_idx.find(skey);
     int idx;
     if (it == cache_key_to_idx.end()) {
-      idx = L_entries.size();
-      L_entries.emplace_back();
-      L_entries[idx].data[0] = bond0 * bond0;
-      L_entries[idx].data[1] = angle01;
-      L_entries[idx].data[2] = angle02;
-      L_entries[idx].data[3] = bond1 * bond1;
-      L_entries[idx].data[4] = angle12;
-      L_entries[idx].data[5] = bond2 * bond2;
+      idx = Lsq_cached.size();
+      Lsq_cached.emplace_back();
+      Lsq_cached[idx].data[0] = bond0 * bond0;
+      Lsq_cached[idx].data[1] = angle01;
+      Lsq_cached[idx].data[2] = angle02;
+      Lsq_cached[idx].data[3] = bond1 * bond1;
+      Lsq_cached[idx].data[4] = angle12;
+      Lsq_cached[idx].data[5] = bond2 * bond2;
       cache_key_to_idx[skey] = idx;
     } else {
       idx = it->second;
     }
 
-    double *lm = rigs_lm_atom[m];
+    double *lm = reduced_rmass_ltdl[m];
     lm[0] = dc.d0;
     lm[1] = dc.d1;
     lm[2] = dc.d2;
@@ -300,16 +306,16 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     return it->second;
   }
 
-  int idx = L_entries.size();
-  L_entries.emplace_back();
-  lm_entries.emplace_back();
-  L_entries[idx].data[0] = bond0 * bond0;
-  L_entries[idx].data[1] = angle01;
-  L_entries[idx].data[2] = angle02;
-  L_entries[idx].data[3] = bond1 * bond1;
-  L_entries[idx].data[4] = angle12;
-  L_entries[idx].data[5] = bond2 * bond2;
-  dc.store(lm_entries[idx].data);
+  int idx = Lsq_cached.size();
+  Lsq_cached.emplace_back();
+  reduced_mass_ltdl_cached.emplace_back();
+  Lsq_cached[idx].data[0] = bond0 * bond0;
+  Lsq_cached[idx].data[1] = angle01;
+  Lsq_cached[idx].data[2] = angle02;
+  Lsq_cached[idx].data[3] = bond1 * bond1;
+  Lsq_cached[idx].data[4] = angle12;
+  Lsq_cached[idx].data[5] = bond2 * bond2;
+  dc.store(reduced_mass_ltdl_cached[idx].data);
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -331,7 +337,10 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
   double mu10 = get_inv_mass(i1) + mu0;
   double mu02 = mu0 + mu2;
   double mu23 = mu2 + get_inv_mass(i3);
-  LDLT3 dc = inv_ldlt(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
+  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
+  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
+  // yielding a MASS matrix (not an inverse mass matrix).
+  LTDL3 dc = invert_to_ltdl(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
 
   if (rmass) {
     char key[128];
@@ -340,23 +349,23 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
     auto it = cache_key_to_idx.find(skey);
     int idx;
     if (it == cache_key_to_idx.end()) {
-      idx = L_entries.size();
-      L_entries.emplace_back();
+      idx = Lsq_cached.size();
+      Lsq_cached.emplace_back();
       double bond1 = bond_distance[bt0];
       double bond2 = bond_distance[bt1];
       double bond3 = bond_distance[bt2];
-      L_entries[idx].data[0] = bond1 * bond1;
-      L_entries[idx].data[1] = bond1 * bond2;
-      L_entries[idx].data[2] = bond1 * bond3;
-      L_entries[idx].data[3] = bond2 * bond2;
-      L_entries[idx].data[4] = bond2 * bond3;
-      L_entries[idx].data[5] = bond3 * bond3;
+      Lsq_cached[idx].data[0] = bond1 * bond1;
+      Lsq_cached[idx].data[1] = bond1 * bond2;
+      Lsq_cached[idx].data[2] = bond1 * bond3;
+      Lsq_cached[idx].data[3] = bond2 * bond2;
+      Lsq_cached[idx].data[4] = bond2 * bond3;
+      Lsq_cached[idx].data[5] = bond3 * bond3;
       cache_key_to_idx[skey] = idx;
     } else {
       idx = it->second;
     }
 
-    double *lm = rigs_lm_atom[m];
+    double *lm = reduced_rmass_ltdl[m];
     dc.store(lm);
     return idx;
   }
@@ -369,19 +378,19 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
   auto it = cache_key_to_idx.find(skey);
   if (it != cache_key_to_idx.end()) return it->second;
 
-  int idx = L_entries.size();
-  L_entries.emplace_back();
-  lm_entries.emplace_back();
+  int idx = Lsq_cached.size();
+  Lsq_cached.emplace_back();
+  reduced_mass_ltdl_cached.emplace_back();
   double bond1 = bond_distance[bt0];
   double bond2 = bond_distance[bt1];
   double bond3 = bond_distance[bt2];
-  L_entries[idx].data[0] = bond1 * bond1;
-  L_entries[idx].data[1] = bond1 * bond2;
-  L_entries[idx].data[2] = bond1 * bond3;
-  L_entries[idx].data[3] = bond2 * bond2;
-  L_entries[idx].data[4] = bond2 * bond3;
-  L_entries[idx].data[5] = bond3 * bond3;
-  dc.store(lm_entries[idx].data);
+  Lsq_cached[idx].data[0] = bond1 * bond1;
+  Lsq_cached[idx].data[1] = bond1 * bond2;
+  Lsq_cached[idx].data[2] = bond1 * bond3;
+  Lsq_cached[idx].data[3] = bond2 * bond2;
+  Lsq_cached[idx].data[4] = bond2 * bond3;
+  Lsq_cached[idx].data[5] = bond3 * bond3;
+  dc.store(reduced_mass_ltdl_cached[idx].data);
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -433,9 +442,9 @@ void FixRigs::shake4demoted(int ilist)
   }
 
   int idx = ilist_to_idx[ilist];
-  double a1 = L_entries[idx].data[3];
-  double a2 = L_entries[idx].data[4];
-  double l22 = L_entries[idx].data[5];
+  double a1 = Lsq_cached[idx].data[3];
+  double a2 = Lsq_cached[idx].data[4];
+  double l22 = Lsq_cached[idx].data[5];
 
   double mass0, mass1, mass2, mass3;
 
@@ -522,44 +531,21 @@ void FixRigs::shake4demoted(int ilist)
   }
 
   vcorr *= mass3 / M012;
-    if (i0 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i0][k] -= vcorr[k];
-      f[i0][k] -= fcorr[k] * mass0 / M012;
-    }
-    if (i1 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i1][k] -= vcorr[k];
-      f[i1][k] -= fcorr[k] * mass1 / M012;
-    }
-    if (i2 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i2][k] -= vcorr[k];
-      f[i2][k] -= fcorr[k] * mass2 / M012;
-    }
-//  Vec3 acorr = fcorr / M012;
-//  vcorr *= mass3 / M012;
-//
-//  if (i0 < nlocal) {
-//    f[i0][0] -= acorr.x * mass0; f[i0][1] -= acorr.y * mass0;
-//    f[i0][2] -= acorr.z * mass0;
-//    v[i0][0] -= vcorr.x; v[i0][1] -= vcorr.y; v[i0][2] -= vcorr.z;
-//  }
-//  if (i1 < nlocal) {
-//    f[i1][0] -= acorr.x * mass1; f[i1][1] -= acorr.y * mass1;
-//    f[i1][2] -= acorr.z * mass1;
-//    v[i1][0] -= vcorr.x; v[i1][1] -= vcorr.y; v[i1][2] -= vcorr.z;
-//  }
-//  if (i2 < nlocal) {
-//    f[i2][0] -= acorr.x * mass2; f[i2][1] -= acorr.y * mass2;
-//    f[i2][2] -= acorr.z * mass2;
-//    v[i2][0] -= vcorr.x; v[i2][1] -= vcorr.y; v[i2][2] -= vcorr.z;
-//  }
-
-
-
-  //redistribute_forcemom_smw(i0, i1, i2, i3, fcorr.data(), vcorr.data(), true);
-
+  if (i0 < nlocal)
+    for (k = 0; k < 3; k++) {
+    v[i0][k] -= vcorr[k];
+    f[i0][k] -= fcorr[k] * mass0 / M012;
+  }
+  if (i1 < nlocal)
+    for (k = 0; k < 3; k++) {
+    v[i1][k] -= vcorr[k];
+    f[i1][k] -= fcorr[k] * mass1 / M012;
+  }
+  if (i2 < nlocal)
+    for (k = 0; k < 3; k++) {
+    v[i2][k] -= vcorr[k];
+    f[i2][k] -= fcorr[k] * mass2 / M012;
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -585,79 +571,81 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
 {
   int m = list[ilist];
   int idx = ilist_to_idx[ilist];
-  const double *L_ptr = L_entries[idx].data;
-  const double *lm_ptr = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
+  const double *L_ptr = Lsq_cached[idx].data;
+  const double *lm_ptr = rmass ? reduced_rmass_ltdl[m] : reduced_mass_ltdl_cached[idx].data;
   int atomlist[3];
   double v[6];
 
   double lamda01, lamda02, lamda12;
   lamda01 = lamda02 = lamda12 = 0.0;
   
-  SymMat2 gram_target = {L_ptr[0], L_ptr[1], L_ptr[2]};
-  LDLT2 M_ldlt = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
+  SymMat2 Lsq = {L_ptr[0], L_ptr[1], L_ptr[2]};
+  LTDL2 reduced_mass_ltdl = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
 
   Vec3 r01 = Vec3(x[i0]) - x[i1];
   Vec3 r02 = Vec3(x[i0]) - x[i2];
-  SymMat2 metric_C = sym_dot(r01, r02);
-  UTMat2 inv_chol_C = inv_chol_upper(metric_C);
+  SymMat2 rr = sym_dot(r01, r02);
+  UTMat2 rnorm = inv_chol_upper(rr);
   
   Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
-  Mat2 chi;
-  chi(0, 0) = dot(r01, s01);
-  chi(0, 1) = dot(r01, s02);
-  chi(1, 0) = dot(r02, s01);
-  chi(1, 1) = dot(r02, s02);
+  // Contravariant projection (coproj): χ = G⁻¹ Rᵀ S M
+  // Entries: (G⁻¹)_{ik}(r_k · s_j), the least-squares coefficients of S in the R-basis.
+  Mat2 rPs;
+  rPs(0, 0) = dot(r01, s01);
+  rPs(0, 1) = dot(r01, s02);
+  rPs(1, 0) = dot(r02, s01);
+  rPs(1, 1) = dot(r02, s02);
 
-  ut_mul(inv_chol_C, chi);
-  u_mul(inv_chol_C, chi);
+  ut_mul(rnorm, rPs);
+  u_mul(rnorm, rPs);
  
-  const double d_thresh = 2.0;
-  while (chi(0,0)*chi(0,0) > d_thresh ||  chi(1,1)*chi(1,1)> d_thresh) {
-    Mat2 ltmp = chi;
-    ltmp(0,1) = 0.5 * (chi(0,1) + chi(1,0));
-    ltmp(1,0) = ltmp(0,1);
-    s01 = s01 - ltmp(0,0) * r01 - ltmp(0,1) * r02;
-    s02 = s02 - ltmp(0,1) * r01 - ltmp(1,1) * r02;
-   
-    rmul_ldlt(ltmp, M_ldlt);
-    lamda01 += ltmp(0,0);
-    lamda02 += ltmp(1,1);
-    lamda12 += ltmp(0,1);
+  const double d_thresh = 200000.0;
+  while (rPs(0,0)*rPs(0,0) > d_thresh ||  rPs(1,1)*rPs(1,1)> d_thresh) {
+    Mat2 rr_chi_sym = rPs;
+    rr_chi_sym(0,1) = 0.5 * (rPs(0,1) + rPs(1,0));
+    rr_chi_sym(1,0) = rr_chi_sym(0,1);
+    s01 = s01 - rr_chi_sym(0,0) * r01 - rr_chi_sym(0,1) * r02;
+    s02 = s02 - rr_chi_sym(0,1) * r01 - rr_chi_sym(1,1) * r02;
+    
+    rmul_ltdl(rr_chi_sym, reduced_mass_ltdl);
+    lamda01 += rr_chi_sym(0,0);
+    lamda02 += rr_chi_sym(1,1);
+    lamda12 += rr_chi_sym(0,1);
 
-    chi(0, 0) = dot(r01, s01);
-    chi(0, 1) = dot(r01, s02);
-    chi(1, 0) = dot(r02, s01);
-    chi(1, 1) = dot(r02, s02);
+    rPs(0, 0) = dot(r01, s01);
+    rPs(0, 1) = dot(r01, s02);
+    rPs(1, 0) = dot(r02, s01);
+    rPs(1, 1) = dot(r02, s02);
 
-    ut_mul(inv_chol_C, chi);
-    u_mul(inv_chol_C, chi);
+    ut_mul(rnorm, rPs);
+    u_mul(rnorm, rPs);
   }
+  // chi is ready:
+  Mat2 chi = rmul_ltdl(rPs, reduced_mass_ltdl);
 
   Vec3 n = cross(r01, r02);
   double nn = normsq(n);
   double p1 = dot(s01, n);
   double p2 = dot(s02, n);
-  SymMat2 gram_Sperp = {p1 * p1 / nn, p1 * p2 / nn, p2 * p2 / nn};
-  SymMat2 sigma = gram_target - gram_Sperp;
+  SymMat2 ss_perp = {p1 * p1 / nn, p1 * p2 / nn, p2 * p2 / nn};
+  SymMat2 Lres = Lsq - ss_perp;
 
-  // Mass-weight sigma in-place: sigma <- M sigma M.
-  // This must precede Cholesky decomposition so that chol_lower
-  // produces a lower-triangular factor of the mass-weighted matrix.
-  inv_lt_sandwich(sigma, M_ldlt);
-  // L_σ L_σ^T = M sigma M, then right-multiply by M^{-1} factors
-  // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
-  // lower-triangular and is the factor used in the orthogonal solve.
-  LTMat2 L_sigma_M = mul_dl(chol_lower(sigma), M_ldlt);
-  rmul_ldlt(chi, M_ldlt);
+  lt_sandwich(Lres, reduced_mass_ltdl);
+  LTMat2 pre_phi = chol_to_ltl_lower(Lres);
+  //LTMat2 pre_phi = chol_lower(Lres);
+  //l_mul(pre_phi, reduced_mass_ltdl);
+  //transpose_and_rotate(pre_phi); // L L^T -> L^T L
+  // to get us phi as an LTMat:
+  LTMat2 phi = mul_dl(pre_phi, reduced_mass_ltdl);
   
-  Mat2 phiCos = inv_chol_C * L_sigma_M;
+  Mat2 phiCos = rnorm * phi;
 
   Mat2 J;
   J(0, 0) = 0.0;  J(0, 1) = -1.0;
   J(1, 0) = 1.0;  J(1, 1) = 0.0;
-  Mat2 phiSin = inv_chol_C * (J * L_sigma_M);
+  Mat2 phiSin = rnorm * (J * phi);
 
   double skewCos = skew(phiCos);
   double skewChi = skew(chi);
@@ -787,52 +775,61 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     S(row, 0) = sv.x; S(row, 1) = sv.y; S(row, 2) = sv.z;
   }
 
-  SymMat3 metric_C = mmt(R);
+  SymMat3 rr = mmt(R);
 
   int idx = ilist_to_idx[ilist];
-  const double *Lp = L_entries[idx].data;
-  const double *Lmp = rmass ? rigs_lm_atom[m] : lm_entries[idx].data;
-  SymMat3 gram_target = SymMat3::load(Lp);
-  LDLT3 M_ldlt = LDLT3::load(Lmp);
+  const double *Lp = Lsq_cached[idx].data;
+  const double *Lmp = rmass ? reduced_rmass_ltdl[m] : reduced_mass_ltdl_cached[idx].data;
+  SymMat3 Lsq = SymMat3::load(Lp);
+  LTDL3 reduced_mass_ltdl = LTDL3::load(Lmp);
 
   Mat3 lamda;
   lamda(0,0) = 0.; lamda(0,1) = 0.; lamda(0,2) = 0.;
   lamda(1,0) = 0.; lamda(1,1) = 0.; lamda(1,2) = 0.;
   lamda(2,0) = 0.; lamda(2,1) = 0.; lamda(2,2) = 0.;
-  UTMat3 inv_chol_C = inv_chol_upper(metric_C);
-  Mat3 gram_cross = cross_gram(R, S);
-  Mat3 chi = gram_cross;
-  ut_mul(inv_chol_C, chi);
-  u_mul(inv_chol_C, chi);
+  UTMat3 rnorm = inv_chol_upper(rr);
+  Mat3 rs = cross_gram(R, S);
+  // Contravariant projection (coproj): χ = G⁻¹ Rᵀ S M
+  Mat3 rPs = rs;
+  ut_mul(rnorm, rPs);
+  u_mul(rnorm, rPs);
   
   const double d_thresh = 3 * 9;
-  while ((chi(0,0)*chi(0,0) + chi(1,1)*chi(1,1) + chi(2,2)*chi(2,2)) > d_thresh) {
-    Mat3 ltmp = gram_cross;
-    trimmed_solve(ltmp, metric_C, 1);
-    rmul_ldlt(ltmp, M_ldlt);
+  if ((rPs(0,0)*rPs(0,0) + rPs(1,1)*rPs(1,1) + rPs(2,2)*rPs(2,2)) > d_thresh) {
+    Mat3 ltmp = rs;
+    auto piv = PivotedLTDL3::decompose(rr, 1);
+    piv.LTsolve(ltmp);
+    //auto l_c = chol_to_ltl_lower(rr);
+    //ltmp -= R;
+    piv.Lsolve(ltmp);
+    rmul_ltdl(ltmp, reduced_mass_ltdl);
     symmetrize(ltmp);
     lamda += ltmp;
 
-    inv_lt_solve(M_ldlt, ltmp);
+    inv_lt_solve(reduced_mass_ltdl, ltmp);
     S -= mat_mul(ltmp, R);
    
-    gram_cross = cross_gram(R, S);
-    chi = gram_cross;
-    ut_mul(inv_chol_C, chi);
-    u_mul(inv_chol_C, chi);
+    rs = cross_gram(R, S);
+    rPs = rs;
+    ut_mul(rnorm, rPs);
+    u_mul(rnorm, rPs);
   }
   
-  // Mass-weight gram_target in-place: gram_target <- M gram_target M.
-  // This must precede Cholesky decomposition so that chol_lower
-  // produces a lower-triangular factor of the mass-weighted matrix.
-  inv_lt_sandwich(gram_target, M_ldlt);
-  // L_σ L_σ^T = M gram_target M, then right-multiply by M^{-1} factors
-  // to get L_sigma_M = L_σ D_M^{-1} L_M^{-1}, which remains
-  // lower-triangular and is the factor used in the Cayley iteration.
-  LTMat3 L_sigma_M = mul_dl(chol_lower(gram_target), M_ldlt);
-  rmul_ldlt(chi, M_ldlt);
+  Mat3 chi = rPs;
+  rmul_ltdl(chi, reduced_mass_ltdl);
+  
+  // lt_sandwich: rr_target_M = L_A^{-1} Lsq L_A^{-T}.
+  // The full Cholesky of Lsq would be (L_σ L_A^T) in our L^T L convention.
+  // By removing L_A^T from the right first, chol_to_ltl_lower yields just L_σ.
+  // phi = L_σ D_A^{-1} L_A^{-1} then appends the inverse-mass right factors.
+  SymMat3 rr_target_M = Lsq;
+  lt_sandwich(rr_target_M, reduced_mass_ltdl);
+  // coproj_M gets right-multiply by full mass (L_A^T D_A L_A), while phi gets
+  // right-multiply by inverse-mass upper factors (D_A^{-1} L_A^{-1}). This preserves
+  // lower-triangular structure needed by the Cayley iteration.
+  LTMat3 phi = mul_dl(chol_to_ltl_lower(rr_target_M), reduced_mass_ltdl);
 
-  lamda += cayley_converge(inv_chol_C, L_sigma_M, chi, max_iter, tolerance, &niter);
+  lamda += cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
     iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
@@ -860,151 +857,6 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     for (int i = 0; i < 3; i++) f[i2][i] += force_scale * L_lam(2, i);
   if (i3 < nlocal)
     for (int i = 0; i < 3; i++) f[i3][i] += force_scale * L_lam(3, i);
-}
-
-void FixRigs::redistribute_forcemom_linear(int ilist, int i0, int i1, int i2, int i3)
-{
-  int k;
-  int idx = ilist_to_idx[ilist];
-  double a1 = L_entries[idx].data[3];
-  double a2 = L_entries[idx].data[4];
-  double l22 = L_entries[idx].data[5];
-  double a0 = 1 - a1 - a2;
-
-  double mass0, mass1, mass2, mass3;
-
-  if (rmass) {
-    mass0 = rmass[i0]; mass1 = rmass[i1];
-    mass2 = rmass[i2]; mass3 = rmass[i3];
-  } else {
-    mass0 = mass[type[i0]]; mass1 = mass[type[i1]];
-    mass2 = mass[type[i2]]; mass3 = mass[type[i3]];
-  }
-
-  // re-project forces + momenta from i3 onto i0, i1, i2:
-
-  Vec3 fcorr = Vec3(f[i3]);
-  Vec3 pcorr = mass3 * Vec3(v[i3]);
-
-  Vec3 mxcorr = pcorr * dtv + fcorr * dtfsq;
-
-  for (k = 0; k < 3; k++)
-    xshake[i0][k] += a0 * mxcorr[k] / mass0;
-    if (i0 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i0][k] += a0 * pcorr[k] / mass0;
-      f[i0][k] += a0 * fcorr[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i1][k] += a1 * mxcorr[k] / mass1;
-    if (i1 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i1][k] += a1 * pcorr[k] / mass1;
-      f[i1][k] += a1 * fcorr[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i2][k] += a2 * mxcorr[k] / mass2;
-    if (i2 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i2][k] += a2 * pcorr[k] / mass2;
-      f[i2][k] += a2 * fcorr[k];
-    }
-  if (i3 < nlocal)
-    for (int k = 0; k < 3; k++) {
-      f[i3][k] = 0.0;
-      v[i3][k] = 0.0;
-    }
-}
-
-void FixRigs::redistribute_forcemom_smw(int i0, int i1, int i2, int i3, double* fchange, double* vchange, bool use_xshake)
-{
-  int k;
-
-  double m0, m1, m2, m3;
-
-  if (rmass) {
-    m0 = rmass[i0]; m1 = rmass[i1];
-    m2 = rmass[i2]; m3 = rmass[i3];
-  } else {
-    m0 = mass[type[i0]]; m1 = mass[type[i1]];
-    m2 = mass[type[i2]]; m3 = mass[type[i3]];
-  }
-
-  // re-project forces + momenta from i3 onto i0, i1, i2:
-
-  Vec3 v0, u1, u2, r03;
-
-  if (use_xshake) {
-    v0 = (Vec3(xshake[2]) - Vec3(xshake[1])) / m0;
-    u1 = (Vec3(xshake[2]) - Vec3(xshake[0])) / m1;
-    u2 = (Vec3(xshake[1]) - Vec3(xshake[0])) / m2;
-    r03 = Vec3(x[i3]) - Vec3(xshake[0]);
-  } else {
-    v0 = (Vec3(x[i2]) - Vec3(x[i1])) / m0;
-    u1 = (Vec3(x[i2]) - Vec3(x[i0])) / m1;
-    u2 = (Vec3(x[i1]) - Vec3(x[i0])) / m2;
-    r03 = Vec3(x[i3]) - Vec3(x[i0]);
-  }
-
-  double a = m0*normsq(v0) + m1*normsq(u1) + m2*normsq(u2);
-  double sigma0 = a/m0 - normsq(v0);
-  Vec3 v1 = u1 - v0 * (dot(v0, u1)/sigma0);
-  double sigma1 = a/m1 - dot(v1, u1);
-  Vec3 v2 = u2 - v0 * (dot(v0, u2)/sigma0) - v1 * (dot(v1, u2)/sigma1);
-  double sigma2 = a/m2 - dot(v2, u2);
-
-  double Q = m1 * m2 / (m0 + m1 + m2);
-  Vec3 lever = r03 - Q * (u1 + u2);
-
-  Vec3 ftorq = cross(Vec3(fchange), lever);
-  Vec3 vtorq = cross(Vec3(vchange), lever);
- 
-  Vec3 flamd = ftorq - v0 * (dot(v0, ftorq)/sigma0)
-	  - v1 * (dot(v1, ftorq)/sigma1) - v2 * (dot(v2, ftorq)/sigma2); 
-
-  Vec3 vlamd = vtorq - v0 * (dot(v0, vtorq)/sigma0)
-	  - v1 * (dot(v1, vtorq)/sigma1) - v2 * (dot(v2, vtorq)/sigma2); 
-  
-  Vec3 tmp0 = cross(v0, flamd);
-  Vec3 tmp1 = cross(u2, flamd);
-  Vec3 fcorr1 = Vec3(fchange) * (Q/m2) + tmp1 - tmp0;
-  tmp1 = cross(u1, flamd);
-  Vec3 fcorr2 = Vec3(fchange) * (Q/m1) + tmp1 + tmp0;
-  Vec3 fcorr0 = Vec3(fchange) - fcorr1 - fcorr2;
-  
-  tmp0 = cross(v0, vlamd);
-  tmp1 = cross(u2, vlamd);
-  Vec3 vcorr1 = Vec3(vchange) * (Q/m2) + tmp1 - tmp0;
-  tmp1 = cross(u1, vlamd);
-  Vec3 vcorr2 = Vec3(vchange) * (Q/m1) + tmp1 + tmp0;
-  Vec3 vcorr0 = Vec3(vchange) - vcorr1 - vcorr2;
-
-  for (k = 0; k < 3; k++)
-    xshake[i0][k] += (dtv * vcorr0[k] * m3 + dtfsq * fcorr0[k]) / m0;
-    if (i0 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i0][k] += vcorr0[k] * m3 / m0;
-      f[i0][k] += fcorr0[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i1][k] += (dtv * vcorr1[k] * m3 + dtfsq * fcorr1[k]) / m1;
-    if (i1 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i1][k] += vcorr1[k] * m3 / m1;
-      f[i1][k] += fcorr1[k];
-    }
-  for (k = 0; k < 3; k++)
-    xshake[i2][k] += (dtv * vcorr2[k] * m3 + dtfsq * fcorr2[k]) / m2;
-    if (i2 < nlocal)
-      for (k = 0; k < 3; k++) {
-      v[i2][k] += vcorr2[k] * m3 / m2;
-      f[i2][k] += fcorr2[k];
-    }
-  if (i3 < nlocal)
-    for (int k = 0; k < 3; k++) {
-      f[i3][k] -= fchange[k];
-      v[i3][k] -= vchange[k];
-    }
 }
 
 /* ----------------------------------------------------------------------
@@ -1103,4 +955,3 @@ void FixRigs::shake(int ilist)
     v_tally(count,atomlist,2.0,v,nlocal,1,pairlist,fpairlist,dellist);
   }
 }
-

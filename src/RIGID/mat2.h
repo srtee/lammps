@@ -134,31 +134,53 @@ inline UTMat2 inv_chol_upper(const SymMat2 &A)
 
 inline LTMat2 chol_lower(const SymMat2 &A)
 {
+  double l00 = sqrt(A.d00);
+  double l10 = A.d01 / l00;
+  double l11 = sqrt(A.d11 - l10 * l10);
+  return {l00, l10, l11};
+}
+
+// Cholesky decomposition A = L^T L (NOT L L^T).
+// Returns lower-triangular L such that L^T L = A.
+// This is the TRANSPOSE of the conventional Cholesky factor:
+// conventional Cholesky gives U^T U = A with U upper-triangular;
+// here L = U^T, so L is lower-triangular and the product is L^T L.
+inline LTMat2 chol_to_ltl_lower(const SymMat2 &A)
+{
   double l11 = sqrt(A.d11);
   double l10 = A.d01 / l11;
   double l00 = sqrt(A.d00 - l10 * l10);
   return {l00, l10, l11};
 }
 
-struct LDLT2 {
+struct LTDL2 {
   double d0, d1, l10;
 };
 
-inline LDLT2 inv_ldlt(const SymMat2 &A)
-{
+inline LTDL2 invert_to_ltdl(const SymMat2 &A)
+{ // stores {d0, d1, l10} such that
+  // A^(-1) = [[1, l10], [0, 1]][[d0, 0], [0, d1]][[1, 0], [l10, 1]]
+  // by calculating A = LDLT and then storing inverses
   double l10 = A.d01 / A.d00;
   double d1 = A.d11 - l10 * A.d01;
   return {1/A.d00, 1/d1, -l10};
 }
 
-inline void inv_lt_sandwich(SymMat2 &S, const LDLT2 &L)
+// S ← L S Lᵀ where L is the unit lower-triangular part of the LTDL struct.
+// (When called with inv_ltdl output, L stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
+inline void lt_sandwich(SymMat2 &S, const LTDL2 &L)
 {
   S.d11 += S.d01 * L.l10;
   S.d01 += S.d00 * L.l10;
   S.d11 += S.d01 * L.l10;
 }
 
-inline LTMat2 mul_dl(const LTMat2 &A, const LDLT2 &L)
+inline void l_mul(LTMat2 &A, const LTDL2 &L)
+{ // A <- L A
+  A.l10 += A.l00 * L.l10;
+}
+
+inline LTMat2 mul_dl(const LTMat2 &A, const LTDL2 &L)
 {
   double l00 = A.l00 * L.d0;
   double l11 = A.l11 * L.d1;
@@ -166,8 +188,9 @@ inline LTMat2 mul_dl(const LTMat2 &A, const LDLT2 &L)
   return {l00, l10, l11};
 }
 
-inline void rmul_ldlt(Mat2 &M, const LDLT2 &L)
+inline Mat2 rmul_ltdl(const Mat2 &inputM, const LTDL2 &L)
 {
+  Mat2 M = inputM;
   M(0, 1) += M(0, 0) * L.l10;
   M(1, 1) += M(1, 0) * L.l10;
   M(0, 0) *= L.d0;
@@ -176,8 +199,39 @@ inline void rmul_ldlt(Mat2 &M, const LDLT2 &L)
   M(1, 1) *= L.d1;
   M(0, 0) += M(0, 1) * L.l10;
   M(1, 0) += M(1, 1) * L.l10;
+  return M;
+}
+
+inline double givens_tolower(const double b, const double a, double &s, double &c)
+{ // solve for c, s such that [[s, c], [c, -s]] @ [b, a] = [0, r]
+  // equivalent to standard:  [[c, -s], [s, c]] @ [a, b] = [r, 0]
+  if (b == 0.) {
+    c = (a == 0.) ? 1. : std::copysign(1., a);
+    s = 0.;
+    return fabs(a);
+  } else if (a == 0.) {
+    c = 0.;
+    s = std::copysign(1., -b);
+    return fabs(b);
+  } else {
+    double t = b / a;
+    double u = std::copysign(sqrt(1. + t * t), a);
+    c = 1. / u;
+    s = -c * t;
+    return a * u;
+  }
+}
+
+inline void transpose_and_rotate(LTMat2 &A)
+{ // LTMat2 -> transpose to UTMat2 -> rotate to LTMat2
+  double s, c; // now "transpose":
+  double u00 = A.l00;
+  double u01 = A.l10;
+  double u11 = A.l11; // now Givens: [u01, u11] -> [0, r];
+  A.l11 = givens_tolower(u01, u11, s, c);
+  A.l00 = s * u00;
+  A.l10 = c * u00;
 }
 
 }
-
 #endif

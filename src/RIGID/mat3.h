@@ -118,6 +118,13 @@ struct LTMat3 {
     M(0, 2) = 0.0; M(1, 2) = 0.0; M(2, 2) = l22;
     return M;
   }
+  operator Mat3() const {
+    Mat3 M;
+    M(0, 0) = l00; M(1, 0) = 0.0; M(2, 0) = 0.0;
+    M(0, 1) = l10; M(1, 1) = l11; M(2, 1) = 0.0;
+    M(0, 2) = l20; M(1, 2) = l21; M(2, 2) = l22;
+    return M;
+  }
 };
 
 inline void ut_mul(const UTMat3 &U, Mat3 &M)
@@ -138,15 +145,153 @@ inline void u_mul(const UTMat3 &U, Mat3 &M)
   }
 }
 
-struct LDLT3 {
+struct LTDL3 {
   double d0, d1, d2, l10, l20, l21;
 
-  static LDLT3 load(const double *p) {
+  static LTDL3 load(const double *p) {
     return {p[0], p[1], p[2], p[3], p[4], p[5]};
   }
   void store(double *p) const {
     p[0] = d0; p[1] = d1; p[2] = d2;
     p[3] = l10; p[4] = l20; p[5] = l21;
+  }
+};
+
+struct PivotedLTDL3 {
+  double sd0, sd1, sd2;
+  double l10, l20, l21;
+  int perm[3];
+  int ntrim;
+
+  static PivotedLTDL3 decompose(const SymMat3 &A, int ntrim_ = 0) {
+    PivotedLTDL3 result;
+    result.ntrim = ntrim_;
+    result.perm[0] = 0; result.perm[1] = 1; result.perm[2] = 2;
+
+    double a00 = A.d00, a01 = A.d01, a02 = A.d02;
+    double a11 = A.d11, a12 = A.d12;
+    double a22 = A.d22;
+
+    {
+      double alpha = std::fabs(a00), beta = std::fabs(a11), gamma = std::fabs(a22);
+      if (beta > alpha && beta >= gamma) {
+        int t = result.perm[0]; result.perm[0] = result.perm[1]; result.perm[1] = t;
+        double tmp = a00; a00 = a11; a11 = tmp;
+        tmp = a02; a02 = a12; a12 = tmp;
+      } else if (gamma > alpha) {
+        int t = result.perm[0]; result.perm[0] = result.perm[2]; result.perm[2] = t;
+        double tmp = a00; a00 = a22; a22 = tmp;
+        tmp = a01; a01 = a12; a12 = tmp;
+      }
+    }
+
+    double d0 = a00;
+    double m01 = a01 / d0;
+    double m02 = a02 / d0;
+
+    double c11 = a11 - m01 * a01;
+    double c12 = a12 - m01 * a02;
+    double c22 = a22 - m02 * a02;
+
+    if (std::fabs(c22) > std::fabs(c11)) {
+      int t = result.perm[1]; result.perm[1] = result.perm[2]; result.perm[2] = t;
+      double tmp = c11; c11 = c22; c22 = tmp;
+      tmp = m01; m01 = m02; m02 = tmp;
+    }
+
+    double d1 = c11;
+    double m12 = c12 / d1;
+    double d2 = c22 - m12 * c12;
+    if (d2 < 0.0) d2 = 0.0;
+
+    int skip = (ntrim_ == 1 || ntrim_ == 2) ? ntrim_ : 0;
+    result.sd0 = 1.0 / std::sqrt(d0);
+    result.sd1 = std::sqrt(((skip == 2) ? 0.0 : 1.0) / d1);
+    result.sd2 = std::sqrt(((skip >= 1) ? 0.1 : 1.0) / d2);
+    result.l10 = m01; result.l20 = m02; result.l21 = m12;
+    return result;
+  }
+
+  void LTsolve(Mat3 &M) const {
+    double tmp_row[3];
+    int p[3] = {perm[0], perm[1], perm[2]};
+    for (int i = 0; i < 3; i++) {
+      while (p[i] != i) {
+        int j = p[i];
+        for (int k = 0; k < 3; k++) {
+          tmp_row[k] = M(i, k);
+          M(i, k) = M(j, k);
+          M(j, k) = tmp_row[k];
+        }
+        p[i] = p[j]; p[j] = j;
+      }
+    }
+
+    for (int j = 0; j < 3; j++) {
+      M(1, j) -= l10 * M(0, j);
+      M(2, j) -= l20 * M(0, j) + l21 * M(1, j);
+    }
+
+    for (int j = 0; j < 3; j++) {
+      M(0, j) *= sd0;
+      M(1, j) *= sd1;
+      M(2, j) *= sd2;
+    }
+
+    int inv[3] = {0, 1, 2};
+    for (int i = 0; i < 3; i++) inv[perm[i]] = i;
+    for (int i = 0; i < 3; i++) {
+      while (inv[i] != i) {
+        int j = inv[i];
+        for (int k = 0; k < 3; k++) {
+          tmp_row[k] = M(i, k);
+          M(i, k) = M(j, k);
+          M(j, k) = tmp_row[k];
+        }
+        inv[i] = inv[j]; inv[j] = j;
+      }
+    }
+  }
+
+  void Lsolve(Mat3 &M) const {
+    double tmp_row[3];
+    int p[3] = {perm[0], perm[1], perm[2]};
+    for (int i = 0; i < 3; i++) {
+      while (p[i] != i) {
+        int j = p[i];
+        for (int k = 0; k < 3; k++) {
+          tmp_row[k] = M(i, k);
+          M(i, k) = M(j, k);
+          M(j, k) = tmp_row[k];
+        }
+        p[i] = p[j]; p[j] = j;
+      }
+    }
+
+    for (int j = 0; j < 3; j++) {
+      M(0, j) *= sd0;
+      M(1, j) *= sd1;
+      M(2, j) *= sd2;
+    }
+
+    for (int j = 0; j < 3; j++) {
+      M(0, j) -= l10 * M(1, j) + l20 * M(2, j);
+      M(1, j) -= l21 * M(2, j);
+    }
+
+    int inv[3] = {0, 1, 2};
+    for (int i = 0; i < 3; i++) inv[perm[i]] = i;
+    for (int i = 0; i < 3; i++) {
+      while (inv[i] != i) {
+        int j = inv[i];
+        for (int k = 0; k < 3; k++) {
+          tmp_row[k] = M(i, k);
+          M(i, k) = M(j, k);
+          M(j, k) = tmp_row[k];
+        }
+        inv[i] = inv[j]; inv[j] = j;
+      }
+    }
   }
 };
 
@@ -201,7 +346,9 @@ inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S) // R S
   return RS;
 }
 
-inline void inv_lt_sandwich(SymMat3 &S, const LDLT3 &L)
+// S ← L S Lᵀ where L is the unit lower-triangular part of the LTDL struct.
+// (When called with invert_to_ltdl output, L stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
+inline void lt_sandwich(SymMat3 &S, const LTDL3 &L)
 {
   S.d02 += S.d01 * L.l21 + S.d00 * L.l20;
   S.d12 += S.d11 * L.l21 + S.d01 * L.l20;
@@ -214,7 +361,7 @@ inline void inv_lt_sandwich(SymMat3 &S, const LDLT3 &L)
   S.d11 += L.l10 * S.d01;
 }
 
-inline LTMat3 mul_dl(const LTMat3 &L, const LDLT3 &DL)
+inline LTMat3 mul_dl(const LTMat3 &L, const LTDL3 &DL)
 {
   LTMat3 M = L;
   M.l10 += DL.l10 * M.l11;
@@ -229,7 +376,7 @@ inline LTMat3 mul_dl(const LTMat3 &L, const LDLT3 &DL)
   return M;
 }
 
-inline void lt_sandwich_left(Mat3 &M, const LDLT3 &L)
+inline void lt_sandwich_left(Mat3 &M, const LTDL3 &L)
 {
   for (int i = 0; i < 3; i++) {
     M(i, 1) += L.l10 * M(i, 0);
@@ -246,7 +393,7 @@ inline void lt_sandwich_left(Mat3 &M, const LDLT3 &L)
   }
 }
 
-inline void rmul_ldlt(Mat3 &M, const LDLT3 &L)
+inline void rmul_ltdl(Mat3 &M, const LTDL3 &L)
 {
   for (int i = 0; i < 3; i++) {
     M(i, 2) += M(i, 1) * L.l21 + M(i, 0) * L.l20;
@@ -261,7 +408,7 @@ inline void rmul_ldlt(Mat3 &M, const LDLT3 &L)
   }
 }
 
-inline void inv_lt_solve(const LDLT3 &L, Mat3 &M)
+inline void inv_lt_solve(const LTDL3 &L, Mat3 &M)
 {
   for (int i = 0; i < 3; i++) {
     M(i, 0) -= L.l10 * M(i, 1) + L.l20 * M(i, 2);
@@ -278,7 +425,7 @@ inline void inv_lt_solve(const LDLT3 &L, Mat3 &M)
   }
 }
 
-inline LDLT3 inv_ldlt(const SymMat3 &A)
+inline LTDL3 invert_to_ltdl(const SymMat3 &A)
 {
   double l10 = A.d01 / A.d00;
   double l21 = (A.d12 - l10 * A.d02) / (A.d11 - l10 * A.d01);
@@ -289,7 +436,7 @@ inline LDLT3 inv_ldlt(const SymMat3 &A)
   return {1.0/A.d00, 1.0/d1, 1.0/d2, -l10, -l20, -l21};
 }
 
-inline LDLT3 ldlt_pivot_one(const SymMat3 &A, int p)
+inline LTDL3 ltdl_pivot_one(const SymMat3 &A, int p)
 {
   // Semi-pivoted LDL^T: swap row/column p to position 2 only.
   // This ensures the first two columns always correspond to the
@@ -323,13 +470,13 @@ inline LDLT3 ldlt_pivot_one(const SymMat3 &A, int p)
 }
 
 // Fully-pivoted LDL^T factorization of 3x3 symmetric matrix A.
-// Returns P A P^T = L D L^T in compact LDLT3 form, where:
+// Returns P A P^T = L D L^T in compact LTDL3 form, where:
 //   - D = diag(d0, d1, d2) is the diagonal
 //   - L is unit lower-triangular with sub-diagonal entries m01, m02, m12
 //   - P is the row/column permutation recorded in perm[]
 // Pivoting selects the largest |diag| at each elimination step for stability.
 // Negative d2 is clamped to zero (positive semi-definite projection).
-inline LDLT3 ldlt_pivot3(const SymMat3 &A, int perm[3])
+inline LTDL3 ltdl_pivot3(const SymMat3 &A, int perm[3])
 {
   perm[0] = 0; perm[1] = 1; perm[2] = 2;
 
@@ -383,7 +530,7 @@ inline LDLT3 ldlt_pivot3(const SymMat3 &A, int perm[3])
 inline void trimmed_solve(Mat3 &M, const SymMat3 &A, int ntrim = 0)
 {
   int perm[3];
-  LDLT3 DL = ldlt_pivot3(A, perm);
+  LTDL3 DL = ltdl_pivot3(A, perm);
 
   double tmp_row[3];
   int p[3] = {perm[0], perm[1], perm[2]};
@@ -432,7 +579,12 @@ inline void trimmed_solve(Mat3 &M, const SymMat3 &A, int ntrim = 0)
   }
 }
 
-inline LTMat3 chol_lower(const SymMat3 &A)
+// Cholesky decomposition A = L^T L (NOT L L^T).
+// Returns lower-triangular L such that L^T L = A.
+// This is the TRANSPOSE of the conventional Cholesky factor:
+// conventional Cholesky gives U^T U = A with U upper-triangular;
+// here L = U^T, so L is lower-triangular and the product is L^T L.
+inline LTMat3 chol_to_ltl_lower(const SymMat3 &A)
 {
   double l22 = sqrt(A.d22);
   double l21 = A.d12 / l22;

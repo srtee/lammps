@@ -55,11 +55,11 @@ class FixRigs : public FixShake {
   double *rigs_improper_distance;
   double *rigs_dihedral_distance;
 
-  double **rigs_lm_atom;
+  double **reduced_rmass_ltdl;
 
   struct ConstraintEntry { double data[6]; };
-  std::vector<ConstraintEntry> L_entries;
-  std::vector<ConstraintEntry> lm_entries;
+  std::vector<ConstraintEntry> Lsq_cached;
+  std::vector<ConstraintEntry> reduced_mass_ltdl_cached;
   std::vector<int> ilist_to_idx;
   std::vector<int> entry_demoted_pivot;
   std::unordered_map<std::string, int> cache_key_to_idx;
