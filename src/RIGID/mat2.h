@@ -112,6 +112,16 @@ inline Mat2 operator*(const SymMat2 &A, const Mat2 &B)
   return R;
 }
 
+inline Mat2 operator*(const Mat2 &A, const UTMat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = A(0, 0) * B.u00;
+  R(0, 1) = A(0, 0) * B.u01 + A(0, 1) * B.u11;
+  R(1, 0) = A(1, 0) * B.u00;
+  R(1, 1) = A(1, 0) * B.u01 + A(1, 1) * B.u11;
+  return R;
+}
+
 inline Mat2 operator*(const Mat2 &A, const SymMat2 &B)
 {
   Mat2 R;
@@ -130,6 +140,16 @@ inline double trace_of_product(const Mat2 &A, const Mat2 &B)
        + A(0, 1) * B(0, 1) + A(1, 0) * B(1, 0);
 }
 
+inline Mat2 operator*(const LTMat2 &L, const UTMat2 &U)
+{
+  Mat2 R;
+  R(0, 0) = L.l00 * U.u00;
+  R(0, 1) = L.l00 * U.u01;
+  R(1, 0) = L.l10 * U.u00;
+  R(1, 1) = L.l10 * U.u01 + L.l11 * U.u11;
+  return R;
+}
+
 inline Mat2 operator*(const LTMat2 &L, const SymMat2 &S)
 {
   Mat2 R;
@@ -140,6 +160,16 @@ inline Mat2 operator*(const LTMat2 &L, const SymMat2 &S)
   return R;
 }
 
+inline Mat2 operator*(const UTMat2 &U, const SymMat2 &S)
+{
+  Mat2 R;
+  R(0, 0) = U.u00 * S.d00 + U.u01 * S.d01;
+  R(0, 1) = U.u00 * S.d01 + U.u01 * S.d11;
+  R(1, 0) = U.u11 * S.d01;
+  R(1, 1) = U.u11 * S.d11;
+  return R;
+}
+
 inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
 {
   Mat2 R;
@@ -147,6 +177,16 @@ inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
   R(0, 1) = U.u00 * B(0, 1) + U.u01 * B(1, 1);
   R(1, 0) = U.u11 * B(1, 0);
   R(1, 1) = U.u11 * B(1, 1);
+  return R;
+}
+
+inline Mat2 operator*(const LTMat2 &L, const Mat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = L.l00 * B(0, 0);
+  R(0, 1) = L.l00 * B(0, 1);
+  R(1, 0) = L.l10 * B(0, 0) + L.l11 * B(1, 0);
+  R(1, 1) = L.l10 * B(0, 1) + L.l11 * B(1, 1);
   return R;
 }
 
@@ -194,6 +234,35 @@ inline LTMat2 chol_to_ltl_lower(const SymMat2 &A)
   double l10 = A.d01 / l11;
   double l00 = sqrt(A.d00 - l10 * l10);
   return {l00, l10, l11};
+}
+
+struct LDU2 {
+  double d0, d1, u01;
+};
+
+inline LDU2 ldu2(const SymMat2 &A)
+{ // stores {d0, d1, u01} such that
+  // A = [  1, 0]  [d0,  1]  [1, u01]
+  //     [u01, 1]  [ 0, d1]  [0,   1]
+  double u01 = A.d01 / A.d00;
+  double d1 = A.d11 - u01 * A.d01;
+  return {A.d00, d1, u01};
+}
+
+// S ← U S Uᵀ where U is the unit upper-triangular part of the LDU struct.
+inline void UsL(SymMat2 &S, const LDU2 &U)
+{
+  S.d00 += S.d01 * U.u01;
+  S.d01 += S.d11 * U.u01;
+  S.d00 += S.d01 * U.u01;
+}
+
+inline UTMat2 mul_du(const UTMat2 &A, const LDU2 &U)
+{
+  double u00 = A.u00 * U.d0;
+  double u11 = A.u11 * U.d1;
+  double u01 = A.u01 * U.d1 + u00 * U.u01;
+  return {u00, u01, u11};
 }
 
 struct LTDL2 {

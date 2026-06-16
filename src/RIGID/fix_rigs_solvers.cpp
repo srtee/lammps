@@ -596,14 +596,15 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   Vec3 r01 = Vec3(x[i0]) - x[i1];
   Vec3 r02 = Vec3(x[i0]) - x[i2];
   Vec3 n = cross(r01, r02);
-  double nn = normsq(n);
+  double nn_inv = 1. / normsq(n);
 
-  SymMat2 rr_inv = {  normsq(r02) / nn,
-                   -dot(r01, r02) / nn,
-                      normsq(r01) / nn };
- 
-  SymMat2 rr = sym_dot(r01, r02);
-  UTMat2 rnorm = inv_chol_upper(rr);
+  double r01sq = normsq(r01);
+  double r0102 = dot(r01, r02);
+  SymMat2 rr_inv = {  normsq(r02) * nn_inv,
+                           -r0102 * nn_inv,
+                            r01sq * nn_inv };
+  LTMat2 rnorm = chol_lower(rr_inv);
+
   Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
@@ -613,25 +614,19 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   rPs(1, 0) = dot(r02, s01);
   rPs(1, 1) = dot(r02, s02);
   rPs = rr_inv * rPs;
-  // chi is ready:
-  //Mat2 chi = rmul_ltdl(rPs, reduced_mass_ltdl);
 
   Mat2 chi = rPs * mmat;
 
   double p1 = dot(s01, n);
   double p2 = dot(s02, n);
-  SymMat2 ss_perp = {p1 * p1 / nn, p1 * p2 / nn, p2 * p2 / nn};
+  SymMat2 ss_perp = {p1 * p1 * nn_inv, p1 * p2 * nn_inv, 
+	             p2 * p2 * nn_inv};
   SymMat2 Lres = Lsq - ss_perp;
 
-  //lt_sandwich(Lres, reduced_mass_ltdl);
-  //LTMat2 pre_phi = chol_to_ltl_lower(Lres);
-  // phi is ready:
-  //LTMat2 phi = mul_dl(pre_phi, reduced_mass_ltdl);
-
-  // non-LT phi:
-  // SMW of inv of invmass matrix:
-  LTMat2 pre_phi = chol_to_ltl_lower(Lres);
-  Mat2 phi = pre_phi * mmat;
+  LDU2 mass_ldu = ldu2(mmat);
+  UsL(Lres, mass_ldu);
+  UTMat2 pre_phi = chol_upper(Lres);
+  UTMat2 phi = mul_du(pre_phi, mass_ldu);
 
   Mat2 phiCos = rnorm * phi;
   Mat2 J;
