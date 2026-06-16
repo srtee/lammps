@@ -102,7 +102,43 @@ inline SymMat2 mmt(const Mat2 &M)
 	  M(1, 0) * M(1, 0) + M(1, 1) * M(1, 1)};
 }
 
+inline Mat2 operator*(const SymMat2 &A, const Mat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = A.d00 * B(0, 0) + A.d01 * B(1, 0);
+  R(0, 1) = A.d00 * B(0, 1) + A.d01 * B(1, 1);
+  R(1, 0) = A.d01 * B(0, 0) + A.d11 * B(1, 0);
+  R(1, 1) = A.d01 * B(0, 1) + A.d11 * B(1, 1);
+  return R;
+}
+
+inline Mat2 operator*(const Mat2 &A, const SymMat2 &B)
+{
+  Mat2 R;
+  R(0, 0) = A(0, 0) * B.d00 + A(0, 1) * B.d01;
+  R(0, 1) = A(0, 0) * B.d01 + A(0, 1) * B.d11;
+  R(1, 0) = A(1, 0) * B.d00 + A(1, 1) * B.d01;
+  R(1, 1) = A(1, 0) * B.d01 + A(1, 1) * B.d11;
+  return R;
+}
+
 inline double skew(const Mat2 &A) { return A(0, 1) - A(1, 0); }
+
+inline double trace_of_product(const Mat2 &A, const Mat2 &B)
+{
+  return A(0, 0) * B(0, 0) + A(1, 1) * B(1, 1)
+       + A(0, 1) * B(0, 1) + A(1, 0) * B(1, 0);
+}
+
+inline Mat2 operator*(const LTMat2 &L, const SymMat2 &S)
+{
+  Mat2 R;
+  R(0, 0) = L.l00 * S.d00;
+  R(0, 1) = L.l00 * S.d01;
+  R(1, 0) = L.l10 * S.d00 + L.l11 * S.d01;
+  R(1, 1) = L.l10 * S.d01 + L.l11 * S.d11;
+  return R;
+}
 
 inline Mat2 operator*(const UTMat2 &U, const Mat2 &B)
 {
@@ -122,6 +158,14 @@ inline Mat2 operator*(const UTMat2 &U, const LTMat2 &L)
   R(1, 0) = U.u11 * L.l10;
   R(1, 1) = U.u11 * L.l11;
   return R;
+}
+
+inline UTMat2 chol_upper(const SymMat2 &A)
+{
+  double u00 = sqrt(A.d00);
+  double u01 = A.d01 / u00;
+  double u11 = sqrt(A.d11 - u01 * u01);
+  return {u00, u01, u11};
 }
 
 inline UTMat2 inv_chol_upper(const SymMat2 &A)

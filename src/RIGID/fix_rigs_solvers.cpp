@@ -586,12 +586,24 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   
   SymMat2 Lsq = {L_ptr[0], L_ptr[1], L_ptr[2]};
   LTDL2 reduced_mass_ltdl = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
+  
+  double _m[3];
+  get_mass3(closest_list[ilist], _m);
+  double utot = 1./(_m[0] + _m[1] + _m[2]);
+  double u1 = _m[1] * utot; double u2 = _m[2] * utot;
+  SymMat2 mmat = { _m[1] * (1. - u1), - _m[1] * u2, _m[2] * (1 - u2) };
 
   Vec3 r01 = Vec3(x[i0]) - x[i1];
   Vec3 r02 = Vec3(x[i0]) - x[i2];
+  Vec3 n = cross(r01, r02);
+  double nn = normsq(n);
+
+  SymMat2 rr_inv = {  normsq(r02) / nn,
+                   -dot(r01, r02) / nn,
+                      normsq(r01) / nn };
+ 
   SymMat2 rr = sym_dot(r01, r02);
   UTMat2 rnorm = inv_chol_upper(rr);
-
   Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
@@ -600,43 +612,26 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   rPs(0, 1) = dot(r01, s02);
   rPs(1, 0) = dot(r02, s01);
   rPs(1, 1) = dot(r02, s02);
-  ut_mul(rnorm, rPs);
-  u_mul(rnorm, rPs);
-
-  const double d_thresh = 200000.0;
-  if (rPs(0,0)*rPs(0,0) > d_thresh || rPs(1,1)*rPs(1,1) > d_thresh) {
-    Mat2 rr_chi_sym = rPs;
-    rr_chi_sym(0,1) = 0.5 * (rPs(0,1) + rPs(1,0));
-    rr_chi_sym(1,0) = rr_chi_sym(0,1);
-    s01 = s01 - rr_chi_sym(0,0) * r01 - rr_chi_sym(0,1) * r02;
-    s02 = s02 - rr_chi_sym(0,1) * r01 - rr_chi_sym(1,1) * r02;
-
-    rmul_ltdl(rr_chi_sym, reduced_mass_ltdl);
-    lamda01 += rr_chi_sym(0,0);
-    lamda02 += rr_chi_sym(1,1);
-    lamda12 += rr_chi_sym(0,1);
-
-    rPs(0,0) = dot(r01, s01);
-    rPs(0,1) = dot(r01, s02);
-    rPs(1,0) = dot(r02, s01);
-    rPs(1,1) = dot(r02, s02);
-    ut_mul(rnorm, rPs);
-    u_mul(rnorm, rPs);
-  }
+  rPs = rr_inv * rPs;
   // chi is ready:
-  Mat2 chi = rmul_ltdl(rPs, reduced_mass_ltdl);
+  //Mat2 chi = rmul_ltdl(rPs, reduced_mass_ltdl);
 
-  Vec3 n = cross(r01, r02);
-  double nn = normsq(n);
+  Mat2 chi = rPs * mmat;
+
   double p1 = dot(s01, n);
   double p2 = dot(s02, n);
   SymMat2 ss_perp = {p1 * p1 / nn, p1 * p2 / nn, p2 * p2 / nn};
   SymMat2 Lres = Lsq - ss_perp;
 
-  lt_sandwich(Lres, reduced_mass_ltdl);
-  LTMat2 pre_phi = chol_to_ltl_lower(Lres);
+  //lt_sandwich(Lres, reduced_mass_ltdl);
+  //LTMat2 pre_phi = chol_to_ltl_lower(Lres);
   // phi is ready:
-  LTMat2 phi = mul_dl(pre_phi, reduced_mass_ltdl);
+  //LTMat2 phi = mul_dl(pre_phi, reduced_mass_ltdl);
+
+  // non-LT phi:
+  // SMW of inv of invmass matrix:
+  LTMat2 pre_phi = chol_to_ltl_lower(Lres);
+  Mat2 phi = pre_phi * mmat;
 
   Mat2 phiCos = rnorm * phi;
   Mat2 J;
@@ -645,17 +640,21 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   Mat2 phiSin = rnorm * (J * phi);
 
   double skewCos = skew(phiCos);
-  double skewChi = skew(chi);
   double skewSin = skew(phiSin);
+  double skewChi = skew(chi);
 
   double Asq = skewCos * skewCos + skewSin * skewSin;
-  double sinsqp = Asq - skewChi*skewChi;
+  double sinsqp = Asq - skewChi * skewChi;
   double sinp = sinsqp > 0.0 ? sqrt(sinsqp) : 0.0;
-  double ssin = -(skewSin * skewChi + skewCos * sinp) / Asq;
-  double ccos = (skewSin * sinp - skewChi * skewCos) / Asq;
+
+  double signp = (skewCos * trace_of_product(chi, phiSin)
+                < skewSin * trace_of_product(chi, phiCos)) ? sinp : -sinp;
+
+  double ccos = -(skewCos * skewChi + skewSin * signp) / Asq;
+  double ssin = (skewCos * signp - skewSin * skewChi) / Asq;
 
   lamda01 += chi(0, 0) + ccos * phiCos(0, 0) + ssin * phiSin(0, 0);
-  lamda02 += chi(1, 1) + ccos * phiCos(1, 1);
+  lamda02 += chi(1, 1) + ccos * phiCos(1, 1) + ssin * phiSin(1, 1);
   lamda12 += chi(0, 1) + ccos * phiCos(0, 1) + ssin * phiSin(0, 1);
 
   if (store_lamda_corrections) {
@@ -926,17 +925,43 @@ void FixRigs::get_inv_mass3(int *i, double *mu) {
   }
 }
 
-void FixRigs::get_inv_mass4(int *i, double *mu) {
+void FixRigs::get_inv_mass4(int *i, double *m) {
   if (rmass) {
-    mu[0] = 1.0 / rmass[i[0]];
-    mu[1] = 1.0 / rmass[i[1]];
-    mu[2] = 1.0 / rmass[i[2]];
-    mu[3] = 1.0 / rmass[i[3]];
+    m[0] = 1.0 / rmass[i[0]];
+    m[1] = 1.0 / rmass[i[1]];
+    m[2] = 1.0 / rmass[i[2]];
+    m[3] = 1.0 / rmass[i[3]];
   } else {
-    mu[0] = 1.0 / mass[type[i[0]]];
-    mu[1] = 1.0 / mass[type[i[1]]];
-    mu[2] = 1.0 / mass[type[i[2]]];
-    mu[3] = 1.0 / mass[type[i[3]]];
+    m[0] = 1.0 / mass[type[i[0]]];
+    m[1] = 1.0 / mass[type[i[1]]];
+    m[2] = 1.0 / mass[type[i[2]]];
+    m[3] = 1.0 / mass[type[i[3]]];
+  }
+}
+
+void FixRigs::get_mass3(int *i, double *m) {
+  if (rmass) {
+    m[0] = rmass[i[0]];
+    m[1] = rmass[i[1]];
+    m[2] = rmass[i[2]];
+  } else {
+    m[0] = mass[type[i[0]]];
+    m[1] = mass[type[i[1]]];
+    m[2] = mass[type[i[2]]];
+  }
+}
+
+void FixRigs::get_mass4(int *i, double *m) {
+  if (rmass) {
+    m[0] = rmass[i[0]];
+    m[1] = rmass[i[1]];
+    m[2] = rmass[i[2]];
+    m[3] = rmass[i[3]];
+  } else {
+    m[0] = mass[type[i[0]]];
+    m[1] = mass[type[i[1]]];
+    m[2] = mass[type[i[2]]];
+    m[3] = mass[type[i[3]]];
   }
 }
 

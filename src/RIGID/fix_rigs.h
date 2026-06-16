@@ -97,6 +97,8 @@ class FixRigs : public FixShake {
 
   void get_inv_mass3(int *, double *);
   void get_inv_mass4(int *, double *);
+  void get_mass3(int *, double *);
+  void get_mass4(int *, double *);
 };
 
 }    // namespace LAMMPS_NS
