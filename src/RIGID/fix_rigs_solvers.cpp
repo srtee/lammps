@@ -148,10 +148,12 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double mu0 = get_inv_mass(i0);
-  double mu01 = mu0 + get_inv_mass(i1);
-  double mu02 = mu0 + get_inv_mass(i2);
-  double mu03 = mu0 + get_inv_mass(i3);
+  double mu[4];
+  get_inv_mass4(closest_list[ilist], mu);
+  double mu0 = mu[0];
+  double mu01 = mu0 + mu[1];
+  double mu02 = mu0 + mu[2];
+  double mu03 = mu0 + mu[3];
   // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
   // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
   // yielding a MASS matrix (not an inverse mass matrix).
@@ -333,11 +335,13 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double mu0 = get_inv_mass(i0);
-  double mu2 = get_inv_mass(i2);
-  double mu10 = get_inv_mass(i1) + mu0;
+  double mu[4];
+  get_inv_mass4(closest_list[ilist], mu);
+  double mu0 = mu[0];
+  double mu2 = mu[2];
+  double mu10 = mu0 + mu[1];
   double mu02 = mu0 + mu2;
-  double mu23 = mu2 + get_inv_mass(i3);
+  double mu23 = mu2 + mu[3];
   // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
   // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
   // yielding a MASS matrix (not an inverse mass matrix).
@@ -921,3 +925,18 @@ void FixRigs::get_inv_mass3(int *i, double *mu) {
     mu[2] = 1.0 / mass[type[i[2]]];
   }
 }
+
+void FixRigs::get_inv_mass4(int *i, double *mu) {
+  if (rmass) {
+    mu[0] = 1.0 / rmass[i[0]];
+    mu[1] = 1.0 / rmass[i[1]];
+    mu[2] = 1.0 / rmass[i[2]];
+    mu[3] = 1.0 / rmass[i[3]];
+  } else {
+    mu[0] = 1.0 / mass[type[i[0]]];
+    mu[1] = 1.0 / mass[type[i[1]]];
+    mu[2] = 1.0 / mass[type[i[2]]];
+    mu[3] = 1.0 / mass[type[i[3]]];
+  }
+}
+
