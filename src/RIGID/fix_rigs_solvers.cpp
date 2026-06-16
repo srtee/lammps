@@ -20,7 +20,6 @@
 #include "error.h"
 #include "mat2.h"
 #include "mat3.h"
-#include "vec3.h"
 
 #include <cmath>
 #include <cstring>
@@ -76,9 +75,11 @@ int FixRigs::lookup_or_compute_angle(int ilist)
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
 
-  double invmass0 = get_inv_mass(i0);
-  double invmass01 = invmass0 + get_inv_mass(i1);
-  double invmass02 = invmass0 + get_inv_mass(i2);
+  double mu[3];
+  get_inv_mass3(closest_list[ilist], mu);
+  double invmass0 = mu[0];
+  double invmass01 = invmass0 + mu[1];
+  double invmass02 = invmass0 + mu[2];
   // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
   // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
   // yielding a MASS matrix (not an inverse mass matrix).
@@ -586,39 +587,35 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   Vec3 r02 = Vec3(x[i0]) - x[i2];
   SymMat2 rr = sym_dot(r01, r02);
   UTMat2 rnorm = inv_chol_upper(rr);
-  
+
   Vec3 s01 = Vec3(xshake[i0]) - xshake[i1];
   Vec3 s02 = Vec3(xshake[i0]) - xshake[i2];
 
-  // Contravariant projection (coproj): χ = G⁻¹ Rᵀ S M
-  // Entries: (G⁻¹)_{ik}(r_k · s_j), the least-squares coefficients of S in the R-basis.
   Mat2 rPs;
   rPs(0, 0) = dot(r01, s01);
   rPs(0, 1) = dot(r01, s02);
   rPs(1, 0) = dot(r02, s01);
   rPs(1, 1) = dot(r02, s02);
-
   ut_mul(rnorm, rPs);
   u_mul(rnorm, rPs);
- 
+
   const double d_thresh = 200000.0;
-  while (rPs(0,0)*rPs(0,0) > d_thresh ||  rPs(1,1)*rPs(1,1)> d_thresh) {
+  if (rPs(0,0)*rPs(0,0) > d_thresh || rPs(1,1)*rPs(1,1) > d_thresh) {
     Mat2 rr_chi_sym = rPs;
     rr_chi_sym(0,1) = 0.5 * (rPs(0,1) + rPs(1,0));
     rr_chi_sym(1,0) = rr_chi_sym(0,1);
     s01 = s01 - rr_chi_sym(0,0) * r01 - rr_chi_sym(0,1) * r02;
     s02 = s02 - rr_chi_sym(0,1) * r01 - rr_chi_sym(1,1) * r02;
-    
+
     rmul_ltdl(rr_chi_sym, reduced_mass_ltdl);
     lamda01 += rr_chi_sym(0,0);
     lamda02 += rr_chi_sym(1,1);
     lamda12 += rr_chi_sym(0,1);
 
-    rPs(0, 0) = dot(r01, s01);
-    rPs(0, 1) = dot(r01, s02);
-    rPs(1, 0) = dot(r02, s01);
-    rPs(1, 1) = dot(r02, s02);
-
+    rPs(0,0) = dot(r01, s01);
+    rPs(0,1) = dot(r01, s02);
+    rPs(1,0) = dot(r02, s01);
+    rPs(1,1) = dot(r02, s02);
     ut_mul(rnorm, rPs);
     u_mul(rnorm, rPs);
   }
@@ -634,14 +631,10 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
 
   lt_sandwich(Lres, reduced_mass_ltdl);
   LTMat2 pre_phi = chol_to_ltl_lower(Lres);
-  //LTMat2 pre_phi = chol_lower(Lres);
-  //l_mul(pre_phi, reduced_mass_ltdl);
-  //transpose_and_rotate(pre_phi); // L L^T -> L^T L
-  // to get us phi as an LTMat:
+  // phi is ready:
   LTMat2 phi = mul_dl(pre_phi, reduced_mass_ltdl);
-  
-  Mat2 phiCos = rnorm * phi;
 
+  Mat2 phiCos = rnorm * phi;
   Mat2 J;
   J(0, 0) = 0.0;  J(0, 1) = -1.0;
   J(1, 0) = 1.0;  J(1, 1) = 0.0;
@@ -733,13 +726,13 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
    Unified 3x3 constraint solver for improper (star) and dihedral (chain) topologies
 
    IMPROPER: star topology, center atom 0 + partners 1,2,3
-     R row k = x[i0] - x[partner_k]  (center minus partner)
-     S row k = xshake[i0] - xshake[partner_k]
+     R column k = x[i0] - x[partner_k]  (center minus partner)
+     S column k = xshake version of same
      force sign = -1/dtfsq
 
    DIHEDRAL: chain topology A-B-C-D stored as 1-0-2-3
-     R row 0 = x[i1]-x[i0], row 1 = x[i0]-x[i2], row 2 = x[i2]-x[i3]
-     S row k = xshake version of same
+     R column 0 = x[i1]-x[i0], column 1 = x[i0]-x[i2], column 2 = x[i2]-x[i3]
+     S column k = xshake version of same
      force sign = +1 (use dtf^2 multiplier internally)
    ------------------------------------------------------------------------- */
 
@@ -752,30 +745,26 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   int i3 = closest_list[ilist][3];
   int niter = 0;
 
-  // row_source[k] = {ia, ib} means R(k,*) = x[ia] - x[ib]
-  // dihedral: row 0 = B-A (i1-i0), row 1 = A-C (i0-i2), row 2 = C-D (i2-i3)
-  int row_ia[3], row_ib[3];
+  int col_ia[3], col_ib[3];
   if (topo == IMPROPER) {
-    row_ia[0] = i0; row_ib[0] = i1;
-    row_ia[1] = i0; row_ib[1] = i2;
-    row_ia[2] = i0; row_ib[2] = i3;
+    col_ia[0] = i0; col_ib[0] = i1;
+    col_ia[1] = i0; col_ib[1] = i2;
+    col_ia[2] = i0; col_ib[2] = i3;
   } else {
-    row_ia[0] = i1; row_ib[0] = i0;
-    row_ia[1] = i0; row_ib[1] = i2;
-    row_ia[2] = i2; row_ib[2] = i3;
+    col_ia[0] = i1; col_ib[0] = i0;
+    col_ia[1] = i0; col_ib[1] = i2;
+    col_ia[2] = i2; col_ib[2] = i3;
   }
-
-  double force_scale = (topo == IMPROPER) ? -1.0 / dtfsq : dtfsq;
 
   Mat3 R, S;
-  for (int row = 0; row < 3; row++) {
-    Vec3 rv = Vec3(x[row_ia[row]]) - x[row_ib[row]];
-    Vec3 sv = Vec3(xshake[row_ia[row]]) - xshake[row_ib[row]];
-    R(row, 0) = rv.x; R(row, 1) = rv.y; R(row, 2) = rv.z;
-    S(row, 0) = sv.x; S(row, 1) = sv.y; S(row, 2) = sv.z;
+  for (int k = 0; k < 3; k++) {
+    Vec3 rv = Vec3(x[col_ia[k]]) - x[col_ib[k]];
+    Vec3 sv = Vec3(xshake[col_ia[k]]) - xshake[col_ib[k]];
+    R(0, k) = rv.x; R(1, k) = rv.y; R(2, k) = rv.z;
+    S(0, k) = sv.x; S(1, k) = sv.y; S(2, k) = sv.z;
   }
 
-  SymMat3 rr = mmt(R);
+  SymMat3 rr = mtm(R);
 
   int idx = ilist_to_idx[ilist];
   const double *Lp = Lsq_cached[idx].data;
@@ -783,53 +772,15 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   SymMat3 Lsq = SymMat3::load(Lp);
   LTDL3 reduced_mass_ltdl = LTDL3::load(Lmp);
 
-  Mat3 lamda;
-  lamda(0,0) = 0.; lamda(0,1) = 0.; lamda(0,2) = 0.;
-  lamda(1,0) = 0.; lamda(1,1) = 0.; lamda(1,2) = 0.;
-  lamda(2,0) = 0.; lamda(2,1) = 0.; lamda(2,2) = 0.;
-  UTMat3 rnorm = inv_chol_upper(rr);
-  Mat3 rs = cross_gram(R, S);
-  // Contravariant projection (coproj): χ = G⁻¹ Rᵀ S M
-  Mat3 rPs = rs;
-  ut_mul(rnorm, rPs);
-  u_mul(rnorm, rPs);
-  
-  const double d_thresh = 3 * 9;
-  if ((rPs(0,0)*rPs(0,0) + rPs(1,1)*rPs(1,1) + rPs(2,2)*rPs(2,2)) > d_thresh) {
-    Mat3 ltmp = rs;
-    auto piv = PivotedLTDL3::decompose(rr, 1);
-    piv.LTsolve(ltmp);
-    //auto l_c = chol_to_ltl_lower(rr);
-    //ltmp -= R;
-    piv.Lsolve(ltmp);
-    rmul_ltdl(ltmp, reduced_mass_ltdl);
-    symmetrize(ltmp);
-    lamda += ltmp;
-
-    inv_lt_solve(reduced_mass_ltdl, ltmp);
-    S -= mat_mul(ltmp, R);
-   
-    rs = cross_gram(R, S);
-    rPs = rs;
-    ut_mul(rnorm, rPs);
-    u_mul(rnorm, rPs);
-  }
-  
-  Mat3 chi = rPs;
+  Mat3 chi = mat_mul(inv_mat3(R), S);
   rmul_ltdl(chi, reduced_mass_ltdl);
-  
-  // lt_sandwich: rr_target_M = L_A^{-1} Lsq L_A^{-T}.
-  // The full Cholesky of Lsq would be (L_σ L_A^T) in our L^T L convention.
-  // By removing L_A^T from the right first, chol_to_ltl_lower yields just L_σ.
-  // phi = L_σ D_A^{-1} L_A^{-1} then appends the inverse-mass right factors.
+
   SymMat3 rr_target_M = Lsq;
   lt_sandwich(rr_target_M, reduced_mass_ltdl);
-  // coproj_M gets right-multiply by full mass (L_A^T D_A L_A), while phi gets
-  // right-multiply by inverse-mass upper factors (D_A^{-1} L_A^{-1}). This preserves
-  // lower-triangular structure needed by the Cayley iteration.
   LTMat3 phi = mul_dl(chol_to_ltl_lower(rr_target_M), reduced_mass_ltdl);
 
-  lamda += cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
+  UTMat3 rnorm = inv_chol_upper(rr);
+  Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
     iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;
@@ -845,9 +796,12 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   }
   lamda += chi;
 
+  Mat3 Rt = transpose(R);
   Mat43 L_lam = (topo == IMPROPER) ? improper_L_lambda(lamda)
                                       : dihedral_L_lambda(lamda);
-  L_lam *= R;
+  L_lam *= Rt;
+  
+  double force_scale = -1.0 / dtfsq;
 
   if (i0 < nlocal)
     for (int i = 0; i < 3; i++) f[i0][i] += force_scale * L_lam(0, i);
@@ -953,5 +907,17 @@ void FixRigs::shake(int ilist)
     double dellist[][3]  = {{r01[0], r01[1], r01[2]}};
     int pairlist[][2] = {{i0,i1}};
     v_tally(count,atomlist,2.0,v,nlocal,1,pairlist,fpairlist,dellist);
+  }
+}
+
+void FixRigs::get_inv_mass3(int *i, double *mu) {
+  if (rmass) {
+    mu[0] = 1.0 / rmass[i[0]];
+    mu[1] = 1.0 / rmass[i[1]];
+    mu[2] = 1.0 / rmass[i[2]];
+  } else {
+    mu[0] = 1.0 / mass[type[i[0]]];
+    mu[1] = 1.0 / mass[type[i[1]]];
+    mu[2] = 1.0 / mass[type[i[2]]];
   }
 }

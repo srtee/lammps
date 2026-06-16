@@ -337,6 +337,74 @@ inline Mat3 cross_gram(const Mat3 &R, const Mat3 &S) // R S^T
   return QR;
 }
 
+inline Mat3 inv_mat3(const Mat3 &A)
+{
+  double c0 = A(1,1)*A(2,2) - A(1,2)*A(2,1);
+  double c1 = A(1,2)*A(2,0) - A(1,0)*A(2,2);
+  double c2 = A(1,0)*A(2,1) - A(1,1)*A(2,0);
+  double det = A(0,0)*c0 + A(0,1)*c1 + A(0,2)*c2;
+  double idet = 1.0 / det;
+  Mat3 R;
+  R(0,0) = c0 * idet; R(0,1) = (A(0,2)*A(2,1) - A(0,1)*A(2,2)) * idet;
+  R(0,2) = (A(0,1)*A(1,2) - A(0,2)*A(1,1)) * idet;
+  R(1,0) = c1 * idet; R(1,1) = (A(0,0)*A(2,2) - A(0,2)*A(2,0)) * idet;
+  R(1,2) = (A(0,2)*A(1,0) - A(0,0)*A(1,2)) * idet;
+  R(2,0) = c2 * idet; R(2,1) = (A(0,1)*A(2,0) - A(0,0)*A(2,1)) * idet;
+  R(2,2) = (A(0,0)*A(1,1) - A(0,1)*A(1,0)) * idet;
+  return R;
+}
+
+inline UTMat3 qr_decompose(const Mat3 &A, Mat3 &Q)
+{
+  double col0[3] = {A(0,0), A(1,0), A(2,0)};
+  double nrm0 = sqrt(col0[0]*col0[0] + col0[1]*col0[1] + col0[2]*col0[2]);
+  double u00 = col0[0] < 0 ? nrm0 : -nrm0;
+  col0[0] -= u00;
+  double inv_n0 = 1.0 / sqrt(col0[0]*col0[0] + col0[1]*col0[1] + col0[2]*col0[2]);
+  col0[0] *= inv_n0; col0[1] *= inv_n0; col0[2] *= inv_n0;
+
+  double d01 = col0[0]*A(0,1) + col0[1]*A(1,1) + col0[2]*A(2,1);
+  double c01 = A(0,1) - 2*col0[0]*d01;
+  double c11 = A(1,1) - 2*col0[1]*d01;
+  double c21 = A(2,1) - 2*col0[2]*d01;
+  double d02 = col0[0]*A(0,2) + col0[1]*A(1,2) + col0[2]*A(2,2);
+  double c02 = A(0,2) - 2*col0[0]*d02;
+  double c12 = A(1,2) - 2*col0[1]*d02;
+  double c22 = A(2,2) - 2*col0[2]*d02;
+
+  double nrm1 = sqrt(c11*c11 + c21*c21);
+  double u01 = c01, u11 = c11 < 0 ? nrm1 : -nrm1;
+  double v1[3] = {0, c11 - u11, c21};
+  double inv_n1 = 1.0 / sqrt(v1[1]*v1[1] + v1[2]*v1[2]);
+  v1[1] *= inv_n1; v1[2] *= inv_n1;
+
+  double d12 = v1[1]*c12 + v1[2]*c22;
+  double u02 = c02, u12 = c12 - 2*v1[1]*d12, u22 = c22 - 2*v1[2]*d12;
+
+  Q(0,0) = 1; Q(0,1) = 0; Q(0,2) = 0;
+  Q(1,0) = 0; Q(1,1) = 1; Q(1,2) = 0;
+  Q(2,0) = 0; Q(2,1) = 0; Q(2,2) = 1;
+  for (int j = 0; j < 3; j++) {
+    double d = v1[1]*Q(1,j) + v1[2]*Q(2,j);
+    Q(1,j) -= 2*v1[1]*d; Q(2,j) -= 2*v1[2]*d;
+  }
+  for (int j = 0; j < 3; j++) {
+    double d = col0[0]*Q(0,j) + col0[1]*Q(1,j) + col0[2]*Q(2,j);
+    Q(0,j) -= 2*col0[0]*d; Q(1,j) -= 2*col0[1]*d; Q(2,j) -= 2*col0[2]*d;
+  }
+
+  return {u00, u01, u02, u11, u12, u22};
+}
+
+inline Mat3 transpose(const Mat3 &A)
+{
+  Mat3 T;
+  T(0,0) = A(0,0); T(0,1) = A(1,0); T(0,2) = A(2,0);
+  T(1,0) = A(0,1); T(1,1) = A(1,1); T(1,2) = A(2,1);
+  T(2,0) = A(0,2); T(2,1) = A(1,2); T(2,2) = A(2,2);
+  return T;
+}
+
 inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S) // R S
 {
   Mat3 RS;

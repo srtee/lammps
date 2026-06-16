@@ -94,8 +94,9 @@ class FixRigs : public FixShake {
   int dihedraltype_findset(int i, tagint n1, tagint n2, tagint n3, tagint n4, int setflag);
   void min_post_force(int vflag) override;
   void stats() override;
-  void redistribute_forcemom_linear(int, int, int, int, int);
-  void redistribute_forcemom_smw(int, int, int, int, double[3], double[3], bool);
+
+  void get_inv_mass3(int *, double *);
+  void get_inv_mass4(int *, double *);
 };
 
 }    // namespace LAMMPS_NS

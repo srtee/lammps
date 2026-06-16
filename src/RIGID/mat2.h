@@ -140,11 +140,10 @@ inline LTMat2 chol_lower(const SymMat2 &A)
   return {l00, l10, l11};
 }
 
-// Cholesky decomposition A = L^T L (NOT L L^T).
-// Returns lower-triangular L such that L^T L = A.
-// This is the TRANSPOSE of the conventional Cholesky factor:
-// conventional Cholesky gives U^T U = A with U upper-triangular;
-// here L = U^T, so L is lower-triangular and the product is L^T L.
+// Decomposition A = L^T L (NOT L L^T).
+// Conceptually equivalent to a U^T U followed by
+// Givens-rotating U into L, but the explicit Givens-rotations
+// are unstable. We do this so phi turns out lower triangular.
 inline LTMat2 chol_to_ltl_lower(const SymMat2 &A)
 {
   double l11 = sqrt(A.d11);
@@ -200,37 +199,6 @@ inline Mat2 rmul_ltdl(const Mat2 &inputM, const LTDL2 &L)
   M(0, 0) += M(0, 1) * L.l10;
   M(1, 0) += M(1, 1) * L.l10;
   return M;
-}
-
-inline double givens_tolower(const double b, const double a, double &s, double &c)
-{ // solve for c, s such that [[s, c], [c, -s]] @ [b, a] = [0, r]
-  // equivalent to standard:  [[c, -s], [s, c]] @ [a, b] = [r, 0]
-  if (b == 0.) {
-    c = (a == 0.) ? 1. : std::copysign(1., a);
-    s = 0.;
-    return fabs(a);
-  } else if (a == 0.) {
-    c = 0.;
-    s = std::copysign(1., -b);
-    return fabs(b);
-  } else {
-    double t = b / a;
-    double u = std::copysign(sqrt(1. + t * t), a);
-    c = 1. / u;
-    s = -c * t;
-    return a * u;
-  }
-}
-
-inline void transpose_and_rotate(LTMat2 &A)
-{ // LTMat2 -> transpose to UTMat2 -> rotate to LTMat2
-  double s, c; // now "transpose":
-  double u00 = A.l00;
-  double u01 = A.l10;
-  double u11 = A.l11; // now Givens: [u01, u11] -> [0, r];
-  A.l11 = givens_tolower(u01, u11, s, c);
-  A.l00 = s * u00;
-  A.l10 = c * u00;
 }
 
 }

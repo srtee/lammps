@@ -16,6 +16,8 @@
 #ifndef LMP_VEC3_H
 #define LMP_VEC3_H
 
+#include <cmath>
+
 namespace RigsMath {
 
 struct Vec3 {
@@ -71,6 +73,10 @@ inline Vec3 cross(const Vec3 &a, const Vec3 &b) {
 
 inline double normsq(const Vec3 &v) {
   return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+inline double norm(const Vec3 &v) {
+  return sqrt(normsq(v));
 }
 
 inline Vec3 operator*(double s, const Vec3 &v) {
