@@ -265,6 +265,18 @@ inline UTMat2 mul_du(const UTMat2 &A, const LDU2 &U)
   return {u00, u01, u11};
 }
 
+inline Mat2 operator*(const Mat2 &M, const LDU2 &ldu)
+{
+  Mat2 R = M;
+  R(0, 0) += R(0, 1) * ldu.u01; 
+  R(1, 0) += R(1, 1) * ldu.u01; 
+  R(0, 0) *= ldu.d0; R(0, 1) *= ldu.d1;
+  R(1, 0) *= ldu.d0; R(1, 1) *= ldu.d1;
+  R(0, 1) += R(0, 0) * ldu.u01; 
+  R(1, 1) += R(1, 0) * ldu.u01; 
+  return R;
+}
+
 struct LTDL2 {
   double d0, d1, l10;
 };
@@ -312,6 +324,15 @@ inline Mat2 rmul_ltdl(const Mat2 &inputM, const LTDL2 &L)
   M(0, 0) += M(0, 1) * L.l10;
   M(1, 0) += M(1, 1) * L.l10;
   return M;
+}
+
+inline SymMat2 mass_matrix3(double *m)
+{
+  double mutot = 1. / (m[0] + m[1] + m[2]);
+  double u1 = m[1] * mutot;
+  double u2 = m[2] * mutot;
+  return SymMat2 { m[1] * (1. - u1), -m[1] * u2,
+                   m[2] * (1. - u2)};
 }
 
 }

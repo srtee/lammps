@@ -74,6 +74,9 @@ class FixRigs : public FixShake {
   inline double get_inv_mass(int i) const {
     return rmass ? 1.0 / rmass[i] : 1.0 / mass[type[i]];
   }
+  inline double get_mass(int i) const {
+    return (rmass) ? rmass[i] : mass[type[i]];
+  }
   void transform_clusters(int from_flag, int to_flag, bool global, bool propagate_shake_data);
   inline void transform_clusters_global(int from_flag, int to_flag)
     { transform_clusters(from_flag, to_flag, true, false); }

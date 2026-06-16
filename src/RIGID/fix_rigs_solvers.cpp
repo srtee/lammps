@@ -75,15 +75,9 @@ int FixRigs::lookup_or_compute_angle(int ilist)
   int i1 = closest_list[ilist][1];
   int i2 = closest_list[ilist][2];
 
-  double mu[3];
-  get_inv_mass3(closest_list[ilist], mu);
-  double invmass0 = mu[0];
-  double invmass01 = invmass0 + mu[1];
-  double invmass02 = invmass0 + mu[2];
-  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
-  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
-  // yielding a MASS matrix (not an inverse mass matrix).
-  LTDL2 dc = invert_to_ltdl(SymMat2{invmass01, invmass0, invmass02});
+  double masses[3];
+  get_mass3(closest_list[ilist], masses);
+  LDU2 mass_ldu = ldu2(mass_matrix3(masses));
 
   if (rmass) {
     char key[128];
@@ -105,9 +99,9 @@ int FixRigs::lookup_or_compute_angle(int ilist)
     }
 
     double *lm = reduced_rmass_ltdl[m];
-    lm[0] = dc.d0;
-    lm[1] = dc.d1;
-    lm[2] = dc.l10;
+    lm[0] = mass_ldu.d0;
+    lm[1] = mass_ldu.d1;
+    lm[2] = mass_ldu.u01;
     return idx;
   }
 
@@ -126,9 +120,9 @@ int FixRigs::lookup_or_compute_angle(int ilist)
   Lsq_cached[idx].data[0] = bond1 * bond1;
   Lsq_cached[idx].data[1] = rigs_angle[at];
   Lsq_cached[idx].data[2] = bond2 * bond2;
-  reduced_mass_ltdl_cached[idx].data[0] = dc.d0;
-  reduced_mass_ltdl_cached[idx].data[1] = dc.d1;
-  reduced_mass_ltdl_cached[idx].data[2] = dc.l10;
+  reduced_mass_ltdl_cached[idx].data[0] = mass_ldu.d0;
+  reduced_mass_ltdl_cached[idx].data[1] = mass_ldu.d1;
+  reduced_mass_ltdl_cached[idx].data[2] = mass_ldu.u01;
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -184,17 +178,21 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     int pos_smallest_d = perm_mlm[2] + 1;
     demoted_tag[m] = shake_atom[m][pos_smallest_d];
 
-    double im1, im2;
+    double masses[3];
+    masses[0] = get_mass(i0);
     int tri_bt0, tri_bt1, tri_at;
     if (pos_smallest_d == 1) {
       tri_bt0 = bt1; tri_bt1 = bt2; tri_at = at2;
-      im1 = get_inv_mass(i2); im2 = get_inv_mass(i3);
+      masses[1] = get_mass(i2);
+      masses[2] = get_mass(i3);
     } else if (pos_smallest_d == 2) {
       tri_bt0 = bt0; tri_bt1 = bt2; tri_at = at1;
-      im1 = get_inv_mass(i1); im2 = get_inv_mass(i3);
+      masses[1] = get_mass(i1);
+      masses[2] = get_mass(i3);
     } else {
       tri_bt0 = bt0; tri_bt1 = bt1; tri_at = at0;
-      im1 = get_inv_mass(i1); im2 = get_inv_mass(i2);
+      masses[1] = get_mass(i1);
+      masses[2] = get_mass(i2);
     }
 
     if (rmass) {
@@ -220,11 +218,11 @@ int FixRigs::lookup_or_compute_improper(int ilist)
         idx = it->second;
       }
 
-      LTDL2 dc3 = invert_to_ltdl(SymMat2{mu0 + im1, mu0, mu0 + im2});  // demoted-path reduced_mass_ltdl
+      LDU2 mass_ldu = ldu2(mass_matrix3(masses));
       double *lm = reduced_rmass_ltdl[m];
-      lm[0] = dc3.d0;
-      lm[1] = dc3.d1;
-      lm[2] = dc3.l10;
+      lm[0] = mass_ldu.d0;
+      lm[1] = mass_ldu.d1;
+      lm[2] = mass_ldu.u01;
       return idx;
     }
 
@@ -248,10 +246,10 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     Lsq_cached[idx].data[1] = rigs_angle[tri_at];
     Lsq_cached[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
 
-    LTDL2 dc3 = invert_to_ltdl(SymMat2{mu0 + im1, mu0, mu0 + im2});  // demoted-path reduced_mass_ltdl
-    reduced_mass_ltdl_cached[idx].data[0] = dc3.d0;
-    reduced_mass_ltdl_cached[idx].data[1] = dc3.d1;
-    reduced_mass_ltdl_cached[idx].data[2] = dc3.l10;
+    LDU2 mass_ldu = ldu2(mass_matrix3(masses));
+    reduced_mass_ltdl_cached[idx].data[0] = mass_ldu.d0;
+    reduced_mass_ltdl_cached[idx].data[1] = mass_ldu.d1;
+    reduced_mass_ltdl_cached[idx].data[2] = mass_ldu.u01;
 
     SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                     bond1 * bond1, angle12, bond2 * bond2};
@@ -585,14 +583,8 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   lamda01 = lamda02 = lamda12 = 0.0;
   
   SymMat2 Lsq = {L_ptr[0], L_ptr[1], L_ptr[2]};
-  LTDL2 reduced_mass_ltdl = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
+  LDU2 mass_ldu = {lm_ptr[0], lm_ptr[1], lm_ptr[2]};
   
-  double _m[3];
-  get_mass3(closest_list[ilist], _m);
-  double utot = 1./(_m[0] + _m[1] + _m[2]);
-  double u1 = _m[1] * utot; double u2 = _m[2] * utot;
-  SymMat2 mmat = { _m[1] * (1. - u1), - _m[1] * u2, _m[2] * (1 - u2) };
-
   Vec3 r01 = Vec3(x[i0]) - x[i1];
   Vec3 r02 = Vec3(x[i0]) - x[i2];
   Vec3 n = cross(r01, r02);
@@ -615,7 +607,7 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   rPs(1, 1) = dot(r02, s02);
   rPs = rr_inv * rPs;
 
-  Mat2 chi = rPs * mmat;
+  Mat2 chi = rPs * mass_ldu;
 
   double p1 = dot(s01, n);
   double p2 = dot(s02, n);
@@ -623,7 +615,6 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
 	             p2 * p2 * nn_inv};
   SymMat2 Lres = Lsq - ss_perp;
 
-  LDU2 mass_ldu = ldu2(mmat);
   UsL(Lres, mass_ldu);
   UTMat2 pre_phi = chol_upper(Lres);
   UTMat2 phi = mul_du(pre_phi, mass_ldu);
@@ -653,13 +644,9 @@ void FixRigs::shake3angle_solve(int i0, int i1, int i2, int ilist)
   lamda12 += chi(0, 1) + ccos * phiCos(0, 1) + ssin * phiSin(0, 1);
 
   if (store_lamda_corrections) {
-    double m0, m1, m2;
-    if (rmass) {
-      m0 = rmass[i0]; m1 = rmass[i1]; m2 = rmass[i2];
-    } else {
-      m0 = mass[type[i0]]; m1 = mass[type[i1]];
-      m2 = mass[type[i2]];
-    }
+    double m0 = get_mass(i0);
+    double m1 = get_mass(i1);
+    double m2 = get_mass(i2);
     Vec3 corr = -(lamda01 + lamda12) * r01 - (lamda02 + lamda12) * r02;
     for (int i = 0; i < 3; i++) xshake[i0][i] += corr[i] / m0;
     if (i0 < nlocal)
