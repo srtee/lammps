@@ -757,8 +757,13 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   SymMat3 Lsq = SymMat3::load(Lp);
   LTDL3 reduced_mass_ltdl = LTDL3::load(Lmp);
 
+  double masses[4];
+  get_mass4(closest_list[ilist], masses);
+  SymMat3 new_mass_matrix = mass_matrix4(masses); 
+
   Mat3 chi = mat_mul(inv_mat3(R), S);
-  rmul_ltdl(chi, reduced_mass_ltdl);
+  chi = chi * new_mass_matrix;
+//  rmul_ltdl(chi, reduced_mass_ltdl);
 
   SymMat3 rr_target_M = Lsq;
   lt_sandwich(rr_target_M, reduced_mass_ltdl);

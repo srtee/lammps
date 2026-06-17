@@ -37,6 +37,18 @@ struct Mat3;
 struct UTMat3 {
   double u00, u01, u02, u11, u12, u22;
   operator Mat3() const;
+  
+  void invert()
+  {
+    double inv00 = 1.0 / u00;
+    double inv11 = 1.0 / u11;
+    double inv22 = 1.0 / u22;
+    double inv01 = -u01 * inv00 * inv11;
+    double inv12 = -u12 * inv11 * inv22;
+    double inv02 = (u01 * u12 * inv11 - u02) * inv00 * inv22;
+    u00 = inv00; u01 = inv01; u02 = inv02;
+    u11 = inv11; u12 = inv12; u22 = inv22;
+  }
 };
 
 struct Mat3 {
@@ -60,6 +72,13 @@ struct Mat3 {
       for (int j = 0; j < 3; j++)
         d[i][j] -= B(i, j);
     return *this;
+  }
+  
+  void mat_vec(const double v[3], double out[3]) const
+  {
+    out[0] = d[0][0] * v[0] + d[0][1] * v[1] + d[0][2] * v[2];
+    out[1] = d[1][0] * v[0] + d[1][1] * v[1] + d[1][2] * v[2];
+    out[2] = d[2][0] * v[0] + d[2][1] * v[1] + d[2][2] * v[2];
   }
 };
 
@@ -414,6 +433,66 @@ inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S) // R S
   return RS;
 }
 
+struct LDU3 {
+  double d0, d1, d2, u01, u02, u12;
+
+  static LDU3 load(const double *p) {
+    return {p[0], p[1], p[2], p[3], p[4], p[5]};
+  }
+  void store(double *p) const {
+    p[0] = d0; p[1] = d1; p[2] = d2;
+    p[3] = u01; p[4] = u02; p[5] = u12;
+  }
+};
+
+inline void UsL3(SymMat3 &S, const LDU3 &ldu)
+{ // S <- Us (track upper tri; U = unit tri)
+  S.d00 += ldu.u01 * S.d01 + ldu.u02 * S.d02;
+  S.d01 += ldu.u01 * S.d11 + ldu.u02 * S.d12;
+  S.d02 += ldu.u01 * S.d12 + ldu.u02 * S.d22;
+  S.d11 += S.d12 * ldu.u12;
+  S.d12 += S.d22 * ldu.u12;
+  // Us <- UsL
+  S.d00 += S.d01 * ldu.u01 + S.d02 * ldu.u02;
+  S.d01 += S.d02 * ldu.u12;
+  S.d11 += S.d12 * ldu.u12;
+}
+
+inline UTMat3 mul_du(const UTMat3 &inputU, const LDU3 &ldu)
+{
+  UTMat3 U = inputU;
+  U.u00 *= ldu.d0; U.u01 *= ldu.d0; U.u02 *= ldu.d0;
+  U.u11 *= ldu.d1; U.u12 *= ldu.d1; U.u22 *= ldu.d2;
+  U.u02 += U.u00 * ldu.u02 + U.u01 * ldu.u12;
+  U.u12 += U.u11 * ldu.u12;
+  U.u01 += U.u00 * ldu.u01;
+  return U;
+}
+
+inline Mat3 operator*(const Mat3 &inputM, const LDU3 &ldu) {
+  Mat3 M = inputM;
+  for (int i = 0; i < 3; i++) {
+    M(i, 0) += M(i, 1) * ldu.u01 + M(i, 2) * ldu.u02;
+    M(i, 0) *= ldu.d0;
+    M(i, 1) += M(i, 2) * ldu.u12;
+    M(i, 1) *= ldu.d1;
+    M(i, 2) *= ldu.d2;
+    M(i, 2) += M(i, 1) * ldu.u12 + M(i, 0) * ldu.u02;
+    M(i, 1) += M(i, 0) * ldu.u01;
+  }
+  return M;
+}
+
+inline Mat3 operator*(const Mat3 &M, const SymMat3 &S) {
+  Mat3 R;
+  for (int i = 0; i < 3; i++) {
+    R(i, 0) = M(i, 0) * S.d00 + M(i, 1) * S.d01 + M(i, 2) * S.d02;
+    R(i, 1) = M(i, 0) * S.d01 + M(i, 1) * S.d11 + M(i, 2) * S.d12;
+    R(i, 2) = M(i, 0) * S.d02 + M(i, 1) * S.d12 + M(i, 2) * S.d22;
+  }
+  return R;
+}
+
 // S ← L S Lᵀ where L is the unit lower-triangular part of the LTDL struct.
 // (When called with invert_to_ltdl output, L stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
 inline void lt_sandwich(SymMat3 &S, const LTDL3 &L)
@@ -729,8 +808,7 @@ inline void negskew_ut_mul(const UTMat3 &rc, const ColMat3 &sc, double out[3])
   out[2] = g01 - g10;
 }
 
-inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
-                            int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
+inline Mat3 cayley_jacobian(const UTMat3 &rc, const LTMat3 &sc)
 {
   LTMat3 G;
   G.l00 = 2.0 * (rc.u11 * sc.l22 + rc.u22 * sc.l11);
@@ -741,7 +819,31 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
   G.l22 = 2.0 * (rc.u00 * sc.l11 + rc.u11 * sc.l00);
 
   G.invert();
-  
+
+  Mat3 M = G;
+  return M;
+}
+
+inline Mat3 cayley_jacobian(const LTMat3 &rc, const UTMat3 &sc)
+{
+  UTMat3 G;
+  G.u00 = 2.0 * (rc.l11 * sc.u22 + rc.l22 * sc.u11);
+  G.u01 = 2.0 * (-rc.l10 * sc.u22 - rc.l22 * sc.u01);
+  G.u02 = 2.0 * (rc.l10 * sc.u12 - rc.l11 * sc.u02 - (rc.l20 * sc.u11 - rc.l21 * sc.u01));
+  G.u11 = 2.0 * (rc.l22 * sc.u00 + rc.l00 * sc.u22);
+  G.u12 = 2.0 * (-rc.l21 * sc.u00 - rc.l00 * sc.u12);
+  G.u22 = 2.0 * (rc.l00 * sc.u11 + rc.l11 * sc.u00);
+
+  G.invert();
+
+  Mat3 M = G;
+  return M;
+}
+
+inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
+                            int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
+{
+  Mat3 G = cayley_jacobian(rc, sc); 
   ColMat3 scm = sc;
 
   double skewChi[3];
@@ -815,6 +917,17 @@ inline Mat43 dihedral_L_lambda(const Mat3 &lam) {
   L(3,0) = L(3,1) = 0.0;  L(3,2) =  1.0;
   L *= lam;
   return L;
+}
+
+inline SymMat3 mass_matrix4(double *m)
+{
+  double mutot = 1. / (m[0] + m[1] + m[2] + m[3]);
+  double u1 = m[1] * mutot;
+  double u2 = m[2] * mutot;
+  double u3 = m[3] * mutot;
+  return SymMat3 { m[1] * (1. - u1), -m[1] * u2, -m[1] * u3,
+                               m[2] * (1. - u2), -m[2] * u3,
+                                            m[3] * (1. - u3)};
 }
 
 }
