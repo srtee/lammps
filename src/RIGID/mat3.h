@@ -33,11 +33,13 @@ struct SymMat3 {
 };
 
 struct Mat3;
+struct ColMat3;
 
 struct UTMat3 {
   double u00, u01, u02, u11, u12, u22;
   operator Mat3() const;
-  
+  operator ColMat3() const;
+
   void invert()
   {
     double inv00 = 1.0 / u00;
@@ -161,6 +163,15 @@ inline void u_mul(const UTMat3 &U, Mat3 &M)
     M(0, j) = U.u00 * M(0, j) + U.u01 * M(1, j) + U.u02 * M(2, j);
     M(1, j) = U.u11 * M(1, j) + U.u12 * M(2, j);
     M(2, j) = U.u22 * M(2, j);
+  }
+}
+
+inline void l_mul(const LTMat3 &L, Mat3 &M)
+{
+  for (int j = 0; j < 3; j++) {
+    M(2, j) = L.l20 * M(0, j) + L.l21 * M(1, j) + L.l22 * M(2, j);
+    M(1, j) = L.l10 * M(0, j) + L.l11 * M(1, j);
+    M(0, j) = L.l00 * M(0, j);
   }
 }
 
@@ -493,6 +504,15 @@ inline Mat3 operator*(const Mat3 &M, const SymMat3 &S) {
   return R;
 }
 
+inline UTMat3 transpose(const LTMat3 &L) {
+  return { L.l00, L.l10, L.l20, L.l11, L.l21, L.l22 };
+}
+
+inline LTMat3 transpose(const UTMat3 &U) {
+  return { U.u00, U.u01, U.u11, U.u02, U.u12, U.u22 };
+}
+
+
 // S ← L S Lᵀ where L is the unit lower-triangular part of the LTDL struct.
 // (When called with invert_to_ltdl output, L stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
 inline void lt_sandwich(SymMat3 &S, const LTDL3 &L)
@@ -742,6 +762,21 @@ inline LTMat3 chol_to_ltl_lower(const SymMat3 &A)
   return {l00, l10, l20, l11, l21, l22};
 }
 
+inline LTMat3 chol_lower(const SymMat3 &A)
+{
+  double l00 = sqrt(A.d00);
+  double l10 = A.d01 / l00;
+  double l20 = A.d02 / l00;
+  double l11 = sqrt(A.d11 - l10 * l10);
+  double l21 = (A.d12 - l10 * l20) / l11;
+  double l22 = sqrt(A.d22 - l20 * l20 - l21 * l21);
+  return {l00, l10, l20, l11, l21, l22};
+}
+
+inline UTMat3 chol_upper(const SymMat3 &S) {
+  return transpose(chol_lower(S));
+}
+
 inline UTMat3 inv_chol_upper(const SymMat3 &A)
 {
   double u00 = sqrt(A.d00);
@@ -760,6 +795,14 @@ inline UTMat3 inv_chol_upper(const SymMat3 &A)
 
   return {inv00, inv01, inv02, inv11, inv12, inv22};
 }
+  
+inline UTMat3::operator ColMat3() const {
+    ColMat3 M;
+    M(0, 0) = u00; M(0, 1) = u01; M(0, 2) = u02;
+    M(1, 0) = 0.0; M(1, 1) = u11; M(1, 2) = u12;
+    M(2, 0) = 0.0; M(2, 1) = 0.0; M(2, 2) = u22;
+    return M;
+  }
 
 inline void cross(const double a[3], const double b[3], double out[3])
 {
@@ -779,6 +822,18 @@ inline double normsq(const double v[3]) {
   return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 }
 
+inline LDU3 ldu3(const SymMat3 &A)
+{ // stores {d0, d1, u01} such that
+  // A = [  1, 0]  [d0,  1]  [1, u01]
+  //     [u01, 1]  [ 0, d1]  [0,   1]
+  double u01 = A.d01 / A.d00;
+  double u02 = A.d02 / A.d00;
+  double d1 = A.d12 - u01 * A.d01;
+  double u12 = (A.d12 - u01 * u02) / d1;
+  double d2 = A.d22 - u02 * u02 - u12 * u12;
+  return {A.d00, d1, d2, u01, u02, u12};
+}
+
 inline void cayley_rotate(const double v[3], ColMat3 &A)
 {
   double w = sqrt(1.0 - normsq(v));
@@ -792,6 +847,20 @@ inline void cayley_rotate(const double v[3], ColMat3 &A)
     col[1] += 2.0 * w * cross1[1] + 2.0 * cross2[1];
     col[2] += 2.0 * w * cross1[2] + 2.0 * cross2[2];
   }
+}
+
+inline void negskew_lt_mul(const LTMat3 &rc, const ColMat3 &sc, double out[3])
+// return -skew(rc * sc) 
+{
+  double g10 = rc.l10 * sc(0, 0) + rc.l11 * sc(1, 0);
+  double g01 = rc.l00 * sc(0, 1);
+  double g02 = rc.l00 * sc(0, 2);
+  double g20 = rc.l20 * sc(0, 0) + rc.l21 * sc(1, 0) + rc.l22 * sc(2, 0);
+  double g21 = rc.l20 * sc(0, 1) + rc.l21 * sc(1, 1) + rc.l22 * sc(2, 1);
+  double g12 = rc.l10 * sc(0, 2) + rc.l11 * sc(1, 2);
+  out[0] = g12 - g21;
+  out[1] = g20 - g02;
+  out[2] = g01 - g10;
 }
 
 inline void negskew_ut_mul(const UTMat3 &rc, const ColMat3 &sc, double out[3])
@@ -871,9 +940,44 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
   }
 
   if (niter_out) *niter_out = niter;
-
   Mat3 gamma = scm;
   u_mul(rc, gamma);
+  return gamma;
+}
+
+inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
+                            int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
+{
+  Mat3 G = cayley_jacobian(rc, sc); 
+  ColMat3 scm = sc;
+
+  double skewChi[3];
+  skew(chi, skewChi);
+
+  double tol_sq = 3.0 * tol * tol;
+
+  double negSkewGam[3], rotvec[3];
+  int niter;
+  for (niter = 0; niter < max_iters; niter++) {
+    negskew_lt_mul(rc, scm, negSkewGam);
+    negSkewGam[0] -= skewChi[0];
+    negSkewGam[1] -= skewChi[1];
+    negSkewGam[2] -= skewChi[2];
+    if (normsq(negSkewGam) < tol_sq) break;
+    G.mat_vec(negSkewGam, rotvec);
+    double rvsq = normsq(rotvec);
+    if (rvsq > 1.0) {
+      double rv = 1.001*sqrt(rvsq);
+      rotvec[0] /= rv;
+      rotvec[1] /= rv;
+      rotvec[2] /= rv;
+    }
+    cayley_rotate(rotvec, scm);
+  }
+
+  if (niter_out) *niter_out = niter;
+  Mat3 gamma = scm;
+  l_mul(rc, gamma);
   return gamma;
 }
 

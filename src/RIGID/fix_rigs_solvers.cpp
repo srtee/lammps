@@ -761,15 +761,27 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   get_mass4(closest_list[ilist], masses);
   SymMat3 new_mass_matrix = mass_matrix4(masses); 
 
-  Mat3 chi = mat_mul(inv_mat3(R), S);
+  Mat3 rinv = inv_mat3(R);
+  Mat3 chi = mat_mul(rinv, S);
   chi = chi * new_mass_matrix;
 //  rmul_ltdl(chi, reduced_mass_ltdl);
 
   SymMat3 rr_target_M = Lsq;
   lt_sandwich(rr_target_M, reduced_mass_ltdl);
   LTMat3 phi = mul_dl(chol_to_ltl_lower(rr_target_M), reduced_mass_ltdl);
-
   UTMat3 rnorm = inv_chol_upper(rr);
+  
+  //LDU3 mass_ldu = ldu3(new_mass_matrix);
+  //SymMat3 sigma = Lsq;
+  //UsL3(sigma, mass_ldu);
+  //UTMat3 pre_phi = chol_upper(sigma);
+  //UTMat3 phi = mul_du(pre_phi, mass_ldu);
+  
+  //Mat3 Q;
+  // LTMat3 rnorm = transpose(qr_decompose(rinv, Q));
+
+  
+  // UTMat3 rnorm = qr_decompose(transpose(rinv), Q);
   Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
