@@ -42,6 +42,14 @@ struct UTMat3 {
   operator Mat3() const;
   operator ColMat3() const;
 
+  static UTMat3 load(const double *p) {
+    return {p[0], p[1], p[2], p[3], p[4], p[5]};
+  }
+  void store(double *p) const {
+    p[0] = u00; p[1] = u01; p[2] = u02;
+    p[3] = u11; p[4] = u12; p[5] = u22;
+  }
+
   void invert()
   {
     double inv00 = 1.0 / u00;

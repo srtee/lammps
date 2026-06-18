@@ -273,6 +273,7 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     if (it == cache_key_to_idx.end()) {
       idx = Lsq_cached.size();
       Lsq_cached.emplace_back();
+      // Store Lsq (target geometry) — fixed, shared across rmass clusters
       Lsq_cached[idx].data[0] = bond0 * bond0;
       Lsq_cached[idx].data[1] = angle01;
       Lsq_cached[idx].data[2] = angle02;
@@ -284,13 +285,11 @@ int FixRigs::lookup_or_compute_improper(int ilist)
       idx = it->second;
     }
 
-    double *lm = reduced_rmass_ltdl[m];
-    lm[0] = dc.d0;
-    lm[1] = dc.d1;
-    lm[2] = dc.d2;
-    lm[3] = dc.l10;
-    lm[4] = dc.l20;
-    lm[5] = dc.l21;
+    // Store mass_ldu (LDU3 of mass_matrix4) per-cluster — recomputed each step
+    double masses4[4];
+    get_mass4(closest_list[ilist], masses4);
+    LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
+    mass_ldu.store(reduced_rmass_ltdl[m]);
     return idx;
   }
 
@@ -310,13 +309,17 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   int idx = Lsq_cached.size();
   Lsq_cached.emplace_back();
   reduced_mass_ltdl_cached.emplace_back();
-  Lsq_cached[idx].data[0] = bond0 * bond0;
-  Lsq_cached[idx].data[1] = angle01;
-  Lsq_cached[idx].data[2] = angle02;
-  Lsq_cached[idx].data[3] = bond1 * bond1;
-  Lsq_cached[idx].data[4] = angle12;
-  Lsq_cached[idx].data[5] = bond2 * bond2;
-  dc.store(reduced_mass_ltdl_cached[idx].data);
+  // Store phi (precomputed from Lsq + mass_matrix4) — fixed for non-rmass
+  double masses4[4] = {mass[t0], mass[t1], mass[t2], mass[t3]};
+  SymMat3 Lsq = {bond0 * bond0, angle01, angle02,
+                  bond1 * bond1, angle12, bond2 * bond2};
+  LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
+  SymMat3 sigma = Lsq;
+  UsL3(sigma, mass_ldu);
+  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
+  phi.store(Lsq_cached[idx].data);
+  // Store mass_ldu (needed for chi's new_mass_matrix at runtime)
+  mass_ldu.store(reduced_mass_ltdl_cached[idx].data);
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -333,18 +336,6 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double mu[4];
-  get_inv_mass4(closest_list[ilist], mu);
-  double mu0 = mu[0];
-  double mu2 = mu[2];
-  double mu10 = mu0 + mu[1];
-  double mu02 = mu0 + mu2;
-  double mu23 = mu2 + mu[3];
-  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
-  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
-  // yielding a MASS matrix (not an inverse mass matrix).
-  LTDL3 dc = invert_to_ltdl(SymMat3{mu10, mu0, 0, mu02, mu2, mu23});
-
   if (rmass) {
     char key[128];
     std::snprintf(key, sizeof(key), "6:%d:%d:%d", bt0, bt1, bt2);
@@ -354,6 +345,7 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
     if (it == cache_key_to_idx.end()) {
       idx = Lsq_cached.size();
       Lsq_cached.emplace_back();
+      // Store Lsq (target geometry) — fixed, shared across rmass clusters
       double bond1 = bond_distance[bt0];
       double bond2 = bond_distance[bt1];
       double bond3 = bond_distance[bt2];
@@ -368,8 +360,11 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
       idx = it->second;
     }
 
-    double *lm = reduced_rmass_ltdl[m];
-    dc.store(lm);
+    // Store mass_ldu (LDU3 of mass_matrix4) per-cluster — recomputed each step
+    double masses4[4];
+    get_mass4(closest_list[ilist], masses4);
+    LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
+    mass_ldu.store(reduced_rmass_ltdl[m]);
     return idx;
   }
 
@@ -387,13 +382,17 @@ int FixRigs::lookup_or_compute_dihedral(int ilist)
   double bond1 = bond_distance[bt0];
   double bond2 = bond_distance[bt1];
   double bond3 = bond_distance[bt2];
-  Lsq_cached[idx].data[0] = bond1 * bond1;
-  Lsq_cached[idx].data[1] = bond1 * bond2;
-  Lsq_cached[idx].data[2] = bond1 * bond3;
-  Lsq_cached[idx].data[3] = bond2 * bond2;
-  Lsq_cached[idx].data[4] = bond2 * bond3;
-  Lsq_cached[idx].data[5] = bond3 * bond3;
-  dc.store(reduced_mass_ltdl_cached[idx].data);
+  // Store phi (precomputed from Lsq + mass_matrix4) — fixed for non-rmass
+  double masses4[4] = {mass[t0], mass[t1], mass[t2], mass[t3]};
+  SymMat3 Lsq = {bond1 * bond1, bond1 * bond2, bond1 * bond3,
+                  bond2 * bond2, bond2 * bond3, bond3 * bond3};
+  LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
+  SymMat3 sigma = Lsq;
+  UsL3(sigma, mass_ldu);
+  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
+  phi.store(Lsq_cached[idx].data);
+  // Store mass_ldu (needed for chi's new_mass_matrix at runtime)
+  mass_ldu.store(reduced_mass_ltdl_cached[idx].data);
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
   return idx;
@@ -748,10 +747,11 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   }
 
   int idx = ilist_to_idx[ilist];
-  const double *Lp = Lsq_cached[idx].data;
-  const double *Lmp = rmass ? reduced_rmass_ltdl[m] : reduced_mass_ltdl_cached[idx].data;
-  SymMat3 Lsq = SymMat3::load(Lp);
-  LTDL3 reduced_mass_ltdl = LTDL3::load(Lmp);
+
+  // For non-rmass 3x3 entries: Lsq_cached stores phi (UTMat3),
+  //   reduced_mass_ltdl_cached stores mass_ldu (LDU3).
+  // For rmass 3x3 entries: Lsq_cached stores Lsq (SymMat3),
+  //   reduced_rmass_ltdl[m] stores mass_ldu (LDU3), phi is recomputed.
 
   double masses[4];
   get_mass4(closest_list[ilist], masses);
@@ -765,10 +765,16 @@ void FixRigs::solve3x3(int ilist, Topology topo)
 
   LTMat3 rnorm = L;
 
-  LDU3 mass_ldu = ldu3(new_mass_matrix);
-  SymMat3 sigma = Lsq;
-  UsL3(sigma, mass_ldu);
-  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
+  UTMat3 phi;
+  if (rmass) {
+    SymMat3 Lsq = SymMat3::load(Lsq_cached[idx].data);
+    LDU3 mass_ldu = LDU3::load(reduced_rmass_ltdl[m]);
+    SymMat3 sigma = Lsq;
+    UsL3(sigma, mass_ldu);
+    phi = mul_du(chol_upper(sigma), mass_ldu);
+  } else {
+    phi = UTMat3::load(Lsq_cached[idx].data);
+  }
 
   Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
