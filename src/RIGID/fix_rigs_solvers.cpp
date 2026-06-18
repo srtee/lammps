@@ -770,32 +770,6 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   UsL3(sigma, mass_ldu);
   UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
 
-  // Verify chi (chi is now passing at machine precision via the QL path)
-  Mat3 rinv = inv_mat3(R);
-  Mat3 chi_old = mat_mul(rinv, S);
-  chi_old = chi_old * new_mass_matrix;
-  double chi_err = 0;
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++)
-      chi_err += (chi(i,j) - chi_old(i,j)) * (chi(i,j) - chi_old(i,j));
-  static int dbg2 = 0;
-  if (dbg2 < 1) {
-    fprintf(stderr, "chi error: %.15e\n", sqrt(chi_err));
-    fprintf(stderr, "chi_new:\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n",
-      chi(0,0), chi(0,1), chi(0,2), chi(1,0), chi(1,1), chi(1,2), chi(2,0), chi(2,1), chi(2,2));
-    fprintf(stderr, "chi_old:\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n",
-      chi_old(0,0), chi_old(0,1), chi_old(0,2), chi_old(1,0), chi_old(1,1), chi_old(1,2), chi_old(2,0), chi_old(2,1), chi_old(2,2));
-    fprintf(stderr, "L entries: l00=%.15e l10=%.15e l20=%.15e l11=%.15e l21=%.15e l22=%.15e\n",
-      L.l00, L.l10, L.l20, L.l11, L.l21, L.l22);
-    fprintf(stderr, "R matrix:\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n",
-      R(0,0), R(0,1), R(0,2), R(1,0), R(1,1), R(1,2), R(2,0), R(2,1), R(2,2));
-    Mat3 L_mat = (Mat3)L;
-    Mat3 QL = mat_mul(Q, L_mat);
-    fprintf(stderr, "Q*L:\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n  %.15e %.15e %.15e\n",
-      QL(0,0), QL(0,1), QL(0,2), QL(1,0), QL(1,1), QL(1,2), QL(2,0), QL(2,1), QL(2,2));
-    dbg2++;
-  }
-
   Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
