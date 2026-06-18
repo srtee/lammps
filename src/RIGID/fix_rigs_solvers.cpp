@@ -753,22 +753,20 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   // For rmass 3x3 entries: Lsq_cached stores Lsq (SymMat3),
   //   reduced_rmass_ltdl[m] stores mass_ldu (LDU3), phi is recomputed.
 
-  double masses[4];
-  get_mass4(closest_list[ilist], masses);
-  SymMat3 new_mass_matrix = mass_matrix4(masses);
+  LDU3 mass_ldu = rmass ? LDU3::load(reduced_rmass_ltdl[m])
+                        : LDU3::load(reduced_mass_ltdl_cached[idx].data);
 
   Mat3 Q;
   LTMat3 L = ql_decompose(R, Q);
   L.invert();
   Mat3 QtS = mat_mul(transpose(Q), S);
-  Mat3 chi = mat_mul((Mat3)L, QtS * new_mass_matrix);
+  Mat3 chi = mat_mul((Mat3)L, QtS * mass_ldu);
 
   LTMat3 rnorm = L;
 
   UTMat3 phi;
   if (rmass) {
     SymMat3 Lsq = SymMat3::load(Lsq_cached[idx].data);
-    LDU3 mass_ldu = LDU3::load(reduced_rmass_ltdl[m]);
     SymMat3 sigma = Lsq;
     UsL3(sigma, mass_ldu);
     phi = mul_du(chol_upper(sigma), mass_ldu);
