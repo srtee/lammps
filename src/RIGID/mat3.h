@@ -942,47 +942,46 @@ inline void negskew_mul(const Mat3 &A, const ColMat3 &sc, double out[3])
 }
 
 // J(A, B) where A is upper-tri, B is lower-tri.
-// Result is lower-triangular (document: Case 1).
+// Result is lower-triangular (document: Case 1). Returns J^{-1} (Cayley
+// factor of 2 included, then inverted).
 inline LTMat3 cayley_jacobian(const UTMat3 &A, const LTMat3 &B)
 {
-  // Rows of A: a1=(u00,u01,u02), a2=(0,u11,u12), a3=(0,0,u22)
-  // Cols of B: b1=(l00,l10,l20), b2=(0,l11,l21), b3=(0,0,l22)
-  // Row 0 (i=2,j=1): a2 x b3 - a3 x b2
-  //   = (u11*l22 + u22*l11, -u22*l10 - u01*l22, -u01*l21 + u02*l11 + u11*l20 - u12*l10)
-  // Row 1 (i=0,j=2): a3 x b1 - a1 x b3
-  //   = (u22*l00 + u00*l22, -u00*l21 - u12*l00, ...)
-  // Row 2 (i=1,j=0): a1 x b2 - a2 x b1
-  //   = (..., ..., u00*l11 + u11*l00)
-  // Factor of 2 included.
+  // A entries (1-indexed): a11=u00, a12=u01, a13=u02, a22=u11, a23=u12, a33=u22
+  // B entries (1-indexed): b11=l00, b21=l10, b31=l20, b22=l11, b32=l21, b33=l22
+  // J = 1/2 * lower-tri, rows indexed by crossvec (i,j)=(2,3),(3,1),(1,2):
+  //   l00 = a22*b33 + a33*b22
+  //   l10 = -a33*b21 - a12*b33     l11 = a33*b11 + a11*b33
+  //   l20 = a12*b32 - a13*b22      l21 = -a11*b32 - a23*b11    l22 = a11*b22 + a22*b11
   LTMat3 G;
   G.l00 = 2.0 * (A.u11 * B.l22 + A.u22 * B.l11);
   G.l10 = 2.0 * (-A.u22 * B.l10 - A.u01 * B.l22);
   G.l11 = 2.0 * (A.u22 * B.l00 + A.u00 * B.l22);
-  G.l20 = 2.0 * (A.u01 * B.l21 - A.u02 * B.l11 - (A.u11 * B.l20 - A.u12 * B.l10));
-  G.l21 = 2.0 * (-A.u00 * B.l21 - A.u12 * B.l00);
+  G.l20 = 2.0 * (A.u01 * B.l21 - A.u02 * B.l11);
+  G.l21 = 2.0 * (-A.u00 * B.l21 - A.u12 * B.l10);
   G.l22 = 2.0 * (A.u00 * B.l11 + A.u11 * B.l00);
   G.invert();
   return G;
 }
 
 // J(A, B) where A is lower-tri, B is upper-tri.
-// Result is upper-triangular (document: Case 2).
+// Result is upper-triangular (document: Case 2). Returns J^{-1} (Cayley
+// factor of 2 included, then inverted).
 inline UTMat3 cayley_jacobian(const LTMat3 &A, const UTMat3 &B)
 {
-  // Rows of A: a1=(l00,0,0), a2=(l10,l11,0), a3=(l20,l21,l22)
-  // Cols of B: b1=(u00,0,0), b2=(u01,u11,0), b3=(u02,u12,u22)
-  // Row 0 (i=2,j=1): a1 x b2 - a2 x b1 = (0, 0, l00*u11 + l11*u00)
-  // Row 1 (i=0,j=2): a3 x b1 - a1 x b3 = (0, l22*u00 + l00*u22, -l21*u00 - l00*u12)
-  // Row 2 (i=1,j=0): a2 x b3 - a3 x b2
-  //   = (l11*u22 + l22*u11, -l10*u22 - l22*u01, l10*u12 - l11*u02 - l20*u11 + l21*u01)
-  // Factor of 2 included.
+  // A entries (1-indexed): a11=l00, a21=l10, a31=l20, a22=l11, a32=l21, a33=l22
+  // B entries (1-indexed): b11=u00, b12=u01, b13=u02, b22=u11, b23=u12, b33=u22
+  // J = 1/2 * upper-tri, rows indexed by crossvec (i,j)=(2,3),(3,1),(1,2):
+  //   u00 = a22*b33 + a33*b22
+  //   u01 = -a21*b33 - a33*b12     u02 = a21*b23 - a22*b13 - a31*b22 + a32*b12
+  //   u11 = a33*b11 + a11*b33      u12 = -a32*b11 - a11*b23
+  //   u22 = a11*b22 + a22*b11
   UTMat3 G;
-  G.u00 = 2.0 * (A.l00 * B.u11 + A.l11 * B.u00);
-  G.u01 = 2.0 * (A.l22 * B.u00 + A.l00 * B.u22);
-  G.u02 = 2.0 * (-A.l21 * B.u00 - A.l00 * B.u12);
-  G.u11 = 2.0 * (A.l11 * B.u22 + A.l22 * B.u11 - A.l21 * B.u12);
-  G.u12 = 2.0 * (-A.l10 * B.u22 - A.l22 * B.u01);
-  G.u22 = 2.0 * (A.l10 * B.u12 - A.l11 * B.u02 - A.l20 * B.u11 + A.l21 * B.u01);
+  G.u00 = 2.0 * (A.l11 * B.u22 + A.l22 * B.u11);
+  G.u01 = 2.0 * (-A.l10 * B.u22 - A.l22 * B.u01);
+  G.u02 = 2.0 * (A.l10 * B.u12 - A.l11 * B.u02 - A.l20 * B.u11 + A.l21 * B.u01);
+  G.u11 = 2.0 * (A.l22 * B.u00 + A.l00 * B.u22);
+  G.u12 = 2.0 * (-A.l21 * B.u00 - A.l00 * B.u12);
+  G.u22 = 2.0 * (A.l00 * B.u11 + A.l11 * B.u00);
   G.invert();
   return G;
 }
