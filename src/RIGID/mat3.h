@@ -426,6 +426,60 @@ inline UTMat3 qr_decompose(const Mat3 &A, Mat3 &Q)
   return {u00, u01, u02, u11, u12, u22};
 }
 
+inline LTMat3 ql_decompose(const Mat3 &A, Mat3 &Q)
+{
+  double a00 = A(0,0), a01 = A(0,1), a02 = A(0,2);
+  double a10 = A(1,0), a11 = A(1,1), a12 = A(1,2);
+  double a20 = A(2,0), a21 = A(2,1), a22 = A(2,2);
+
+  // QL decomposition: A = Q * L where Q is orthogonal, L is lower triangular
+  // We apply left Householder reflections to zero upper-triangular entries.
+  // H2 * H1 * A = L, so A = H1 * H2 * L = Q * L.
+
+  // Step 1: Zero (0,2) and (1,2) by reflecting column 2
+  double col2[3] = {a02, a12, a22};
+  double nrm2 = sqrt(col2[0]*col2[0] + col2[1]*col2[1] + col2[2]*col2[2]);
+  double l22 = a22 >= 0 ? nrm2 : -nrm2;
+  col2[2] -= l22;
+  double inv_n2 = 1.0 / sqrt(col2[0]*col2[0] + col2[1]*col2[1] + col2[2]*col2[2]);
+  col2[0] *= inv_n2; col2[1] *= inv_n2; col2[2] *= inv_n2;
+
+  double d;
+  d = col2[0]*a00 + col2[1]*a10 + col2[2]*a20;
+  a00 -= 2*col2[0]*d; a10 -= 2*col2[1]*d; a20 -= 2*col2[2]*d;
+  d = col2[0]*a01 + col2[1]*a11 + col2[2]*a21;
+  a01 -= 2*col2[0]*d; a11 -= 2*col2[1]*d; a21 -= 2*col2[2]*d;
+  d = col2[0]*a02 + col2[1]*a12 + col2[2]*a22;
+  a02 -= 2*col2[0]*d; a12 -= 2*col2[1]*d; a22 -= 2*col2[2]*d;
+
+  // Step 2: Zero (0,1) by reflecting column 1 (rows 0,1)
+  double nrm1 = sqrt(a01*a01 + a11*a11);
+  double l11 = a11 >= 0 ? nrm1 : -nrm1;
+  double v1_0 = a01, v1_1 = a11 - l11;
+  double inv_n1 = 1.0 / sqrt(v1_0*v1_0 + v1_1*v1_1);
+  v1_0 *= inv_n1; v1_1 *= inv_n1;
+
+  d = v1_0*a00 + v1_1*a10;
+  a00 -= 2*v1_0*d; a10 -= 2*v1_1*d;
+  d = v1_0*a01 + v1_1*a11;
+  a01 -= 2*v1_0*d; a11 -= 2*v1_1*d;
+
+  // Build Q = H1 * H2
+  Q(0,0) = 1; Q(0,1) = 0; Q(0,2) = 0;
+  Q(1,0) = 0; Q(1,1) = 1; Q(1,2) = 0;
+  Q(2,0) = 0; Q(2,1) = 0; Q(2,2) = 1;
+  for (int j = 0; j < 3; j++) {
+    d = v1_0*Q(0,j) + v1_1*Q(1,j);
+    Q(0,j) -= 2*v1_0*d; Q(1,j) -= 2*v1_1*d;
+  }
+  for (int j = 0; j < 3; j++) {
+    d = col2[0]*Q(0,j) + col2[1]*Q(1,j) + col2[2]*Q(2,j);
+    Q(0,j) -= 2*col2[0]*d; Q(1,j) -= 2*col2[1]*d; Q(2,j) -= 2*col2[2]*d;
+  }
+
+  return {a00, a10, a20, l11, a21, l22};
+}
+
 inline Mat3 transpose(const Mat3 &A)
 {
   Mat3 T;
@@ -458,28 +512,38 @@ struct LDU3 {
 
 inline void UsL3(SymMat3 &S, const LDU3 &ldu)
 {
-  double s00 = S.d00, s01 = S.d01, s02 = S.d02;
-  double s11 = S.d11, s12 = S.d12, s22 = S.d22;
-
-  double t00 = s00 + ldu.u01 * s01 + ldu.u02 * s02;
-  double t01 = s01 + ldu.u01 * s11 + ldu.u02 * s12;
-  double t02 = s02 + ldu.u01 * s12 + ldu.u02 * s22;
-  double t11 = s11 + ldu.u12 * s12;
-  double t12 = s12 + ldu.u12 * s22;
-
-  S.d00 = t00 + t01 * ldu.u01 + t02 * ldu.u02;
-  S.d01 = t01 + t02 * ldu.u12;
-  S.d02 = t02;
-  S.d11 = t11 + t12 * ldu.u12;
-  S.d12 = t12;
-  S.d22 = s22;
+  // s <- upper tri of Us
+  S.d00 += ldu.u01 * S.d01 + ldu.u02 * S.d02;
+  S.d01 += ldu.u01 * S.d11 + ldu.u02 * S.d12;
+  S.d02 += ldu.u01 * S.d12 + ldu.u02 * S.d22;
+  S.d11 += ldu.u12 * S.d12;
+  S.d12 += ldu.u12 * S.d22;
+  // Us <- UsL
+  S.d00 += S.d01 * ldu.u01 + S.d02 * ldu.u02;
+  S.d01 += S.d02 * ldu.u12;
+  S.d11 += S.d12 * ldu.u12;
+//  double s00 = S.d00, s01 = S.d01, s02 = S.d02;
+//  double s11 = S.d11, s12 = S.d12, s22 = S.d22;
+//
+//  double t00 = s00 + ldu.u01 * s01 + ldu.u02 * s02;
+//  double t01 = s01 + ldu.u01 * s11 + ldu.u02 * s12;
+//  double t02 = s02 + ldu.u01 * s12 + ldu.u02 * s22;
+//  double t11 = s11 + ldu.u12 * s12;
+//  double t12 = s12 + ldu.u12 * s22;
+//
+//  S.d00 = t00 + t01 * ldu.u01 + t02 * ldu.u02;
+//  S.d01 = t01 + t02 * ldu.u12;
+//  S.d02 = t02;
+//  S.d11 = t11 + t12 * ldu.u12;
+//  S.d12 = t12;
+//  S.d22 = s22;
 }
 
 inline UTMat3 mul_du(const UTMat3 &inputU, const LDU3 &ldu)
 {
   UTMat3 U = inputU;
-  U.u00 *= ldu.d0; U.u01 *= ldu.d0; U.u02 *= ldu.d0;
-  U.u11 *= ldu.d1; U.u12 *= ldu.d1; U.u22 *= ldu.d2;
+  U.u00 *= ldu.d0; U.u01 *= ldu.d1; U.u02 *= ldu.d2;
+  U.u11 *= ldu.d1; U.u12 *= ldu.d2; U.u22 *= ldu.d2;
   U.u02 += U.u00 * ldu.u02 + U.u01 * ldu.u12;
   U.u12 += U.u11 * ldu.u12;
   U.u01 += U.u00 * ldu.u01;
@@ -515,7 +579,7 @@ inline UTMat3 transpose(const LTMat3 &L) {
 }
 
 inline LTMat3 transpose(const UTMat3 &U) {
-  return { U.u00, U.u01, U.u11, U.u02, U.u12, U.u22 };
+  return { U.u00, U.u01, U.u02, U.u11, U.u12, U.u22 };
 }
 
 
@@ -837,14 +901,12 @@ inline double normsq(const double v[3]) {
 }
 
 inline LDU3 ldu3(const SymMat3 &A)
-{ // stores {d0, d1, u01} such that
-  // A = [  1, 0]  [d0,  1]  [1, u01]
-  //     [u01, 1]  [ 0, d1]  [0,   1]
+{
   double u01 = A.d01 / A.d00;
   double u02 = A.d02 / A.d00;
-  double d1 = A.d12 - u01 * A.d01;
-  double u12 = (A.d12 - u01 * u02) / d1;
-  double d2 = A.d22 - u02 * u02 - u12 * u12;
+  double d1 = A.d11 - u01 * A.d01;
+  double u12 = (A.d12 - A.d01 * u02) / d1;
+  double d2 = A.d22 - A.d00 * u02 * u02 - d1 * u12 * u12;
   return {A.d00, d1, d2, u01, u02, u12};
 }
 
@@ -891,42 +953,70 @@ inline void negskew_ut_mul(const UTMat3 &rc, const ColMat3 &sc, double out[3])
   out[2] = g01 - g10;
 }
 
-inline Mat3 cayley_jacobian(const UTMat3 &rc, const LTMat3 &sc)
+inline void negskew_mul(const Mat3 &A, const ColMat3 &sc, double out[3])
 {
-  LTMat3 G;
-  G.l00 = 2.0 * (rc.u11 * sc.l22 + rc.u22 * sc.l11);
-  G.l10 = 2.0 * (-rc.u22 * sc.l10 - rc.u01 * sc.l22);
-  G.l11 = 2.0 * (rc.u22 * sc.l00 + rc.u00 * sc.l22);
-  G.l20 = 2.0 * (rc.u01 * sc.l21 - rc.u02 * sc.l11 - (rc.u11 * sc.l20 - rc.u12 * sc.l10));
-  G.l21 = 2.0 * (-rc.u00 * sc.l21 - rc.u12 * sc.l00);
-  G.l22 = 2.0 * (rc.u00 * sc.l11 + rc.u11 * sc.l00);
-
-  G.invert();
-
-  Mat3 M = G;
-  return M;
+  double g10 = A(1, 0) * sc(0, 0) + A(1, 1) * sc(1, 0) + A(1, 2) * sc(2, 0);
+  double g01 = A(0, 0) * sc(0, 1) + A(0, 1) * sc(1, 1) + A(0, 2) * sc(2, 1);
+  double g02 = A(0, 0) * sc(0, 2) + A(0, 1) * sc(1, 2) + A(0, 2) * sc(2, 2);
+  double g20 = A(2, 0) * sc(0, 0) + A(2, 1) * sc(1, 0) + A(2, 2) * sc(2, 0);
+  double g21 = A(2, 0) * sc(0, 1) + A(2, 1) * sc(1, 1) + A(2, 2) * sc(2, 1);
+  double g12 = A(1, 0) * sc(0, 2) + A(1, 1) * sc(1, 2) + A(1, 2) * sc(2, 2);
+  out[0] = g12 - g21;
+  out[1] = g20 - g02;
+  out[2] = g01 - g10;
 }
 
-inline Mat3 cayley_jacobian(const LTMat3 &rc, const UTMat3 &sc)
+// J(A, B) where A is upper-tri, B is lower-tri.
+// Result is lower-triangular (document: Case 1).
+inline LTMat3 cayley_jacobian(const UTMat3 &A, const LTMat3 &B)
 {
-  UTMat3 G;
-  G.u00 = 2.0 * (rc.l11 * sc.u22 + rc.l22 * sc.u11);
-  G.u01 = 2.0 * (-rc.l10 * sc.u22 - rc.l22 * sc.u01);
-  G.u02 = 2.0 * (rc.l10 * sc.u12 - rc.l11 * sc.u02 - (rc.l20 * sc.u11 - rc.l21 * sc.u01));
-  G.u11 = 2.0 * (rc.l22 * sc.u00 + rc.l00 * sc.u22);
-  G.u12 = 2.0 * (-rc.l21 * sc.u00 - rc.l00 * sc.u12);
-  G.u22 = 2.0 * (rc.l00 * sc.u11 + rc.l11 * sc.u00);
-
+  // Rows of A: a1=(u00,u01,u02), a2=(0,u11,u12), a3=(0,0,u22)
+  // Cols of B: b1=(l00,l10,l20), b2=(0,l11,l21), b3=(0,0,l22)
+  // Row 0 (i=2,j=1): a2 x b3 - a3 x b2
+  //   = (u11*l22 + u22*l11, -u22*l10 - u01*l22, -u01*l21 + u02*l11 + u11*l20 - u12*l10)
+  // Row 1 (i=0,j=2): a3 x b1 - a1 x b3
+  //   = (u22*l00 + u00*l22, -u00*l21 - u12*l00, ...)
+  // Row 2 (i=1,j=0): a1 x b2 - a2 x b1
+  //   = (..., ..., u00*l11 + u11*l00)
+  // Factor of 2 included.
+  LTMat3 G;
+  G.l00 = 2.0 * (A.u11 * B.l22 + A.u22 * B.l11);
+  G.l10 = 2.0 * (-A.u22 * B.l10 - A.u01 * B.l22);
+  G.l11 = 2.0 * (A.u22 * B.l00 + A.u00 * B.l22);
+  G.l20 = 2.0 * (A.u01 * B.l21 - A.u02 * B.l11 - (A.u11 * B.l20 - A.u12 * B.l10));
+  G.l21 = 2.0 * (-A.u00 * B.l21 - A.u12 * B.l00);
+  G.l22 = 2.0 * (A.u00 * B.l11 + A.u11 * B.l00);
   G.invert();
+  return G;
+}
 
-  Mat3 M = G;
-  return M;
+// J(A, B) where A is lower-tri, B is upper-tri.
+// Result is upper-triangular (document: Case 2).
+inline UTMat3 cayley_jacobian(const LTMat3 &A, const UTMat3 &B)
+{
+  // Rows of A: a1=(l00,0,0), a2=(l10,l11,0), a3=(l20,l21,l22)
+  // Cols of B: b1=(u00,0,0), b2=(u01,u11,0), b3=(u02,u12,u22)
+  // Row 0 (i=2,j=1): a1 x b2 - a2 x b1 = (0, 0, l00*u11 + l11*u00)
+  // Row 1 (i=0,j=2): a3 x b1 - a1 x b3 = (0, l22*u00 + l00*u22, -l21*u00 - l00*u12)
+  // Row 2 (i=1,j=0): a2 x b3 - a3 x b2
+  //   = (l11*u22 + l22*u11, -l10*u22 - l22*u01, l10*u12 - l11*u02 - l20*u11 + l21*u01)
+  // Factor of 2 included.
+  UTMat3 G;
+  G.u00 = 2.0 * (A.l00 * B.u11 + A.l11 * B.u00);
+  G.u01 = 2.0 * (A.l22 * B.u00 + A.l00 * B.u22);
+  G.u02 = 2.0 * (-A.l21 * B.u00 - A.l00 * B.u12);
+  G.u11 = 2.0 * (A.l11 * B.u22 + A.l22 * B.u11 - A.l21 * B.u12);
+  G.u12 = 2.0 * (-A.l10 * B.u22 - A.l22 * B.u01);
+  G.u22 = 2.0 * (A.l10 * B.u12 - A.l11 * B.u02 - A.l20 * B.u11 + A.l21 * B.u01);
+  G.invert();
+  return G;
 }
 
 inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
                             int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
 {
-  Mat3 G = cayley_jacobian(rc, sc); 
+  LTMat3 G_lt = cayley_jacobian(rc, sc);
+  Mat3 G = G_lt;
   ColMat3 scm = sc;
 
   double skewChi[3];
@@ -962,7 +1052,8 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
 inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
                             int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
 {
-  Mat3 G = cayley_jacobian(rc, sc); 
+  UTMat3 G_ut = cayley_jacobian(rc, sc);
+  Mat3 G = G_ut;
   ColMat3 scm = sc;
 
   double skewChi[3];
