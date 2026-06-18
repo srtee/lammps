@@ -162,7 +162,7 @@ int FixRigs::lookup_or_compute_improper(int ilist)
 
   SymMat3 MLM = mtm(phi);
   int perm_mlm[3];
-  LTDL3 dc_MLM = ltdl_pivot3(MLM, perm_mlm);
+  LDU3 dc_MLM = ldu_pivot3(MLM, perm_mlm);
   double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
   constexpr double demote_threshold = 1e-3;
 
@@ -201,9 +201,9 @@ int FixRigs::lookup_or_compute_improper(int ilist)
         Lsq_cached[idx].data[2] = bond_distance[tri_bt1] * bond_distance[tri_bt1];
         SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                         bond1 * bond1, angle12, bond2 * bond2};
-        LTDL3 dcL = ltdl_pivot_one(Lref, pos_smallest_d - 1);
-        Lsq_cached[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-        Lsq_cached[idx].data[4] = dcL.l21;
+        LDU3 dcL = ldu_pivot_one(Lref, pos_smallest_d - 1);
+        Lsq_cached[idx].data[3] = dcL.u02 - dcL.u01 * dcL.u12;
+        Lsq_cached[idx].data[4] = dcL.u12;
         Lsq_cached[idx].data[5] = sqrt(dcL.d2);
         cache_key_to_idx[skey] = idx;
       } else {
@@ -245,9 +245,9 @@ int FixRigs::lookup_or_compute_improper(int ilist)
 
     SymMat3 Lref = {bond0 * bond0, angle01, angle02,
                     bond1 * bond1, angle12, bond2 * bond2};
-    LTDL3 dcL = ltdl_pivot_one(Lref, pos_smallest_d - 1);
-    Lsq_cached[idx].data[3] = dcL.l20 - dcL.l10 * dcL.l21;
-    Lsq_cached[idx].data[4] = dcL.l21;
+    LDU3 dcL = ldu_pivot_one(Lref, pos_smallest_d - 1);
+    Lsq_cached[idx].data[3] = dcL.u02 - dcL.u01 * dcL.u12;
+    Lsq_cached[idx].data[4] = dcL.u12;
     Lsq_cached[idx].data[5] = sqrt(dcL.d2);
 
     entry_demoted_pivot.push_back(pos_smallest_d);

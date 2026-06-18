@@ -151,10 +151,6 @@ struct LTMat3 {
   }
 };
 
-struct LTDL3 {
-  double d0, d1, d2, l10, l20, l21;
-};
-
 inline void l_mul(const LTMat3 &L, Mat3 &M)
 {
   for (int j = 0; j < 3; j++) {
@@ -301,12 +297,10 @@ inline Mat3 operator*(const Mat3 &inputM, const LDU3 &ldu) {
   return M;
 }
 
-inline LTDL3 ltdl_pivot_one(const SymMat3 &A, int p)
+// Semi-pivoted LDU: swap row/column p to position 2 only.
+// Returns P A P^T = L D U where U = L^T (symmetric), in LDU3 form.
+inline LDU3 ldu_pivot_one(const SymMat3 &A, int p)
 {
-  // Semi-pivoted LDL^T: swap row/column p to position 2 only.
-  // This ensures the first two columns always correspond to the
-  // two non-demoted bonds, while the demoted bond's direction is
-  // moved to position 2 where it can be safely eliminated.
   double a00 = A.d00, a01 = A.d01, a02 = A.d02;
   double a11 = A.d11, a12 = A.d12;
   double a22 = A.d22;
@@ -320,28 +314,25 @@ inline LTDL3 ltdl_pivot_one(const SymMat3 &A, int p)
   }
 
   double d0 = a00;
-  double m01 = a01 / d0;
-  double m02 = a02 / d0;
+  double u01 = a01 / d0;
+  double u02 = a02 / d0;
 
-  double c11 = a11 - m01 * a01;
-  double c12 = a12 - m01 * a02;
+  double c11 = a11 - u01 * a01;
+  double c12 = a12 - u01 * a02;
 
   double d1 = c11;
-  double m12 = c12 / d1;
-  double d2 = a22 - m02 * a02 - m12 * c12;
+  double u12 = c12 / d1;
+  double d2 = a22 - u02 * a02 - u12 * c12;
   if (d2 < 0.0) d2 = 0.0;
 
-  return {d0, d1, d2, m01, m02, m12};
+  return {d0, d1, d2, u01, u02, u12};
 }
 
-// Fully-pivoted LDL^T factorization of 3x3 symmetric matrix A.
-// Returns P A P^T = L D L^T in compact LTDL3 form, where:
-//   - D = diag(d0, d1, d2) is the diagonal
-//   - L is unit lower-triangular with sub-diagonal entries m01, m02, m12
-//   - P is the row/column permutation recorded in perm[]
+// Fully-pivoted LDU factorization of 3x3 symmetric matrix A.
+// Returns P A P^T = L D U (U = L^T for symmetric) in LDU3 form.
 // Pivoting selects the largest |diag| at each elimination step for stability.
 // Negative d2 is clamped to zero (positive semi-definite projection).
-inline LTDL3 ltdl_pivot3(const SymMat3 &A, int perm[3])
+inline LDU3 ldu_pivot3(const SymMat3 &A, int perm[3])
 {
   perm[0] = 0; perm[1] = 1; perm[2] = 2;
 
@@ -363,29 +354,27 @@ inline LTDL3 ltdl_pivot3(const SymMat3 &A, int perm[3])
     }
   }
 
-  // Eliminate column 0: compute d0, multipliers m01, m02, and Schur complement
   double d0 = a00;
-  double m01 = a01 / d0;
-  double m02 = a02 / d0;
+  double u01 = a01 / d0;
+  double u02 = a02 / d0;
 
-  double c11 = a11 - m01 * a01;
-  double c12 = a12 - m01 * a02;
-  double c22 = a22 - m02 * a02;
+  double c11 = a11 - u01 * a01;
+  double c12 = a12 - u01 * a02;
+  double c22 = a22 - u02 * a02;
 
   // Pivot 2: swap larger |diag| of 2x2 Schur complement to position 1
   if (std::fabs(c22) > std::fabs(c11)) {
     int t = perm[1]; perm[1] = perm[2]; perm[2] = t;
     double tmp = c11; c11 = c22; c22 = tmp;
-    tmp = m01; m01 = m02; m02 = tmp;
+    tmp = u01; u01 = u02; u02 = tmp;
   }
 
-  // Eliminate column 1: complete the factorization
   double d1 = c11;
-  double m12 = c12 / d1;
-  double d2 = c22 - m12 * c12;
-  if (d2 < 0.0) d2 = 0.0; // clamp for positive semi-definiteness
+  double u12 = c12 / d1;
+  double d2 = c22 - u12 * c12;
+  if (d2 < 0.0) d2 = 0.0;
 
-  return {d0, d1, d2, m01, m02, m12};
+  return {d0, d1, d2, u01, u02, u12};
 }
 
 // Upper-triangular Cholesky factor: U^T U = S.
