@@ -422,14 +422,15 @@ inline LTMat3 ql_decompose(const Mat3 &A, Mat3 &Q)
   double a10 = A(1,0), a11 = A(1,1), a12 = A(1,2);
   double a20 = A(2,0), a21 = A(2,1), a22 = A(2,2);
 
-  // QL decomposition: A = Q * L where Q is orthogonal, L is lower triangular
-  // We apply left Householder reflections to zero upper-triangular entries.
+  // QL decomposition: A = Q * L where Q is orthogonal, L is lower triangular.
+  // Sign convention: all diagonals of L are forced positive. We apply left
+  // Householder reflections to zero upper-triangular entries.
   // H2 * H1 * A = L, so A = H1 * H2 * L = Q * L.
 
   // Step 1: Zero (0,2) and (1,2) by reflecting column 2
   double col2[3] = {a02, a12, a22};
   double nrm2 = sqrt(col2[0]*col2[0] + col2[1]*col2[1] + col2[2]*col2[2]);
-  double l22 = a22 >= 0 ? nrm2 : -nrm2;
+  double l22 = nrm2;
   col2[2] -= l22;
   double inv_n2 = 1.0 / sqrt(col2[0]*col2[0] + col2[1]*col2[1] + col2[2]*col2[2]);
   col2[0] *= inv_n2; col2[1] *= inv_n2; col2[2] *= inv_n2;
@@ -444,7 +445,7 @@ inline LTMat3 ql_decompose(const Mat3 &A, Mat3 &Q)
 
   // Step 2: Zero (0,1) by reflecting column 1 (rows 0,1)
   double nrm1 = sqrt(a01*a01 + a11*a11);
-  double l11 = a11 >= 0 ? nrm1 : -nrm1;
+  double l11 = nrm1;
   double v1_0 = a01, v1_1 = a11 - l11;
   double inv_n1 = 1.0 / sqrt(v1_0*v1_0 + v1_1*v1_1);
   v1_0 *= inv_n1; v1_1 *= inv_n1;
@@ -467,7 +468,14 @@ inline LTMat3 ql_decompose(const Mat3 &A, Mat3 &Q)
     Q(0,j) -= 2*col2[0]*d; Q(1,j) -= 2*col2[1]*d; Q(2,j) -= 2*col2[2]*d;
   }
 
-  return {a00, a10, a20, l11, a21, l22};
+  // Force l00 > 0: if a00 < 0, flip sign of L row 0 and Q column 0.
+  double l00 = a00;
+  if (l00 < 0.0) {
+    l00 = -l00;
+    Q(0,0) = -Q(0,0); Q(1,0) = -Q(1,0); Q(2,0) = -Q(2,0);
+  }
+
+  return {l00, a10, a20, l11, a21, l22};
 }
 
 inline Mat3 transpose(const Mat3 &A)

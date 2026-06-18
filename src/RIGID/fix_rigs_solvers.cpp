@@ -763,20 +763,12 @@ void FixRigs::solve3x3(int ilist, Topology topo)
   Mat3 QtS = mat_mul(transpose(Q), S);
   Mat3 chi = mat_mul((Mat3)L, QtS * new_mass_matrix);
 
-  // Old code path: QR decomposition of R for rnorm, plus the old
-  // lower-triangular phi reconstructed via lt_sandwich + chol_upper +
-  // ql_decompose + mul_dl on the cached reduced_mass_ltdl.
-  Mat3 Qr;
-  UTMat3 U = qr_decompose(R, Qr);
-  U.invert();
-  UTMat3 rnorm_old = U;
+  LTMat3 rnorm = L;
 
-  SymMat3 sigma_old = Lsq;
-  lt_sandwich(sigma_old, reduced_mass_ltdl);
-  UTMat3 chol_sig = chol_upper(sigma_old);
-  Mat3 Qphi;
-  LTMat3 chol_lt = ql_decompose((Mat3)chol_sig, Qphi);
-  LTMat3 phi_old = mul_dl(chol_lt, reduced_mass_ltdl);
+  LDU3 mass_ldu = ldu3(new_mass_matrix);
+  SymMat3 sigma = Lsq;
+  UsL3(sigma, mass_ldu);
+  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
 
   // Verify chi (chi is now passing at machine precision via the QL path)
   Mat3 rinv = inv_mat3(R);
@@ -804,7 +796,7 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     dbg2++;
   }
 
-  Mat3 lamda = cayley_converge(rnorm_old, phi_old, chi, max_iter, tolerance, &niter);
+  Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
     iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;

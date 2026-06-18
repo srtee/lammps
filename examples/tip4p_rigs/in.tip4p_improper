@@ -22,7 +22,7 @@ neigh_modify every 1 delay 0 check no
 
 angle_style zero
 angle_coeff 1 104.52
-angle_coeff 2 63
+angle_coeff 2 67
 molecule water tip4p.mol
 create_atoms 0 random 33 34564 NULL mol water 25367 overlap 1.33
 
