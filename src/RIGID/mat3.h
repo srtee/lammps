@@ -154,6 +154,16 @@ struct LTMat3 {
     M(2, 0) = l20; M(2, 1) = l21; M(2, 2) = l22;
     return M;
   }
+
+  LTMat3 &operator*=(const double s) {
+    l00 *= s; l10 *= s; l11 *= s;
+    l20 *= s; l21 *= s; l22 *= s;
+    return *this;
+  }
+
+  LTMat3 operator*(const double s) const {
+    return {l00 * s, l10 * s, l20 * s, l11 * s, l21 * s, l22 * s};
+  }
 };
 
 inline void ut_mul(const UTMat3 &U, Mat3 &M)
@@ -524,21 +534,6 @@ inline void UsL3(SymMat3 &S, const LDU3 &ldu)
   S.d00 += S.d01 * ldu.u01 + S.d02 * ldu.u02;
   S.d01 += S.d02 * ldu.u12;
   S.d11 += S.d12 * ldu.u12;
-//  double s00 = S.d00, s01 = S.d01, s02 = S.d02;
-//  double s11 = S.d11, s12 = S.d12, s22 = S.d22;
-//
-//  double t00 = s00 + ldu.u01 * s01 + ldu.u02 * s02;
-//  double t01 = s01 + ldu.u01 * s11 + ldu.u02 * s12;
-//  double t02 = s02 + ldu.u01 * s12 + ldu.u02 * s22;
-//  double t11 = s11 + ldu.u12 * s12;
-//  double t12 = s12 + ldu.u12 * s22;
-//
-//  S.d00 = t00 + t01 * ldu.u01 + t02 * ldu.u02;
-//  S.d01 = t01 + t02 * ldu.u12;
-//  S.d02 = t02;
-//  S.d11 = t11 + t12 * ldu.u12;
-//  S.d12 = t12;
-//  S.d22 = s22;
 }
 
 inline UTMat3 mul_du(const UTMat3 &inputU, const LDU3 &ldu)
@@ -914,6 +909,18 @@ inline void cayley_rotate(const double v[3], ColMat3 &A)
     col[1] += 2.0 * w * cross1[1] + 2.0 * cross2[1];
     col[2] += 2.0 * w * cross1[2] + 2.0 * cross2[2];
   }
+}
+
+inline void diag_of_product(const LTMat3 &rc, const UTMat3 &sc, double out[3]){
+  out[0] = rc.l00*sc.u00;
+  out[1] = rc.l11*sc.u11;
+  out[2] = rc.l22*sc.u22;
+}
+
+inline void diag_of_product(const UTMat3 &rc, const LTMat3 &sc, double out[3]){
+  out[0] = rc.u00*sc.l00;
+  out[1] = rc.u11*sc.l11;
+  out[2] = rc.u22*sc.l22;
 }
 
 inline void negskew_lt_mul(const LTMat3 &rc, const ColMat3 &sc, double out[3])
