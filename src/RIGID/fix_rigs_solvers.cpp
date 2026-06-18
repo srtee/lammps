@@ -142,17 +142,6 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   int i2 = closest_list[ilist][2];
   int i3 = closest_list[ilist][3];
 
-  double mu[4];
-  get_inv_mass4(closest_list[ilist], mu);
-  double mu0 = mu[0];
-  double mu01 = mu0 + mu[1];
-  double mu02 = mu0 + mu[2];
-  double mu03 = mu0 + mu[3];
-  // Compute reduced_mass_ltdl = LDL^T of (B M^{-1} B^T)^{-1}.
-  // Input: inverse masses. invert_to_ltdl inverts the SymMat of sums of inverse masses,
-  // yielding a MASS matrix (not an inverse mass matrix).
-  LTDL3 dc = invert_to_ltdl(SymMat3{mu01, mu0, mu0, mu02, mu0, mu03});
-
   double bond0 = bond_distance[bt0];
   double bond1 = bond_distance[bt1];
   double bond2 = bond_distance[bt2];
@@ -160,15 +149,18 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   double angle02 = rigs_angle[at1];
   double angle12 = rigs_angle[at2];
 
-  double d0 = bond1;
-  double u01 = angle01 / d0;
-  double u02 = angle02 / d0;
-  double dd1 = sqrt(bond1 * bond1 - u01 * u01);
-  double u12 = (angle12 - u01 * u02) / dd1;
-  double dd2 = sqrt(bond2 * bond2 - u02 * u02 - u12 * u12);
-  Mat3 rt_LM = Mat3(UTMat3{d0, u01, u02, dd1, u12, dd2});
-  rmul_ltdl(rt_LM, dc);
-  SymMat3 MLM = mtm(rt_LM);
+  SymMat3 Lsq = {bond0 * bond0, angle01, angle02,
+                 bond1 * bond1, angle12, bond2 * bond2};
+
+  double masses4[4];
+  get_mass4(closest_list[ilist], masses4);
+  LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
+
+  SymMat3 sigma = Lsq;
+  UsL3(sigma, mass_ldu);
+  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
+
+  SymMat3 MLM = mtm(phi);
   int perm_mlm[3];
   LTDL3 dc_MLM = ltdl_pivot3(MLM, perm_mlm);
   double ratio_d2d0 = (dc_MLM.d0 > 0.0) ? dc_MLM.d2 / dc_MLM.d0 : 0.0;
@@ -286,9 +278,6 @@ int FixRigs::lookup_or_compute_improper(int ilist)
     }
 
     // Store mass_ldu (LDU3 of mass_matrix4) per-cluster — recomputed each step
-    double masses4[4];
-    get_mass4(closest_list[ilist], masses4);
-    LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
     mass_ldu.store(reduced_rmass_ltdl[m]);
     return idx;
   }
@@ -310,15 +299,8 @@ int FixRigs::lookup_or_compute_improper(int ilist)
   Lsq_cached.emplace_back();
   reduced_mass_ltdl_cached.emplace_back();
   // Store phi (precomputed from Lsq + mass_matrix4) — fixed for non-rmass
-  double masses4[4] = {mass[t0], mass[t1], mass[t2], mass[t3]};
-  SymMat3 Lsq = {bond0 * bond0, angle01, angle02,
-                  bond1 * bond1, angle12, bond2 * bond2};
-  LDU3 mass_ldu = ldu3(mass_matrix4(masses4));
-  SymMat3 sigma = Lsq;
-  UsL3(sigma, mass_ldu);
-  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
   phi.store(Lsq_cached[idx].data);
-  // Store mass_ldu (needed for chi's new_mass_matrix at runtime)
+  // Store mass_ldu (needed for chi at runtime)
   mass_ldu.store(reduced_mass_ltdl_cached[idx].data);
   entry_demoted_pivot.push_back(0);
   cache_key_to_idx[skey] = idx;
