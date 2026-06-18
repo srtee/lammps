@@ -441,7 +441,9 @@ void FixRigs::shake4demoted(int ilist)
       } else if (atom->tag[closest_list[ilist][3]] == dtag) {
         i2 = closest_list[ilist][2];
         i3 = closest_list[ilist][3];
-      } // TODO: throw an error!
+      } else {
+        error->one(FLERR, "RIGS demoted tag not found in cluster atoms");
+      }
   }
 
   int idx = ilist_to_idx[ilist];
@@ -458,8 +460,6 @@ void FixRigs::shake4demoted(int ilist)
     mass0 = mass[type[i0]]; mass1 = mass[type[i1]];
     mass2 = mass[type[i2]]; mass3 = mass[type[i3]];
   }
-  
-  //redistribute_forcemom_linear(ilist, i0, i1, i2, i3);
   double M012 = mass0 + mass1 + mass2;
   double ratio012 = M012 / (M012 + mass3);
   Vec3 fchange = Vec3(f[i3]) * ratio012;
@@ -470,27 +470,27 @@ void FixRigs::shake4demoted(int ilist)
   double mult1 = a1 / mass1;
   double mult2 = a2 / mass2;
 
-  for (k = 0; k < 3; k++)
+  for (k = 0; k < 3; k++) {
     xshake[i0][k] += xchange[k] * mult0;
-    if (i0 < nlocal)
-      for (k = 0; k < 3; k++) {
+    if (i0 < nlocal) {
       v[i0][k] += vchange[k] * mult0;
       f[i0][k] += fchange[k] * mult0 * mass0;
     }
-  for (k = 0; k < 3; k++)
+  }
+  for (k = 0; k < 3; k++) {
     xshake[i1][k] += xchange[k] * mult1;
-    if (i1 < nlocal)
-      for (k = 0; k < 3; k++) {
+    if (i1 < nlocal) {
       v[i1][k] += vchange[k] * mult1;
       f[i1][k] += fchange[k] * mult1 * mass1;
     }
-  for (k = 0; k < 3; k++)
+  }
+  for (k = 0; k < 3; k++) {
     xshake[i2][k] += xchange[k] * mult2;
-    if (i2 < nlocal)
-      for (k = 0; k < 3; k++) {
+    if (i2 < nlocal) {
       v[i2][k] += vchange[k] * mult2;
       f[i2][k] += fchange[k] * mult2 * mass2;
     }
+  }
   for (int k = 0; k < 3; k++) {
     f[i3][k] -= fchange[k];
     v[i3][k] -= vchange[k] / mass3;
@@ -534,20 +534,23 @@ void FixRigs::shake4demoted(int ilist)
   }
 
   vcorr *= mass3 / M012;
-  if (i0 < nlocal)
+  if (i0 < nlocal) {
     for (k = 0; k < 3; k++) {
-    v[i0][k] -= vcorr[k];
-    f[i0][k] -= fcorr[k] * mass0 / M012;
+      v[i0][k] -= vcorr[k];
+      f[i0][k] -= fcorr[k] * mass0 / M012;
+    }
   }
-  if (i1 < nlocal)
+  if (i1 < nlocal) {
     for (k = 0; k < 3; k++) {
-    v[i1][k] -= vcorr[k];
-    f[i1][k] -= fcorr[k] * mass1 / M012;
+      v[i1][k] -= vcorr[k];
+      f[i1][k] -= fcorr[k] * mass1 / M012;
+    }
   }
-  if (i2 < nlocal)
+  if (i2 < nlocal) {
     for (k = 0; k < 3; k++) {
-    v[i2][k] -= vcorr[k];
-    f[i2][k] -= fcorr[k] * mass2 / M012;
+      v[i2][k] -= vcorr[k];
+      f[i2][k] -= fcorr[k] * mass2 / M012;
+    }
   }
 }
 
@@ -749,40 +752,28 @@ void FixRigs::solve3x3(int ilist, Topology topo)
     S(0, k) = sv.x; S(1, k) = sv.y; S(2, k) = sv.z;
   }
 
-  SymMat3 rr = mtm(R);
-
   int idx = ilist_to_idx[ilist];
   const double *Lp = Lsq_cached[idx].data;
-  const double *Lmp = rmass ? reduced_rmass_ltdl[m] : reduced_mass_ltdl_cached[idx].data;
   SymMat3 Lsq = SymMat3::load(Lp);
-  LTDL3 reduced_mass_ltdl = LTDL3::load(Lmp);
 
   double masses[4];
   get_mass4(closest_list[ilist], masses);
-  SymMat3 new_mass_matrix = mass_matrix4(masses); 
+  SymMat3 new_mass_matrix = mass_matrix4(masses);
 
-  Mat3 rinv = inv_mat3(R);
-  Mat3 chi = mat_mul(rinv, S);
-  chi = chi * new_mass_matrix;
-//  rmul_ltdl(chi, reduced_mass_ltdl);
+  Mat3 Q;
+  UTMat3 U = qr_decompose(R, Q);
+  U.invert();
+  Mat3 QtS = mat_mul(transpose(Q), S);
+  Mat3 chi = mat_mul((Mat3)U, QtS * new_mass_matrix);
 
-  SymMat3 rr_target_M = Lsq;
-  lt_sandwich(rr_target_M, reduced_mass_ltdl);
-  LTMat3 phi = mul_dl(chol_to_ltl_lower(rr_target_M), reduced_mass_ltdl);
+  LDU3 mass_ldu = ldu3(new_mass_matrix);
+  SymMat3 sigma = Lsq;
+  UsL3(sigma, mass_ldu);
+  UTMat3 phi = mul_du(chol_upper(sigma), mass_ldu);
+  SymMat3 rr = mtm(R);
   UTMat3 rnorm = inv_chol_upper(rr);
-  
-  //LDU3 mass_ldu = ldu3(new_mass_matrix);
-  //SymMat3 sigma = Lsq;
-  //UsL3(sigma, mass_ldu);
-  //UTMat3 pre_phi = chol_upper(sigma);
-  //UTMat3 phi = mul_du(pre_phi, mass_ldu);
-  
-  //Mat3 Q;
-  // LTMat3 rnorm = transpose(qr_decompose(rinv, Q));
 
-  
-  // UTMat3 rnorm = qr_decompose(transpose(rinv), Q);
-  Mat3 lamda = cayley_converge(rnorm, phi, chi, max_iter, tolerance, &niter);
+  Mat3 lamda = cayley_converge(transpose(rnorm), phi, chi, max_iter, tolerance, &niter);
   if (output_every) {
     iter_b_count[shake_type[m][0]]++; iter_b_total[shake_type[m][0]] += niter;
     iter_b_count[shake_type[m][1]]++; iter_b_total[shake_type[m][1]] += niter;

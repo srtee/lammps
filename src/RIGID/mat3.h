@@ -457,16 +457,22 @@ struct LDU3 {
 };
 
 inline void UsL3(SymMat3 &S, const LDU3 &ldu)
-{ // S <- Us (track upper tri; U = unit tri)
-  S.d00 += ldu.u01 * S.d01 + ldu.u02 * S.d02;
-  S.d01 += ldu.u01 * S.d11 + ldu.u02 * S.d12;
-  S.d02 += ldu.u01 * S.d12 + ldu.u02 * S.d22;
-  S.d11 += S.d12 * ldu.u12;
-  S.d12 += S.d22 * ldu.u12;
-  // Us <- UsL
-  S.d00 += S.d01 * ldu.u01 + S.d02 * ldu.u02;
-  S.d01 += S.d02 * ldu.u12;
-  S.d11 += S.d12 * ldu.u12;
+{
+  double s00 = S.d00, s01 = S.d01, s02 = S.d02;
+  double s11 = S.d11, s12 = S.d12, s22 = S.d22;
+
+  double t00 = s00 + ldu.u01 * s01 + ldu.u02 * s02;
+  double t01 = s01 + ldu.u01 * s11 + ldu.u02 * s12;
+  double t02 = s02 + ldu.u01 * s12 + ldu.u02 * s22;
+  double t11 = s11 + ldu.u12 * s12;
+  double t12 = s12 + ldu.u12 * s22;
+
+  S.d00 = t00 + t01 * ldu.u01 + t02 * ldu.u02;
+  S.d01 = t01 + t02 * ldu.u12;
+  S.d02 = t02;
+  S.d11 = t11 + t12 * ldu.u12;
+  S.d12 = t12;
+  S.d22 = s22;
 }
 
 inline UTMat3 mul_du(const UTMat3 &inputU, const LDU3 &ldu)
@@ -513,19 +519,27 @@ inline LTMat3 transpose(const UTMat3 &U) {
 }
 
 
-// S ← L S Lᵀ where L is the unit lower-triangular part of the LTDL struct.
-// (When called with invert_to_ltdl output, L stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
+// S ← L̃ S L̃ᵀ where L̃ is the unit lower-triangular part of the LTDL struct.
+// (When called with invert_to_ltdl output, L̃ stores L⁻¹ so this computes L⁻¹ S L⁻ᵀ.)
+// Phase 1: left-multiply by L̃ on the upper-triangular entries of S.
+// Phase 2: right-multiply by L̃ᵀ (safe: all T values computed from originals).
 inline void lt_sandwich(SymMat3 &S, const LTDL3 &L)
 {
-  S.d02 += S.d01 * L.l21 + S.d00 * L.l20;
-  S.d12 += S.d11 * L.l21 + S.d01 * L.l20;
-  S.d22 += S.d12 * L.l21 + S.d02 * L.l20;
-  S.d01 += S.d00 * L.l10; 
-  S.d11 += S.d01 * L.l10; 
-  S.d12 += S.d02 * L.l10; 
-  S.d22 += L.l20 * S.d02 + L.l21 * S.d12;
-  S.d12 += L.l10 * S.d02;
-  S.d11 += L.l10 * S.d01;
+  double s00 = S.d00, s01 = S.d01, s02 = S.d02;
+  double s11 = S.d11, s12 = S.d12, s22 = S.d22;
+
+  double t10 = L.l10 * s00 + s01;
+  double t11 = L.l10 * s01 + s11;
+  double t12 = L.l10 * s02 + s12;
+  double t20 = L.l20 * s00 + L.l21 * s01 + s02;
+  double t21 = L.l20 * s01 + L.l21 * s11 + s12;
+  double t22 = L.l20 * s02 + L.l21 * s12 + s22;
+
+  S.d01 = s00 * L.l10 + s01;
+  S.d02 = s00 * L.l20 + s01 * L.l21 + s02;
+  S.d11 = t10 * L.l10 + t11;
+  S.d12 = t10 * L.l20 + t11 * L.l21 + t12;
+  S.d22 = t20 * L.l20 + t21 * L.l21 + t22;
 }
 
 inline LTMat3 mul_dl(const LTMat3 &L, const LTDL3 &DL)
