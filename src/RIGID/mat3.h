@@ -388,20 +388,16 @@ inline LTDL3 ltdl_pivot3(const SymMat3 &A, int perm[3])
   return {d0, d1, d2, m01, m02, m12};
 }
 
-inline LTMat3 chol_lower(const SymMat3 &A)
+// Upper-triangular Cholesky factor: U^T U = S.
+inline UTMat3 chol_upper(const SymMat3 &S)
 {
-  double l00 = sqrt(A.d00);
-  double l10 = A.d01 / l00;
-  double l20 = A.d02 / l00;
-  double l11 = sqrt(A.d11 - l10 * l10);
-  double l21 = (A.d12 - l10 * l20) / l11;
-  double l22 = sqrt(A.d22 - l20 * l20 - l21 * l21);
-  return {l00, l10, l20, l11, l21, l22};
-}
-
-inline UTMat3 chol_upper(const SymMat3 &S) {
-  LTMat3 L = chol_lower(S);
-  return {L.l00, L.l10, L.l20, L.l11, L.l21, L.l22};
+  double u00 = sqrt(S.d00);
+  double u01 = S.d01 / u00;
+  double u02 = S.d02 / u00;
+  double u11 = sqrt(S.d11 - u01 * u01);
+  double u12 = (S.d12 - u01 * u02) / u11;
+  double u22 = sqrt(S.d22 - u02 * u02 - u12 * u12);
+  return {u00, u01, u02, u11, u12, u22};
 }
 
 inline void skew(const Mat3 &A, double out[3])
@@ -488,7 +484,26 @@ inline UTMat3 cayley_jacobian(const LTMat3 &A, const UTMat3 &B)
 inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
                             int max_iters = 10, double tol = 1e-6, int *niter_out = nullptr)
 {
-  UTMat3 G_ut = cayley_jacobian(rc, sc);
+  // O(3) branch selection: flipping rc -> -rc moves from SO(3) to the
+  // det=-1 branch of O(3). Pick the branch whose diagonal of gamma+chi
+  // (the target skew product) has smaller squared norm, giving the
+  // Cayley iteration a closer starting point.
+  double diag_rcsc[3];
+  diag_of_product(rc, sc, diag_rcsc);
+
+  double chi_diag[3] = {chi(0,0), chi(1,1), chi(2,2)};
+  double plus_sq  = 0.0, minus_sq = 0.0;
+  for (int i = 0; i < 3; i++) {
+    double dp = chi_diag[i] + diag_rcsc[i];
+    double dm = chi_diag[i] - diag_rcsc[i];
+    plus_sq  += dp * dp;
+    minus_sq += dm * dm;
+  }
+
+  bool flip = (minus_sq < plus_sq);
+  LTMat3 rc_eff = flip ? rc * -1.0 : rc;
+
+  UTMat3 G_ut = cayley_jacobian(rc_eff, sc);
   Mat3 G = G_ut;
   ColMat3 scm = sc;
 
@@ -500,7 +515,7 @@ inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
   double negSkewGam[3], rotvec[3];
   int niter;
   for (niter = 0; niter < max_iters; niter++) {
-    negskew_lt_mul(rc, scm, negSkewGam);
+    negskew_lt_mul(rc_eff, scm, negSkewGam);
     negSkewGam[0] -= skewChi[0];
     negSkewGam[1] -= skewChi[1];
     negSkewGam[2] -= skewChi[2];
@@ -518,7 +533,7 @@ inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
 
   if (niter_out) *niter_out = niter;
   Mat3 gamma = scm;
-  l_mul(rc, gamma);
+  l_mul(rc_eff, gamma);
   return gamma;
 }
 
