@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+#include "math_extra.h"
+
 namespace RigsMath {
 
 struct SymMat3 {
@@ -78,9 +80,7 @@ struct Mat3 {
   
   void mat_vec(const double v[3], double out[3]) const
   {
-    out[0] = d[0][0] * v[0] + d[0][1] * v[1] + d[0][2] * v[2];
-    out[1] = d[1][0] * v[0] + d[1][1] * v[1] + d[1][2] * v[2];
-    out[2] = d[2][0] * v[0] + d[2][1] * v[1] + d[2][2] * v[2];
+    MathExtra::matvec(d, v, out);
   }
 };
 
@@ -369,18 +369,8 @@ inline Mat3 cross_gram(const Mat3 &R, const Mat3 &S) // R S^T
 
 inline Mat3 inv_mat3(const Mat3 &A)
 {
-  double c0 = A(1,1)*A(2,2) - A(1,2)*A(2,1);
-  double c1 = A(1,2)*A(2,0) - A(1,0)*A(2,2);
-  double c2 = A(1,0)*A(2,1) - A(1,1)*A(2,0);
-  double det = A(0,0)*c0 + A(0,1)*c1 + A(0,2)*c2;
-  double idet = 1.0 / det;
   Mat3 R;
-  R(0,0) = c0 * idet; R(0,1) = (A(0,2)*A(2,1) - A(0,1)*A(2,2)) * idet;
-  R(0,2) = (A(0,1)*A(1,2) - A(0,2)*A(1,1)) * idet;
-  R(1,0) = c1 * idet; R(1,1) = (A(0,0)*A(2,2) - A(0,2)*A(2,0)) * idet;
-  R(1,2) = (A(0,2)*A(1,0) - A(0,0)*A(1,2)) * idet;
-  R(2,0) = c2 * idet; R(2,1) = (A(0,1)*A(2,0) - A(0,0)*A(2,1)) * idet;
-  R(2,2) = (A(0,0)*A(1,1) - A(0,1)*A(1,0)) * idet;
+  MathExtra::invert3(A.d, R.d);
   return R;
 }
 
@@ -483,18 +473,14 @@ inline LTMat3 ql_decompose(const Mat3 &A, Mat3 &Q)
 inline Mat3 transpose(const Mat3 &A)
 {
   Mat3 T;
-  T(0,0) = A(0,0); T(0,1) = A(1,0); T(0,2) = A(2,0);
-  T(1,0) = A(0,1); T(1,1) = A(1,1); T(1,2) = A(2,1);
-  T(2,0) = A(0,2); T(2,1) = A(1,2); T(2,2) = A(2,2);
+  MathExtra::transpose3(A.d, T.d);
   return T;
 }
 
-inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S) // R S
+inline Mat3 mat_mul(const Mat3 &R, const Mat3 &S)
 {
   Mat3 RS;
-  for (int i = 0; i < 3; i++)
-    for (int j = 0; j < 3; j++)
-      RS(i, j) = R(i, 0) * S(0, j) + R(i, 1) * S(1, j) + R(i, 2) * S(2, j);
+  MathExtra::times3(R.d, S.d, RS.d);
   return RS;
 }
 
@@ -882,22 +868,11 @@ inline UTMat3::operator ColMat3() const {
     return M;
   }
 
-inline void cross(const double a[3], const double b[3], double out[3])
-{
-  out[0] = a[1] * b[2] - a[2] * b[1];
-  out[1] = a[2] * b[0] - a[0] * b[2];
-  out[2] = a[0] * b[1] - a[1] * b[0];
-}
-
 inline void skew(const Mat3 &A, double out[3])
 {
   out[0] = A(2, 1) - A(1, 2);
   out[1] = A(0, 2) - A(2, 0);
   out[2] = A(1, 0) - A(0, 1);
-}
-
-inline double normsq(const double v[3]) {
-  return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 }
 
 inline LDU3 ldu3(const SymMat3 &A)
@@ -912,13 +887,13 @@ inline LDU3 ldu3(const SymMat3 &A)
 
 inline void cayley_rotate(const double v[3], ColMat3 &A)
 {
-  double w = sqrt(1.0 - normsq(v));
+    double w = sqrt(1.0 - MathExtra::lensq3(v));
 
-  for (int j = 0; j < 3; j++) {
-    double* col = A(j);
-    double cross1[3], cross2[3];
-    cross(v, col, cross1);
-    cross(v, cross1, cross2);
+    for (int j = 0; j < 3; j++) {
+      double* col = A(j);
+      double cross1[3], cross2[3];
+      MathExtra::cross3(v, col, cross1);
+      MathExtra::cross3(v, cross1, cross2);
     col[0] += 2.0 * w * cross1[0] + 2.0 * cross2[0];
     col[1] += 2.0 * w * cross1[1] + 2.0 * cross2[1];
     col[2] += 2.0 * w * cross1[2] + 2.0 * cross2[2];
@@ -1031,9 +1006,9 @@ inline Mat3 cayley_converge(const UTMat3 &rc, const LTMat3 &sc, const Mat3 &chi,
     negSkewGam[0] -= skewChi[0];
     negSkewGam[1] -= skewChi[1];
     negSkewGam[2] -= skewChi[2];
-    if (normsq(negSkewGam) < tol_sq) break;
+    if (MathExtra::lensq3(negSkewGam) < tol_sq) break;
     G.mat_vec(negSkewGam, rotvec);
-    double rvsq = normsq(rotvec);
+    double rvsq = MathExtra::lensq3(rotvec);
     if (rvsq > 1.0) {
       double rv = 1.001*sqrt(rvsq);
       rotvec[0] /= rv;
@@ -1068,9 +1043,9 @@ inline Mat3 cayley_converge(const LTMat3 &rc, const UTMat3 &sc, const Mat3 &chi,
     negSkewGam[0] -= skewChi[0];
     negSkewGam[1] -= skewChi[1];
     negSkewGam[2] -= skewChi[2];
-    if (normsq(negSkewGam) < tol_sq) break;
+    if (MathExtra::lensq3(negSkewGam) < tol_sq) break;
     G.mat_vec(negSkewGam, rotvec);
-    double rvsq = normsq(rotvec);
+    double rvsq = MathExtra::lensq3(rotvec);
     if (rvsq > 1.0) {
       double rv = 1.001*sqrt(rvsq);
       rotvec[0] /= rv;

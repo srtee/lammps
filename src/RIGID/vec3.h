@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+#include "math_extra.h"
+
 namespace RigsMath {
 
 struct Vec3 {
@@ -62,21 +64,21 @@ struct Vec3 {
 };
 
 inline double dot(const Vec3 &a, const Vec3 &b) {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
+  return MathExtra::dot3(a.data(), b.data());
 }
 
 inline Vec3 cross(const Vec3 &a, const Vec3 &b) {
-  return {a.y * b.z - a.z * b.y,
-          a.z * b.x - a.x * b.z,
-          a.x * b.y - a.y * b.x};
+  Vec3 ans;
+  MathExtra::cross3(a.data(), b.data(), ans.data());
+  return ans;
 }
 
 inline double normsq(const Vec3 &v) {
-  return v.x * v.x + v.y * v.y + v.z * v.z;
+  return MathExtra::lensq3(v.data());
 }
 
 inline double norm(const Vec3 &v) {
-  return sqrt(normsq(v));
+  return MathExtra::len3(v.data());
 }
 
 inline Vec3 operator*(double s, const Vec3 &v) {
