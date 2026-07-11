@@ -266,6 +266,7 @@ accelerated styles exist.
 * :doc:`lj/cut/coul/msm <pair_lj_cut_coul>` - LJ with long-range MSM Coulomb
 * :doc:`lj/cut/coul/msm/dielectric <pair_dielectric>` -
 * :doc:`lj/cut/coul/wolf <pair_lj_cut_coul>` - LJ with Coulomb via Wolf potential
+* :doc:`coul/long/lj1264/cut <pair_coul_long_lj1264_cut>` - LJ 12-6-4 with long-range Coulomb
 * :doc:`lj/cut/dipole/cut <pair_dipole>` - point dipoles with cutoff
 * :doc:`lj/cut/dipole/long <pair_dipole>` - point dipoles with long-range Ewald
 * :doc:`lj/cut/soft <pair_fep_soft>` - LJ with a soft core
