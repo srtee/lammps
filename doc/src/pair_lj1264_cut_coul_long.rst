@@ -45,6 +45,22 @@ the cutoff.  The :math:`r^{-4}` term is subtractive (attractive);
 the term as :math:`-C_4 / r^4`.  The force contribution of the
 :math:`r^{-4}` term is :math:`-4 C_4 / r^6`.
 
+The :math:`r^{-4}` term arises from charge-induced-dipole and
+dipole-induced-dipole interactions and is particularly important for
+modeling ions in polar solvents.  The 12-6-4 potential was
+parametrized for monovalent, divalent, trivalent, and tetravalent metal
+ions in several water models by the Merz group
+:ref:`(Sengupta et al.) <Sengupta2021>`,
+:ref:`(Li et al., 2020) <Li2020>`, and
+:ref:`(Li et al., 2021) <Li2021>`.
+
+In typical ion--water simulations, :math:`C_4` should be **positive** for
+cation--oxygen (OW) interactions, **negative** for anion--oxygen (OW)
+interactions, and **zero** for all other interactions, including
+ion--hydrogen (HW).  This reflects the physical origin of the
+:math:`r^{-4}` term as a charge--induced-dipole interaction that depends
+on the polarizability of the water oxygen site.
+
 The Coulombic part is treated identically to the
 :doc:`lj/cut/coul/long <pair_lj_cut_coul>` style: pairwise interactions within
 the Coulombic cutoff are computed directly, and interactions outside that
@@ -163,3 +179,26 @@ Default
 """""""
 
 none
+
+----------
+
+.. _Sengupta2021:
+
+**(Sengupta et al.)** A. Sengupta, Z. Li, L. F. Song, K. M. Merz Jr.,
+"Parameterization of Monovalent Ions for the OPC3, OPC, TIP3P-FB, and
+TIP4P-FB Water Models", J. Chem. Inf. Model. **61**, 869--880 (2021).
+doi:10.1021/acs.jcim.0c01390
+
+.. _Li2020:
+
+**(Li et al., 2020)** Z. Li, L. F. Song, K. M. Merz Jr., "Systematic
+Parametrization of Divalent Metal Ions for the OPC3, OPC, TIP3P-FB, and
+TIP4P-FB Water Models", J. Chem. Theory Comput. **16**, 4429--4442 (2020).
+doi:10.1021/acs.jctc.0c00194
+
+.. _Li2021:
+
+**(Li et al., 2021)** Z. Li, L. F. Song, K. M. Merz Jr., "Parametrization
+of Trivalent and Tetravalent Metal Ions for the OPC3, OPC, TIP3P-FB, and
+TIP4P-FB Water Models", J. Chem. Theory Comput. **17**, 2342--2354 (2021).
+doi:10.1021/acs.jctc.0c01320
