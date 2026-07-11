@@ -12,7 +12,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "pair_coul_long_lj1264_cut.h"
+#include "pair_lj1264_cut_coul_long.h"
 
 #include "atom.h"
 #include "comm.h"
@@ -36,9 +36,9 @@ using namespace EwaldConst;
 
 /* ---------------------------------------------------------------------- */
 
-PairCoulLongLJ1264Cut::PairCoulLongLJ1264Cut(LAMMPS *lmp) :
+PairLJ1264CutCoulLong::PairLJ1264CutCoulLong(LAMMPS *lmp) :
     Pair(lmp), cut_lj(nullptr), cut_ljsq(nullptr), epsilon(nullptr), sigma(nullptr),
-    epsilon4(nullptr), lj1(nullptr), lj2(nullptr), lj3(nullptr), lj4(nullptr), c4(nullptr),
+    c4_input(nullptr), lj1(nullptr), lj2(nullptr), lj3(nullptr), lj4(nullptr), c4(nullptr),
     offset(nullptr)
 {
   ewaldflag = pppmflag = 1;
@@ -51,7 +51,7 @@ PairCoulLongLJ1264Cut::PairCoulLongLJ1264Cut(LAMMPS *lmp) :
 
 /* ---------------------------------------------------------------------- */
 
-PairCoulLongLJ1264Cut::~PairCoulLongLJ1264Cut()
+PairLJ1264CutCoulLong::~PairLJ1264CutCoulLong()
 {
   if (copymode) return;
 
@@ -63,7 +63,7 @@ PairCoulLongLJ1264Cut::~PairCoulLongLJ1264Cut()
     memory->destroy(cut_ljsq);
     memory->destroy(epsilon);
     memory->destroy(sigma);
-    memory->destroy(epsilon4);
+    memory->destroy(c4_input);
     memory->destroy(lj1);
     memory->destroy(lj2);
     memory->destroy(lj3);
@@ -76,7 +76,7 @@ PairCoulLongLJ1264Cut::~PairCoulLongLJ1264Cut()
 
 /* ---------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::compute(int eflag, int vflag)
+void PairLJ1264CutCoulLong::compute(int eflag, int vflag)
 {
   int i,ii,j,jj,inum,jnum,itype,jtype,itable;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
@@ -207,7 +207,7 @@ void PairCoulLongLJ1264Cut::compute(int eflag, int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::compute_inner()
+void PairLJ1264CutCoulLong::compute_inner()
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,fpair;
@@ -294,7 +294,7 @@ void PairCoulLongLJ1264Cut::compute_inner()
 
 /* ---------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::compute_middle()
+void PairLJ1264CutCoulLong::compute_middle()
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,fpair;
@@ -390,7 +390,7 @@ void PairCoulLongLJ1264Cut::compute_middle()
 
 /* ---------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::compute_outer(int eflag, int vflag)
+void PairLJ1264CutCoulLong::compute_outer(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype,itable;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
@@ -574,7 +574,7 @@ void PairCoulLongLJ1264Cut::compute_outer(int eflag, int vflag)
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::allocate()
+void PairLJ1264CutCoulLong::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -590,16 +590,16 @@ void PairCoulLongLJ1264Cut::allocate()
   memory->create(cut_ljsq,n+1,n+1,"pair:cut_ljsq");
   memory->create(epsilon,n+1,n+1,"pair:epsilon");
   memory->create(sigma,n+1,n+1,"pair:sigma");
-  memory->create(epsilon4,n+1,n+1,"pair:epsilon4");
+  memory->create(c4_input,n+1,n+1,"pair:c4_input");
 
-  // prefill epsilon, sigma, epsilon4, and cut_lj with -1 sentinel so that
+  // prefill epsilon, sigma, c4_input, and cut_lj with -1 sentinel so that
   // unset (mixed) pairs are always detected, even for diagonal pairs
   // that were never explicitly set via pair_coeff
   for (int i = 1; i <= n; i++)
     for (int j = 1; j <= n; j++) {
       epsilon[i][j] = -1.0;
       sigma[i][j] = -1.0;
-      epsilon4[i][j] = -1.0;
+      c4_input[i][j] = -1.0;
       cut_lj[i][j] = -1.0;
     }
 
@@ -615,7 +615,7 @@ void PairCoulLongLJ1264Cut::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::settings(int narg, char **arg)
+void PairLJ1264CutCoulLong::settings(int narg, char **arg)
 {
  if (narg < 1 || narg > 2) error->all(FLERR,"Illegal pair_style command");
 
@@ -637,7 +637,7 @@ void PairCoulLongLJ1264Cut::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::coeff(int narg, char **arg)
+void PairLJ1264CutCoulLong::coeff(int narg, char **arg)
 {
   if (narg < 5 || narg > 6)
     error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
@@ -653,12 +653,12 @@ void PairCoulLongLJ1264Cut::coeff(int narg, char **arg)
 
   double epsilon_one = mix_eps ? -1.0 : utils::numeric(FLERR,arg[2],false,lmp);
   double sigma_one = mix_sig ? -1.0 : utils::numeric(FLERR,arg[3],false,lmp);
-  double epsilon4_one = utils::numeric(FLERR,arg[4],false,lmp);
+  double c4_input_one = utils::numeric(FLERR,arg[4],false,lmp);
 
-  if (epsilon4_one < 0.0)
-    error->warning(FLERR,"Negative epsilon4 supplied to pair_coeff "
-                   "(coul/long/lj1264/cut). The r^-4 term is attractive; "
-                   "use a positive epsilon4 for the usual repulsive r^-4 term.");
+  if (c4_input_one < 0.0)
+    error->warning(FLERR,"Negative C4 supplied to pair_coeff "
+                   "(lj1264/cut/coul/long). The r^-4 term is attractive; "
+                   "use a positive C4 for the usual repulsive r^-4 term.");
 
   double cut_lj_one = cut_lj_global;
   if (narg == 6) cut_lj_one = utils::numeric(FLERR,arg[5],false,lmp);
@@ -669,10 +669,10 @@ void PairCoulLongLJ1264Cut::coeff(int narg, char **arg)
       if ((mix_eps || mix_sig) && i == j)
         error->all(FLERR,"Cannot use 'mix' for epsilon or sigma on a "
                    "diagonal pair (i == j) in pair_coeff "
-                   "(coul/long/lj1264/cut)");
+                   "(lj1264/cut/coul/long)");
       epsilon[i][j] = epsilon_one;
       sigma[i][j] = sigma_one;
-      epsilon4[i][j] = epsilon4_one;
+      c4_input[i][j] = c4_input_one;
       cut_lj[i][j] = cut_lj_one;
       // if eps or sig requested mixing, leave setflag=0 so init_one mixes
       setflag[i][j] = (mix_eps || mix_sig) ? 0 : 1;
@@ -687,10 +687,10 @@ void PairCoulLongLJ1264Cut::coeff(int narg, char **arg)
    init specific to this pair style
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::init_style()
+void PairLJ1264CutCoulLong::init_style()
 {
   if (!atom->q_flag)
-    error->all(FLERR,"Pair style coul/long/lj1264/cut requires atom attribute q");
+    error->all(FLERR,"Pair style lj1264/cut/coul/long requires atom attribute q");
 
   // request regular or rRESPA neighbor list
 
@@ -727,7 +727,7 @@ void PairCoulLongLJ1264Cut::init_style()
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairCoulLongLJ1264Cut::init_one(int i, int j)
+double PairLJ1264CutCoulLong::init_one(int i, int j)
 {
   // mix any epsilon/sigma that still holds the -1 sentinel
   if (epsilon[i][j] < 0.0)
@@ -738,8 +738,8 @@ double PairCoulLongLJ1264Cut::init_one(int i, int j)
   if (cut_lj[i][j] < 0.0)
     cut_lj[i][j] = mix_distance(cut_lj[i][i],cut_lj[j][j]);
 
-  // epsilon4 is never mixed: use stored value, or zero if unset (-1 sentinel)
-  if (epsilon4[i][j] < 0.0) epsilon4[i][j] = 0.0;
+  // C4 is never mixed: use stored value, or zero if unset (-1 sentinel)
+  if (c4_input[i][j] < 0.0) c4_input[i][j] = 0.0;
 
   // include TIP4P qdist in full cutoff, qdist = 0.0 if not TIP4P
 
@@ -750,13 +750,13 @@ double PairCoulLongLJ1264Cut::init_one(int i, int j)
   lj2[i][j] = 24.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
   lj3[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
   lj4[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
-  c4[i][j] = epsilon4[i][j] * pow(sigma[i][j],4.0);
+  c4[i][j] = c4_input[i][j];
 
   if (offset_flag && (cut_lj[i][j] > 0.0)) {
     double ratio = sigma[i][j] / cut_lj[i][j];
-    double r4inv_cut = pow(ratio,4.0);
+    double r4inv_cut = pow(cut_lj[i][j],-4.0);
     offset[i][j] = 4.0 * epsilon[i][j] * (pow(ratio,12.0) - pow(ratio,6.0))
-                   - epsilon4[i][j] * r4inv_cut;
+                   - c4[i][j] * r4inv_cut;
   } else offset[i][j] = 0.0;
 
   cut_ljsq[j][i] = cut_ljsq[i][j];
@@ -806,7 +806,7 @@ double PairCoulLongLJ1264Cut::init_one(int i, int j)
   proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::write_restart(FILE *fp)
+void PairLJ1264CutCoulLong::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
@@ -817,7 +817,7 @@ void PairCoulLongLJ1264Cut::write_restart(FILE *fp)
       if (setflag[i][j]) {
         fwrite(&epsilon[i][j],sizeof(double),1,fp);
         fwrite(&sigma[i][j],sizeof(double),1,fp);
-        fwrite(&epsilon4[i][j],sizeof(double),1,fp);
+        fwrite(&c4_input[i][j],sizeof(double),1,fp);
         fwrite(&cut_lj[i][j],sizeof(double),1,fp);
       }
     }
@@ -827,7 +827,7 @@ void PairCoulLongLJ1264Cut::write_restart(FILE *fp)
   proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::read_restart(FILE *fp)
+void PairLJ1264CutCoulLong::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
 
@@ -843,12 +843,12 @@ void PairCoulLongLJ1264Cut::read_restart(FILE *fp)
         if (me == 0) {
           utils::sfread(FLERR,&epsilon[i][j],sizeof(double),1,fp,nullptr,error);
           utils::sfread(FLERR,&sigma[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&epsilon4[i][j],sizeof(double),1,fp,nullptr,error);
+          utils::sfread(FLERR,&c4_input[i][j],sizeof(double),1,fp,nullptr,error);
           utils::sfread(FLERR,&cut_lj[i][j],sizeof(double),1,fp,nullptr,error);
         }
         MPI_Bcast(&epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&sigma[i][j],1,MPI_DOUBLE,0,world);
-        MPI_Bcast(&epsilon4[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&c4_input[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&cut_lj[i][j],1,MPI_DOUBLE,0,world);
       }
     }
@@ -858,7 +858,7 @@ void PairCoulLongLJ1264Cut::read_restart(FILE *fp)
   proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::write_restart_settings(FILE *fp)
+void PairLJ1264CutCoulLong::write_restart_settings(FILE *fp)
 {
   fwrite(&cut_lj_global,sizeof(double),1,fp);
   fwrite(&cut_coul,sizeof(double),1,fp);
@@ -873,7 +873,7 @@ void PairCoulLongLJ1264Cut::write_restart_settings(FILE *fp)
   proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::read_restart_settings(FILE *fp)
+void PairLJ1264CutCoulLong::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     utils::sfread(FLERR,&cut_lj_global,sizeof(double),1,fp,nullptr,error);
@@ -898,27 +898,27 @@ void PairCoulLongLJ1264Cut::read_restart_settings(FILE *fp)
    proc 0 writes to data file
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::write_data(FILE *fp)
+void PairLJ1264CutCoulLong::write_data(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
-    fprintf(fp,"%d %g %g %g\n",i,epsilon[i][i],sigma[i][i],epsilon4[i][i]);
+    fprintf(fp,"%d %g %g %g\n",i,epsilon[i][i],sigma[i][i],c4_input[i][i]);
 }
 
 /* ----------------------------------------------------------------------
    proc 0 writes all pairs to data file
 ------------------------------------------------------------------------- */
 
-void PairCoulLongLJ1264Cut::write_data_all(FILE *fp)
+void PairLJ1264CutCoulLong::write_data_all(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     for (int j = i; j <= atom->ntypes; j++)
       fprintf(fp,"%d %d %g %g %g %g\n",i,j,epsilon[i][j],sigma[i][j],
-              epsilon4[i][j],cut_lj[i][j]);
+              c4_input[i][j],cut_lj[i][j]);
 }
 
 /* ---------------------------------------------------------------------- */
 
-double PairCoulLongLJ1264Cut::single(int i, int j, int itype, int jtype,
+double PairLJ1264CutCoulLong::single(int i, int j, int itype, int jtype,
                                  double rsq,
                                  double factor_coul, double factor_lj,
                                  double &fforce)
@@ -987,13 +987,13 @@ double PairCoulLongLJ1264Cut::single(int i, int j, int itype, int jtype,
 
 /* ---------------------------------------------------------------------- */
 
-void *PairCoulLongLJ1264Cut::extract(const char *str, int &dim)
+void *PairLJ1264CutCoulLong::extract(const char *str, int &dim)
 {
   dim = 0;
   if (strcmp(str,"cut_coul") == 0) return (void *) &cut_coul;
   dim = 2;
   if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
   if (strcmp(str,"sigma") == 0) return (void *) sigma;
-  if (strcmp(str,"epsilon4") == 0) return (void *) epsilon4;
+  if (strcmp(str,"c4") == 0) return (void *) c4_input;
   return nullptr;
 }

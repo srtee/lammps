@@ -13,22 +13,22 @@
 
 #ifdef PAIR_CLASS
 // clang-format off
-PairStyle(coul/long/lj1264/cut,PairCoulLongLJ1264Cut);
+PairStyle(lj1264/cut/coul/long,PairLJ1264CutCoulLong);
 // clang-format on
 #else
 
-#ifndef LMP_PAIR_COUL_LONG_LJ1264_CUT_H
-#define LMP_PAIR_COUL_LONG_LJ1264_CUT_H
+#ifndef LMP_PAIR_LJ1264_CUT_COUL_LONG_H
+#define LMP_PAIR_LJ1264_CUT_COUL_LONG_H
 
 #include "pair.h"
 
 namespace LAMMPS_NS {
 
-class PairCoulLongLJ1264Cut : public Pair {
+class PairLJ1264CutCoulLong : public Pair {
 
  public:
-  PairCoulLongLJ1264Cut(class LAMMPS *);
-  ~PairCoulLongLJ1264Cut() override;
+  PairLJ1264CutCoulLong(class LAMMPS *);
+  ~PairLJ1264CutCoulLong() override;
   void compute(int, int) override;
   void settings(int, char **) override;
   void coeff(int, char **) override;
@@ -52,7 +52,7 @@ class PairCoulLongLJ1264Cut : public Pair {
   double **cut_lj, **cut_ljsq;
   double cut_coul, cut_coulsq;
   double **epsilon, **sigma;
-  double **epsilon4;
+  double **c4_input;    // C4 as supplied by user (energy * distance^4)
   double **lj1, **lj2, **lj3, **lj4, **c4, **offset;
   double *cut_respa;
   double qdist;    // TIP4P distance from O site to negative charge

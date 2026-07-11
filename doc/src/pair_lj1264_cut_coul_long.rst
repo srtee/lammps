@@ -1,6 +1,6 @@
-.. index:: pair_style coul/long/lj1264/cut
+.. index:: pair_style lj1264/cut/coul/long
 
-pair_style coul/long/lj1264/cut command
+pair_style lj1264/cut/coul/long command
 ========================================
 
 Syntax
@@ -8,7 +8,7 @@ Syntax
 
 .. code-block:: LAMMPS
 
-   pair_style coul/long/lj1264/cut cutoff (cutoff2)
+   pair_style lj1264/cut/coul/long cutoff (cutoff2)
 
 * cutoff = global cutoff for LJ (and Coulombic if only 1 arg) (distance units)
 * cutoff2 = global cutoff for Coulombic (optional) (distance units)
@@ -18,33 +18,32 @@ Examples
 
 .. code-block:: LAMMPS
 
-   pair_style coul/long/lj1264/cut 10.0
-   pair_style coul/long/lj1264/cut 10.0 8.0
-   pair_coeff * * 100.0 3.0 0.5
-   pair_coeff 1 1 100.0 3.5 0.8 9.0
-   pair_coeff 1 2 mix mix -2.0
+   pair_style lj1264/cut/coul/long 10.0
+   pair_style lj1264/cut/coul/long 10.0 8.0
+   pair_coeff * * 100.0 3.0 50.0
+   pair_coeff 1 1 100.0 3.5 80.0 9.0
+   pair_coeff 1 2 mix mix -20.0
 
 Description
 """""""""""
 
-The *coul/long/lj1264/cut* style computes a 12/6/4 Lennard-Jones potential
+The *lj1264/cut/coul/long* style computes a 12/6/4 Lennard-Jones potential
 combined with long-range Coulombic interactions, given by
 
 .. math::
 
    E = 4 \epsilon \left[ \left(\frac{\sigma}{r}\right)^{12} -
        \left(\frac{\sigma}{r}\right)^6 \right]
-       - \epsilon_4 \left(\frac{\sigma}{r}\right)^{4}
+       - \frac{C_4}{r^4}
                        \qquad r < r_c
 
-where :math:`\epsilon`, :math:`\sigma`, and :math:`\epsilon_4` are the
-three energy parameters of the potential, and :math:`r_c` is the cutoff.
-The :math:`r^{-4}` term is subtractive (attractive); :math:`\epsilon_4`
-is supplied as a positive energy and the potential evaluates the term as
-:math:`-\epsilon_4 (\sigma/r)^4`.  Internally the code precomputes
-:math:`C_4 = \epsilon_4 \sigma^4` (in energy :math:`\times` distance\ :sup:`4`
-units) so that the energy contribution is :math:`-C_4 / r^4` and the force
-contribution is :math:`-4 C_4 / r^6`.
+where :math:`\epsilon` and :math:`\sigma` are the standard Lennard-Jones
+parameters, :math:`C_4` is the coefficient of the :math:`r^{-4}` term
+(in energy :math:`\times` distance\ :sup:`4` units), and :math:`r_c` is
+the cutoff.  The :math:`r^{-4}` term is subtractive (attractive);
+:math:`C_4` is supplied as a positive value and the potential evaluates
+the term as :math:`-C_4 / r^4`.  The force contribution of the
+:math:`r^{-4}` term is :math:`-4 C_4 / r^6`.
 
 The Coulombic part is treated identically to the
 :doc:`lj/cut/coul/long <pair_lj_cut_coul>` style: pairwise interactions within
@@ -65,7 +64,7 @@ below:
 
 * :math:`\epsilon` (energy units)
 * :math:`\sigma` (distance units)
-* :math:`\epsilon_4` (energy units)
+* :math:`C_4` (energy :math:`\times` distance\ :sup:`4` units)
 * cutoff1 (distance units)
 
 Note that :math:`\sigma` is defined in the LJ formula as the zero-crossing
@@ -77,9 +76,9 @@ cutoff specified in the pair_style command is used.  Only the LJ cutoff
 can be specified for an individual I,J type pair; all type pairs use the
 same global Coulombic cutoff specified in the pair_style command.
 
-A warning is issued if a negative :math:`\epsilon_4` is supplied, since
+A warning is issued if a negative :math:`C_4` is supplied, since
 the :math:`r^{-4}` term is designed to be attractive with a positive
-:math:`\epsilon_4`.
+:math:`C_4`.
 
 The *mix* keyword
 ^^^^^^^^^^^^^^^^^
@@ -90,14 +89,14 @@ For off-diagonal pairs (:math:`I \neq J`), the :math:`\epsilon` and/or
 instead computed from the diagonal (:math:`I,I` and :math:`J,J`) entries
 using the current mixing rule at initialization time.  This allows you to
 specify a pair interaction that inherits mixed :math:`\epsilon` and/or
-:math:`\sigma` while imposing an explicit :math:`\epsilon_4`.  For example:
+:math:`\sigma` while imposing an explicit :math:`C_4`.  For example:
 
 .. code-block:: LAMMPS
 
-   pair_coeff 1 2 mix mix -2.0
+   pair_coeff 1 2 mix mix -20.0
 
 mixes both :math:`\epsilon` and :math:`\sigma` for the 1-2 pair but sets
-:math:`\epsilon_4 = -2.0`.  The ``mix`` keyword is not permitted for
+:math:`C_4 = -20.0`.  The ``mix`` keyword is not permitted for
 diagonal (:math:`I = J`) pairs.
 
 ----------
@@ -111,11 +110,11 @@ For atom type pairs I,J and I != J, the :math:`\epsilon` and
 and distance mixing rules (geometric by default).  See the
 :doc:`pair_modify <pair_modify>` command for details.
 
-The :math:`\epsilon_4` coefficient is **never** mixed.  For off-diagonal
+The :math:`C_4` coefficient is **never** mixed.  For off-diagonal
 pairs that were not explicitly set via :doc:`pair_coeff <pair_coeff>`,
-:math:`\epsilon_4` defaults to zero, which reduces the potential to the
+:math:`C_4` defaults to zero, which reduces the potential to the
 standard 12/6 Lennard-Jones form.  To supply a non-zero
-:math:`\epsilon_4` for a mixed pair, use the ``mix`` keyword described
+:math:`C_4` for a mixed pair, use the ``mix`` keyword described
 above.
 
 This pair style supports the :doc:`pair_modify <pair_modify>` shift
