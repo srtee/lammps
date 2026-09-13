@@ -690,7 +690,7 @@ void FixElectrodeConp::setup_post_neighbor()
                          "Symmetrizing matrix from file. Make sure the provided matrix has not "
                          "been symmetrized yet.");
         electrode_taglist->read_from_file(input_file_inv, matrix, "capacitance");
-        inv->set_capacitance(ngroup, matrix);
+        inv->set_capacitance(ngroup, matrix, fragment_iele);
       } else {
         inv->set_elastance(ngroup, matrix, timer_flag, fragment_iele);
       }

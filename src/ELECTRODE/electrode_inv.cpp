@@ -137,6 +137,12 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
     cap_frag[r] = rhs;
   }
   fragmented = true;
+  // retain the LU factorization and the fragment keying so update_solver
+  // can re-solve rows for newly-owned atoms after atom migration
+  lu_ipiv = ipiv;
+  lu_nele = nele_world;
+  frag_row_of_iele.clear();
+  for (int r = 0; r < nlocalele; r++) frag_row_of_iele[frag_iele[r]] = r;
   // NOTE: capacitance (the factorized elastance) stays alive for now —
   // symmetrize/compute_sd_vectors still consume the full matrix. S3.2/S3.3
   // convert those to fragment-local form, then the release moves here.
@@ -367,6 +373,32 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
   for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
   MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered, recvcounts, displs, MPI_INT,
                  world);
+  // S3.1: cap_frag[r] was keyed to set_elastance's fragment order
+  // (frag_row_of_iele); re-key it to the freshly rebuilt iele_local (atom
+  // order). Rows are complete nele_world vectors, so this is an in-memory
+  // reorder. Rows for newly-owned atoms (absent from the old keying) are
+  // re-solved from the retained LU factorization.
+  std::vector<std::vector<double>> new_frag(nlocalele);
+  const char trans = 'N';
+  const int nrhs = 1;
+  std::vector<double> rhs(nele_world, 0.0);
+  int info_rs;
+  for (int r = 0; r < nlocalele; r++) {
+    const int iele = iele_local[r];
+    auto it = frag_row_of_iele.find(iele);
+    if (it != frag_row_of_iele.end()) {
+      new_frag[r] = std::move(cap_frag[it->second]);
+      frag_row_of_iele.erase(it);
+    } else {
+      std::fill(rhs.begin(), rhs.end(), 0.0);
+      rhs[iele] = 1.0;
+      dgetrs_(&trans, &lu_nele, &nrhs, &capacitance[0][0], &lu_nele, lu_ipiv.data(),
+              rhs.data(), &lu_nele, &info_rs);
+      if (info_rs != 0) error->all(FLERR, "CONP matrix solve failed!");
+      new_frag[r] = rhs;
+    }
+  }
+  cap_frag = std::move(new_frag);
 }
 
 /* ---------------------------------------------------------------------- */
