@@ -18,6 +18,7 @@
 #ifndef LMP_ELECTRODE_MATH_H
 #define LMP_ELECTRODE_MATH_H
 
+#include "accelerator_kokkos.h"    // LAMMPS_INLINE = KOKKOS_INLINE_FUNCTION with KOKKOS
 #include "ewald_const.h"
 #include "math_const.h"
 
@@ -81,7 +82,7 @@ namespace ElectrodeMath {
 
   static constexpr double ERFCMAX = 5.8;    // erfc(ERFCMAX) < machine epsilon(double)
 
-  inline double safe_erfc(double x)
+  LAMMPS_INLINE double safe_erfc(double x)
   {
     if (x > ERFCMAX) return 0.0;
     double expm2 = exp(-x * x);
@@ -89,7 +90,7 @@ namespace ElectrodeMath {
     return t * (A1 + t * (A2 + t * (A3 + t * (A4 + t * A5)))) * expm2;
   }
 
-  inline double safe_derfcr(double x, double &erfc)
+  LAMMPS_INLINE double safe_derfcr(double x, double &erfc)
   {
     if (x > ERFCMAX) {
       erfc = 0.0;
