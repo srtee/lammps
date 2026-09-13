@@ -164,8 +164,9 @@ void Slab2d::matrix_corr(bigint *imat, double **matrix)
   for (int i = 0; i < nlocal; i++) {
     if (imat[i] < 0) continue;
     for (bigint j = 0; j < ngroup; j++) {
-      // matrix is symmetric
-      if (jmat[j] > imat[i]) continue;
+      // matrix is symmetric; checkerboard parity assigns each pair to exactly
+      // one row owner (different parity -> smaller index, same parity -> larger)
+      if ((imat[i] < jmat[j]) == !((imat[i] - jmat[j]) % 2)) continue;
       double dij = nprd_all[j] - x[i][2];
       double aij =
           prefac * (exp(-dij * dij * g_ewald_sq) * g_ewald_inv + MY_PIS * dij * erf(dij * g_ewald));

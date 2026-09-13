@@ -1063,8 +1063,9 @@ void EwaldElectrode::compute_matrix(bigint *imat, double **matrix, bool /* timer
     if (imat[i] < 0) continue;
 
     for (bigint j = 0; j < ngroup; j++) {
-      // matrix is symmetric, skip upper triangular matrix
-      if (jmat[j] > imat[i]) continue;
+      // matrix is symmetric; checkerboard parity assigns each pair to exactly
+      // one row owner (different parity -> smaller index, same parity -> larger)
+      if ((imat[i] < jmat[j]) == !((imat[i] - jmat[j]) % 2)) continue;
 
       double aij = 0.0;
 
