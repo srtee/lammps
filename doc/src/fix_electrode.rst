@@ -459,6 +459,16 @@ unchanged (the full matrix must be inverted). With *algo mat_cg* the full
 matrix is currently retained on every MPI process. The fix will issue a
 warning if it expects to use more than 0.5 GiB of memory.
 
+KOKKOS versions
+"""""""""""""""
+
+These fixes have KOKKOS variants, *electrode/conp/kk*, *electrode/conq/kk*
+and *electrode/thermo/kk* (with */kk/device* and */kk/host* suffixes),
+which run the short-range electrostatics through a KOKKOS *pair* style
+(currently *lj/cut/coul/long/gauss/kk* and *lj/cut/coul/wolf/gauss/kk*)
+when the *pair* keyword is used. The solver arithmetic (algo cg/mat_inv)
+and the *eta* mode (no *pair* keyword) currently execute on the host.
+
 Default
 """""""
 
