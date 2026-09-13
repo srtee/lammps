@@ -130,10 +130,44 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
     }
   }
 
-  // reduce coulomb matrix with contributions from all procs
-  // all procs need to know full matrix for matrix inversion
-  for (int i = 0; i < ngroup; i++) {
-    MPI_Allreduce(MPI_IN_PLACE, &array[i][0], ngroup, MPI_DOUBLE, MPI_SUM, world);
+  // every (i,j) entry is written exactly once by i's owner; exchange
+  // fragment rows so every rank holds the full matrix for inversion
+  const int nprocs = comm->nprocs;
+  const int nlocal = atom->nlocal;
+  std::vector<int> my_iele;
+  for (int i = 0; i < nlocal; i++)
+    if (mpos[i] >= 0) my_iele.push_back((int) mpos[i]);
+  const int myrows = (int) my_iele.size();
+
+  std::vector<int> rowcnt(nprocs), rowdis(nprocs);
+  MPI_Allgather(&myrows, 1, MPI_INT, rowcnt.data(), 1, MPI_INT, world);
+  rowdis[0] = 0;
+  for (int p = 1; p < nprocs; p++) rowdis[p] = rowdis[p - 1] + rowcnt[p - 1];
+  const int total_rows = rowdis[nprocs - 1] + rowcnt[nprocs - 1];
+
+  // gather iele indices (gather order = rank p's local atoms in tag order)
+  std::vector<int> iele_gathered(total_rows);
+  MPI_Allgatherv(my_iele.data(), myrows, MPI_INT, iele_gathered.data(), rowcnt.data(),
+                 rowdis.data(), MPI_INT, world);
+
+  // gather the owned rows in the same order
+  std::vector<int> vcnt(nprocs), vdis(nprocs);
+  for (int p = 0; p < nprocs; p++) {
+    vcnt[p] = rowcnt[p] * (int) ngroup;
+    vdis[p] = rowdis[p] * (int) ngroup;
+  }
+  std::vector<double> sendbuf((std::size_t) myrows * ngroup);
+  for (int r = 0; r < myrows; r++)
+    std::copy(&array[my_iele[r]][0], &array[my_iele[r]][0] + ngroup,
+              sendbuf.begin() + (std::size_t) r * ngroup);
+  std::vector<double> allrows((std::size_t) total_rows * ngroup);
+  MPI_Allgatherv(sendbuf.data(), myrows * (int) ngroup, MPI_DOUBLE, allrows.data(), vcnt.data(),
+                 vdis.data(), MPI_DOUBLE, world);
+
+  for (int idx = 0; idx < total_rows; idx++) {
+    const int iele = iele_gathered[idx];
+    std::copy(allrows.begin() + (std::size_t) idx * ngroup,
+              allrows.begin() + (std::size_t) (idx + 1) * ngroup, &array[iele][0]);
   }
 }
 

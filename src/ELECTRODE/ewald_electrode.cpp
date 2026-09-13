@@ -1063,9 +1063,8 @@ void EwaldElectrode::compute_matrix(bigint *imat, double **matrix, bool /* timer
     if (imat[i] < 0) continue;
 
     for (bigint j = 0; j < ngroup; j++) {
-      // matrix is symmetric; checkerboard parity assigns each pair to exactly
-      // one row owner (different parity -> smaller index, same parity -> larger)
-      if ((imat[i] < jmat[j]) == !((imat[i] - jmat[j]) % 2)) continue;
+      // full-row scheme: this rank writes only its own rows; the (j,i)
+      // entry is written by j's owner
 
       double aij = 0.0;
 
@@ -1102,7 +1101,6 @@ void EwaldElectrode::compute_matrix(bigint *imat, double **matrix, bool /* timer
         aij += 2.0 * ug[k] * (cos_kxkykz_i * cos_kxkykz_j + sin_kxkykz_i * sin_kxkykz_j);
       }
       matrix[imat[i]][jmat[j]] += aij;
-      if (imat[i] != jmat[j]) matrix[jmat[j]][imat[i]] += aij;
     }
   }
 

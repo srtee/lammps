@@ -264,8 +264,10 @@ void ElectrodeInv::fragmentize()
     }
   }
 
-  // counts of doubles I will receive from each rank (scnt currently in
-  // doubles; Alltoall exchanges the same units we then use for Alltoallv)
+  // counts of doubles I will receive from each rank: scnt was already
+  // scaled to doubles before the Alltoall, so rcnt/rdis are in doubles —
+  // no further scaling (a second scaling overflowed recvbuf by a factor
+  // of nele_world)
   MPI_Alltoall(scnt.data(), 1, MPI_INT, rcnt.data(), 1, MPI_INT, world);
   int rsize = 0;
   for (int p = 0; p < nprocs; p++) {
@@ -273,12 +275,7 @@ void ElectrodeInv::fragmentize()
     rsize += rcnt[p];
   }
 
-  for (int p = 0; p < nprocs; p++) {
-    rcnt[p] *= (int)nele_world;    // rows -> doubles
-    rdis[p] *= (int)nele_world;
-  }
-
-  std::vector<double> recvbuf((size_t) rsize * nele_world);
+  std::vector<double> recvbuf((size_t) rsize);
   MPI_Alltoallv(sendbuf.data(), scnt.data(), sdis.data(), MPI_DOUBLE, recvbuf.data(), rcnt.data(),
                 rdis.data(), MPI_DOUBLE, world);
 
