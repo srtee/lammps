@@ -50,7 +50,7 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   void setup_solver(double, ElectrodeVector *, int);
 
  protected:
-  int nele, nele_world;
+  int nele, nele_world, ngroups;
   virtual void setup_cg(double, int);
   virtual std::vector<double> ele_ele_interaction(const std::vector<double> &);
   FixElectrodeConp *fix;
@@ -80,8 +80,9 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
 
  private:
   void compute_macro_calibration();
+  void compute_sb();
   std::vector<double> cg_solve(std::vector<double> b, const std::vector<double> &x_init,
-                               bool constrain);
+                               bool constrain, int max_iter);
 
   void predict_q();
   std::vector<double> pot_to_vector(double *);

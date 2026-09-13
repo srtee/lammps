@@ -18,6 +18,7 @@
 #include "fix_electrode_conp.h"
 
 #include "atom.h"
+#include "atom_masks.h"
 #include "charge_solver.h"
 #include "citeme.h"
 #include "comm.h"

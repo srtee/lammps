@@ -39,7 +39,9 @@ using namespace ElectrodeMath;
 ElectrodeCG::ElectrodeCG(LAMMPS *lmp, FixElectrodeConp *fix) : Pointers(lmp), ChargeSolver()
 {
   setup = a_cached_flag = false;
-  macro_computed = vac_cap_computed = sb_stale = false;
+  macro_computed = vac_cap_computed = false;
+  sb_stale = true;    // sb_charges not yet computed; first GROUP solve
+                      // derives it from an auxiliary electrolyte-only solve
   vac_cap = 0.;
   nstep = ncall = 0;
   nmax = 0;
@@ -125,8 +127,6 @@ void ElectrodeCG::setup_cg(double cg_threshold, int predictor_cols)
   }
 }
 
-/* ---------------------------------------------------------------------- */
-
 void ElectrodeCG::update_solver(std::vector<tagint> taglist_local, std::vector<int> iele_to_group)
 {
   assert(setup);
@@ -135,6 +135,13 @@ void ElectrodeCG::update_solver(std::vector<tagint> taglist_local, std::vector<i
   q_ele.resize(nele);
   MPI_Allreduce(&nele, &nele_world, 1, MPI_INT, MPI_SUM, world);
   this->iele_to_group = iele_to_group;
+  // group count must be GLOBAL: a rank may own atoms of only one group
+  int local_max = 0;
+  for (int g : iele_to_group) {
+    if (g > local_max) local_max = g;
+  }
+  local_max += 1;
+  MPI_Allreduce(&local_max, &ngroups, 1, MPI_INT, MPI_MAX, world);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -151,12 +158,23 @@ std::vector<double> ElectrodeCG::solve(std::vector<double> v)
   assert(update->ntimestep == elyt_step);    // bvec is up to date
   a_cached_flag = false;
   ncall++;
+
+  // GROUP constraint (electrode/thermo): the charge targets dominate --
+  // mirror ElectrodeInv::apply_constraint, which derives the potentials
+  // v = E*(target - sb) from the group-charge targets and DISCARDS the
+  // imposed psi. The CG equivalent: minimize 1/2 q'Aq + q'u_elyt subject
+  // to the group-charge targets -- i.e. drop psi from the rhs and let the
+  // constraint projection realize the targets. The solution is identical
+  // to the Inv formulation (same constrained minimizer), with no need for
+  // calibration-derived potentials in the hot path.
+  if (constraint == ChargeConstraint::GROUP) v.assign(v.size(), 0.);
+
   auto b = std::vector<double>(nele);
   for (int i = 0; i < nele; i++) b[i] = evscale * v[iele_to_group[i]] - bvec[i];
   applied_psi = v;
   sb_stale = true;
   predict_q();
-  q_ele = cg_solve(std::move(b), q_ele, true);
+  q_ele = cg_solve(std::move(b), q_ele, true, nele_world);
   return q_ele;
 }
 
@@ -167,7 +185,7 @@ std::vector<double> ElectrodeCG::solve(std::vector<double> v)
 ------------------------------------------------------------------------- */
 
 std::vector<double> ElectrodeCG::cg_solve(std::vector<double> b, const std::vector<double> &x_init,
-                                          bool constrain)
+                                          bool constrain, int max_iter)
 {
   auto project = [&](std::vector<double> x, bool correction) -> std::vector<double> {
     return constrain ? constraint_projection(std::move(x), correction) : x;
@@ -177,7 +195,7 @@ std::vector<double> ElectrodeCG::cg_solve(std::vector<double> b, const std::vect
   auto d = project(r, false);
   double dot_old = dot_product(r, d);
   double delta = dot_old;
-  for (int k = 0; k < nele_world && delta > threshold; k++, nstep++) {
+  for (int k = 0; k < max_iter && delta > threshold; k++, nstep++) {
     auto y = ele_ele_interaction(d);
     double alpha = dot_old / dot_product(d, y);
     q += alpha * d;
@@ -204,10 +222,6 @@ std::vector<double> ElectrodeCG::cg_solve(std::vector<double> b, const std::vect
 double ElectrodeCG::get_potential(int igroup)
 {
   assert(update->ntimestep == elyt_step);    // bvec is up to date
-  if (!a_cached_flag) {
-    a_cached_flag = true;
-    a_cached = ele_ele_interaction(q_ele);
-  }
   double pot = 0.;
   int count = 0;
   for (int i = 0; i < nele; i++) {
@@ -322,7 +336,7 @@ std::vector<double> ElectrodeCG::constraint_projection(std::vector<double> x, bo
     }
     case ChargeConstraint::GROUP: {
       const int n = x.size();
-      const int ngroups = qtotal_group.size();
+      const int ngroups = this->ngroups;    // global count (qtotal_group matches)
       auto counts = std::vector<int>(ngroups, 0);
       auto sums = std::vector<double>(ngroups, 0);
       for (int i = 0; i < n; i++) {
@@ -350,11 +364,18 @@ std::vector<double> ElectrodeCG::compute_potentials()
 {
   assert(setup);
   assert(update->ntimestep == elyt_step);    // bvec is up to date
+  // mirror ElectrodeInv::compute_potentials: the potentials correspond to
+  // the charges CURRENTLY on the atoms (which the caller -- e.g. the
+  // thermo-potentiostat -- reads back afterwards). Build the charge
+  // vector from the atoms so the set_charges inside the matvec writes the
+  // same values back and atom->q is left untouched.
+  auto q_now = std::vector<double>(nele);
+  for (int i = 0; i < nele; i++) q_now[i] = atom->q[atom->map(taglist[i])];
   if (!a_cached_flag) {
     a_cached_flag = true;
-    a_cached = ele_ele_interaction(q_ele);
+    a_cached = ele_ele_interaction(q_now);
   }
-  const int ngroups = *std::max_element(iele_to_group.begin(), iele_to_group.end()) + 1;
+  const int ngroups = this->ngroups;
   auto pots = std::vector<double>(ngroups, 0.);
   auto counts = std::vector<int>(ngroups, 0);
   for (int i = 0; i < nele; i++) {
@@ -373,38 +394,47 @@ std::vector<double> ElectrodeCG::compute_potentials()
 void ElectrodeCG::compute_macro_calibration()
 {
   if (macro_computed) return;
-  const int ngroups = *std::max_element(iele_to_group.begin(), iele_to_group.end()) + 1;
+  const int ngroups = this->ngroups;
   sd_vectors = std::vector<std::vector<double>>(ngroups, std::vector<double>(nele, 0.));
   macro_capacitance = std::vector<std::vector<double>>(ngroups, std::vector<double>(ngroups, 0.));
   const auto constraint_save = constraint;
   constraint = ChargeConstraint::NONE;
-  // unconstrained calibration solves: x_g = A^{-1} e_g via CG on (evscale*A)
+  // unconstrained calibration solves: x_g = A^{-1} e_g via CG on M (the
+  // matvec is already in A's units, as the physical solve demonstrates);
+  // sd_vectors[g] = evscale * x_g matches ElectrodeInv's
+  // sd = evscale * (A^{-1} rows), so macro_capacitance agrees
   for (int g = 0; g < ngroups; g++) {
     auto b = std::vector<double>(nele, 0.);
     for (int i = 0; i < nele; i++) {
-      if (iele_to_group[i] == g) b[i] = evscale;
+      if (iele_to_group[i] == g) b[i] = 1.0;
     }
-    auto x_g = cg_solve(std::move(b), std::vector<double>(nele, 0.), false);
+    // the calibration rhs e_g has a large uniform-mode component (the
+    // slab-corrected kspace leaves the uniform mode to the short-range
+    // terms, so its eigenvalue is small) -- allow ample iterations
+    auto x_g = cg_solve(std::move(b), std::vector<double>(nele, 0.), false, 100 * nele_world);
     for (int i = 0; i < nele; i++) sd_vectors[g][i] = evscale * x_g[i];
     fix->set_charges(q_ele);    // restore electrode charges clobbered by the calibration
   }
   constraint = constraint_save;
-  // macro_capacitance[g0][g1] = evscale * sum_{i in g0} (A^{-1} e_{g1})_i
+  // macro_capacitance[g0][g1] = evscale * sum_{i in g1} (A^{-1} e_{g0})_i
+  // (mirrors Inv: macro_cap[iele_to_group[k]][g] += sd[g][k], i.e. the
+  // outer index is the ROW's group k, inner the column group g)
   for (int g0 = 0; g0 < ngroups; g0++) {
     for (int g1 = 0; g1 < ngroups; g1++) {
       double c = 0.;
       for (int i = 0; i < nele; i++) {
-        if (iele_to_group[i] == g0) c += sd_vectors[g1][i];
+        if (iele_to_group[i] == g1) c += sd_vectors[g0][i];
       }
+      MPI_Allreduce(MPI_IN_PLACE, &c, 1, MPI_DOUBLE, MPI_SUM, world);
       macro_capacitance[g0][g1] = c;
     }
   }
-  // macro_elastance = inverse of macro_capacitance (small dense solve)
+  // macro_elastance = inverse of macro_capacitance (Gauss-Jordan with
+  // partial pivoting on the augmented [tmp | I])
   auto tmp = macro_capacitance;
   macro_elastance = std::vector<std::vector<double>>(ngroups, std::vector<double>(ngroups, 0.));
   for (int g = 0; g < ngroups; g++) macro_elastance[g][g] = 1.;
   for (int col = 0; col < ngroups; col++) {
-    // find pivot
     int piv = col;
     for (int r = col + 1; r < ngroups; r++) {
       if (std::fabs(tmp[r][col]) > std::fabs(tmp[piv][col])) piv = r;
@@ -414,21 +444,18 @@ void ElectrodeCG::compute_macro_calibration()
     std::swap(tmp[col], tmp[piv]);
     std::swap(macro_elastance[col], macro_elastance[piv]);
     const double diag = tmp[col][col];
-    for (int r = col + 1; r < ngroups; r++) {
-      const double f = tmp[r][col] / diag;
-      if (f == 0.) continue;
-      for (int c2 = col; c2 < ngroups; c2++) tmp[r][c2] -= f * tmp[col][c2];
-      for (int c2 = 0; c2 < ngroups; c2++) macro_elastance[r][c2] -= f * macro_elastance[col][c2];
+    for (int c2 = 0; c2 < ngroups; c2++) {
+      tmp[col][c2] /= diag;
+      macro_elastance[col][c2] /= diag;
     }
-  }
-  for (int r = ngroups - 1; r >= 0; r--) {
-    const double diag = tmp[r][r];
-    for (int c2 = 0; c2 < ngroups; c2++) macro_elastance[r][c2] /= diag;
-    for (int r2 = 0; r2 < r; r2++) {
-      const double f = tmp[r2][r] / diag;
+    for (int r = 0; r < ngroups; r++) {
+      if (r == col) continue;
+      const double f = tmp[r][col];
       if (f == 0.) continue;
-      for (int c2 = 0; c2 < ngroups; c2++)
-        macro_elastance[r2][c2] -= f * macro_elastance[r][c2];
+      for (int c2 = 0; c2 < ngroups; c2++) {
+        tmp[r][c2] -= f * tmp[col][c2];
+        macro_elastance[r][c2] -= f * macro_elastance[col][c2];
+      }
     }
   }
   macro_computed = true;
@@ -440,19 +467,27 @@ double ElectrodeCG::get_sb_charges(int igroup)
 {
   assert(setup);
   if (!macro_computed) compute_macro_calibration();
-  if (sb_stale) {
-    sb_stale = false;
-    const int ngroups = (int) sd_vectors.size();
-    // q_sb = q_ele - sum_g sd[g] * psi_g (linearity of the constrained solve)
-    sb_charges = std::vector<double>(ngroups, 0.);
-    for (int i = 0; i < nele; i++) {
-      double q_sb_i = q_ele[i];
-      for (int g = 0; g < ngroups; g++) q_sb_i -= sd_vectors[g][i] * applied_psi[g];
-      sb_charges[iele_to_group[i]] += q_sb_i;
-    }
-    MPI_Allreduce(MPI_IN_PLACE, sb_charges.data(), ngroups, MPI_DOUBLE, MPI_SUM, world);
-  }
+  if (sb_stale) compute_sb();
   return sb_charges[igroup];
+}
+
+/* ----------------------------------------------------------------------
+   sb_charges[g] = charge in group g induced by the electrolyte alone
+   (linearity of the solve: q = q_sb + sum_g sd[g] * psi_g with the
+   potentials actually applied in the last solve)
+------------------------------------------------------------------------- */
+
+void ElectrodeCG::compute_sb()
+{
+  sb_stale = false;
+  const int ngroups = (int) sd_vectors.size();
+  sb_charges = std::vector<double>(ngroups, 0.);
+  for (int i = 0; i < nele; i++) {
+    double q_sb_i = q_ele[i];
+    for (int g = 0; g < ngroups; g++) q_sb_i -= sd_vectors[g][i] * applied_psi[g];
+    sb_charges[iele_to_group[i]] += q_sb_i;
+  }
+  MPI_Allreduce(MPI_IN_PLACE, sb_charges.data(), ngroups, MPI_DOUBLE, MPI_SUM, world);
 }
 
 /* ---------------------------------------------------------------------- */
