@@ -159,8 +159,8 @@ speedup. These algorithms can be selected using the keyword *algo*:
   calculations of the electric potential per time step.
 
 For both *cg* methods, the command must specify the conjugate gradient
-tolerance. *fix electrode/thermo* currently only supports the *mat_inv*
-algorithm.
+tolerance. *fix electrode/thermo* supports the *mat_inv*, *mat_cg* and
+*cg* algorithms; the *ffield* keyword remains exclusive to *mat_inv*.
 
 For all three fixes, any potential (or charge for *conq*) can be
 specified as an equal-style variable prefixed with "v\_". For example,

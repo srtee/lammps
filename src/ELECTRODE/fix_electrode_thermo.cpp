@@ -46,7 +46,8 @@ FixElectrodeThermo::FixElectrodeThermo(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "Number of electrodes != two in electrode/thermo");
   if (group_psi_var_styles[0] != group_psi_var_styles[1])
     error->all(FLERR, "Potentials in electrode/thermo must have same style");
-  if (algo != Algo::MATRIX_INV) error->all(FLERR, "Algorithm not allowed in electrode/thermo");
+  if (algo != Algo::MATRIX_INV && algo != Algo::CG && algo != Algo::MATRIX_CG)
+    error->all(FLERR, "Algorithm not allowed in electrode/thermo");
   if (thermo_time < SMALL) error->all(FLERR, "Keyword temp not set or zero in electrode/thermo");
 
   thermo_random = new RanMars(lmp, thermo_init);

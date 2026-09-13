@@ -379,11 +379,9 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "Cannot write elastance matrix if reading capacitance matrix from file");
   num_of_groups = static_cast<int>(groups.size());
   size_vector = num_of_groups;
-  array_flag = !!(algo == Algo::MATRIX_INV);
-  if (array_flag) {
-    size_array_rows = num_of_groups;
-    size_array_cols = 2 + 2 * num_of_groups;
-  }
+  array_flag = 1;
+  size_array_rows = num_of_groups;
+  size_array_cols = 2 + 2 * num_of_groups;
 
   // check groups are consistent
   int *mask = atom->mask;
@@ -553,12 +551,25 @@ void FixElectrodeConp::init()
       for (int jtype = 1; jtype <= ntypes; ++jtype)
         ijskip_mat[itype][jtype] = (!elec_type[itype] || !elec_type[jtype]) ? 1 : 0;
     }
-    auto *Req = neighbor->add_request(this, NeighConst::REQ_OCCASIONAL |
-                                                NeighConst::REQ_FULL |
-                                                NeighConst::REQ_NEWTON_OFF);
-    Req->set_skip(iskip_mat, ijskip_mat);
-    Req->set_id(1);
-    if (intelflag) Req->enable_intel();
+    // matrix path: occasional full newton-off list so the owner of
+    // electrode row i sees every partner j within cutoff (enabler for
+    // row-sharded matrix builds)
+    // cg path: the mat list doubles as elec_vector's pair list; it must be
+    // perpetual (built each step) and half (pair_contribution assumes one
+    // traversal per unordered pair)
+    if (matrix_algo) {
+      auto *Req = neighbor->add_request(this, NeighConst::REQ_OCCASIONAL |
+                                                  NeighConst::REQ_FULL |
+                                                  NeighConst::REQ_NEWTON_OFF);
+      Req->set_skip(iskip_mat, ijskip_mat);
+      Req->set_id(1);
+      if (intelflag) Req->enable_intel();
+    } else {
+      auto *Req = neighbor->add_request(this);
+      Req->set_skip(iskip_mat, ijskip_mat);
+      Req->set_id(1);
+      if (intelflag) Req->enable_intel();
+    }
   }
   // else: iskip_mat/ijskip_mat ownership transferred to the NeighRequest,
   // which frees them in its destructor

@@ -43,7 +43,7 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   void buffer_and_gather(double const *, double *) override;
   double memory_use() override;
 
-  // for electrode/thermo (not implemented yet)
+  // for electrode/thermo
   double vacuum_capacitance() override;
 
   //setup
@@ -69,6 +69,19 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   std::vector<int> iele_to_group;
   double *potential_i;    // potentials, i-indexed (0 for non-electrode atoms)
   std::vector<double> bvec, a_cached;
+
+  // macro quantities for electrode/thermo + array output
+ protected:
+  bool macro_computed, vac_cap_computed, sb_stale;
+  double vac_cap;
+  std::vector<std::vector<double>> macro_capacitance, macro_elastance;
+  std::vector<std::vector<double>> sd_vectors;    // evscale * x_g, x_g = unconstrained solve of M x = evscale e_g
+  std::vector<double> sb_charges, applied_psi;
+
+ private:
+  void compute_macro_calibration();
+  std::vector<double> cg_solve(std::vector<double> b, const std::vector<double> &x_init,
+                               bool constrain);
 
   void predict_q();
   std::vector<double> pot_to_vector(double *);
