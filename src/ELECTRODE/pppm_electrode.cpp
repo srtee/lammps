@@ -955,25 +955,26 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
                                             double **matrix, const int nmat, bool timer_flag)
 {
   // map green's function in real space from mesh to particle positions
-  // with matrix multiplication 'W^T G W' in two steps. gw is result of
-  // first multiplication.
+  // with matrix multiplication 'W^T G W' in two steps, fused j-outer:
+  // each gw row is convolved once, immediately contracted against every
+  // locally-owned electrode row i, and discarded — no persistent
+  // N x nxyz gw cache, and no cross-rank exchange (every rank convolves
+  // the full set of rows in its own brick frame).
   const int nlocal = atom->nlocal;
   MPI_Barrier(world);
-  double step1_time = MPI_Wtime();
+  double start_time = MPI_Wtime();
   int nx_ele = nxhi_out - nxlo_out + 1;    // nx_pppm + order + 1;
   int ny_ele = nyhi_out - nylo_out + 1;    // ny_pppm + order + 1;
   int nz_ele = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
   int nxyz = nx_ele * ny_ele * nz_ele;
 
-  // persistent per-electrode grid-potential rows (reallocated only when
-  // nmat or the brick size grows)
-  if (gw_cache_nmat < nmat) {
+  // single transient gw row (reallocated only when the brick size grows)
+  if (gw_cache_nxyz < nxyz) {
     memory->destroy(gw_cache);
-    memory->create(gw_cache, nmat, nxyz, "pppm/electrode:gw_cache");
-    gw_cache_nmat = nmat;
+    memory->create(gw_cache, nxyz, "pppm/electrode:gw_cache");
+    gw_cache_nxyz = nxyz;
   }
-  double **gw = gw_cache;
-  memset(&(gw[0][0]), 0, (std::size_t) nmat * (std::size_t) nxyz * sizeof(double));
+  double *gw = gw_cache;
 
   // scratch bricks for the x- and xy-convolved intermediates (retained
   // across calls; reallocated only when the brick size changes)
@@ -982,62 +983,85 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
     memory->create(conv_scratch2, nxyz, "pppm/electrode:conv_scratch2");
   }
 
-  // loops over electrode atoms: the fused order^3 stencil walk is replaced
-  // by three separable 1-D convolutions (x with the kernel pitch, then y,
-  // then z with the brick pitch). Elementwise-validated against the old
-  // walk; see conv_axis() comment.
-  // (nix,niy,niz) = global coords of grid pt to "lower left" of charge
-  for (int ipos = 0; ipos < nmat; ipos++) {
+  // precalculate rho_1d for locally-owned electrode rows (the i-side
+  // weights of every contraction in this rank)
+  std::vector<int> i_list;
+  std::vector<int> i_atom;
+  int nfrag = 0;
+  for (int i = 0; i < nlocal; i++) {
+    const int ipos = imat[i];
+    if (ipos >= 0) {
+      i_list.push_back(ipos);
+      i_atom.push_back(i);
+    }
+  }
+  // sort by ipos, carrying the atom index along
+  std::vector<int> order_(nfrag = (int) i_list.size());
+  for (int k = 0; k < nfrag; k++) order_[k] = k;
+  std::sort(order_.begin(), order_.end(),
+            [&](int a, int b) { return i_list[a] < i_list[b]; });
+  std::vector<int> si_list(nfrag), si_atom(nfrag);
+  for (int k = 0; k < nfrag; k++) {
+    si_list[k] = i_list[order_[k]];
+    si_atom[k] = i_atom[order_[k]];
+  }
+  i_list = si_list;
+  i_atom = si_atom;
+  const int order3 = 3 * order;
+  std::vector<FFT_SCALAR> rho_i(nfrag * order3);
+  std::vector<int> grid_origin(nfrag * 3);
+  for (int ifrag = 0; ifrag < nfrag; ifrag++) {
+    const int ipos = i_list[ifrag];
+    const int ia = i_atom[ifrag];
     double *_noalias xi_ele = x_ele[ipos];
-    int nix = static_cast<int>((xi_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
-    int niy = static_cast<int>((xi_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
-    int niz = static_cast<int>((xi_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
-    FFT_SCALAR dx = nix + shiftone - (xi_ele[0] - boxlo[0]) * delxinv;
-    FFT_SCALAR dy = niy + shiftone - (xi_ele[1] - boxlo[1]) * delyinv;
-    FFT_SCALAR dz = niz + shiftone - (xi_ele[2] - boxlo[2]) * delzinv;
-    compute_rho1d(dx, dy, dz);
+    const int nix = static_cast<int>((xi_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
+    const int niy = static_cast<int>((xi_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
+    const int niz = static_cast<int>((xi_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
+    compute_rho1d(nix + shiftone - (xi_ele[0] - boxlo[0]) * delxinv,
+                  niy + shiftone - (xi_ele[1] - boxlo[1]) * delyinv,
+                  niz + shiftone - (xi_ele[2] - boxlo[2]) * delzinv);
+    for (int dim = 0; dim < 3; dim++)
+      for (int oi = 0; oi < order; oi++)
+        rho_i[ifrag * order3 + dim * order + oi] = rho1d[dim][oi + nlower];
+    grid_origin[ifrag * 3 + 0] = nix;
+    grid_origin[ifrag * 3 + 1] = niy;
+    grid_origin[ifrag * 3 + 2] = niz;
+  }
+
+  // fused j-outer loop: convolve gw row j, contract against all owned rows
+  for (int jpos = 0; jpos < nmat; jpos++) {
+    double *_noalias xj_ele = x_ele[jpos];
+    const int njx = static_cast<int>((xj_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
+    const int njy = static_cast<int>((xj_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
+    const int njz = static_cast<int>((xj_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
+    compute_rho1d(njx + shiftone - (xj_ele[0] - boxlo[0]) * delxinv,
+                  njy + shiftone - (xj_ele[1] - boxlo[1]) * delyinv,
+                  njz + shiftone - (xj_ele[2] - boxlo[2]) * delzinv);
 
     // brick-local origins: the original walk wrapped kernel indices as
     // fmod(mj - li - n*) with mj the GLOBAL out-grid index = brick + n*lo_out
     memset(conv_scratch2, 0, (std::size_t) nxyz * sizeof(double));
-    conv_axis<0>(conv_scratch1, greens_real, nix - nxlo_out);
-    conv_axis<1>(conv_scratch2, conv_scratch1, niy - nylo_out);
-    conv_axis<2>(gw[ipos], conv_scratch2, niz - nzlo_out);
-  }
-  MPI_Barrier(world);
-  if (timer_flag && (comm->me == 0))
-    utils::logmesg(lmp, "step 1 time: {:.4g} s\n", MPI_Wtime() - step1_time);
+    conv_axis<0>(conv_scratch1, greens_real, njx - nxlo_out);
+    conv_axis<1>(conv_scratch2, conv_scratch1, njy - nylo_out);
+    conv_axis<2>(gw, conv_scratch2, njz - nzlo_out);
 
-  // nested loop over electrode atoms i and j and stencil of i
-  // in theory could reuse make_rho1d_j here -- but this step is already
-  // super-fast
-  double step2_time = MPI_Wtime();
-  double **x = atom->x;
-  for (int i = 0; i < nlocal; i++) {
-    int ipos = imat[i];
-    if (ipos < 0) continue;
-    int nix = part2grid[i][0];
-    int niy = part2grid[i][1];
-    int niz = part2grid[i][2];
-    FFT_SCALAR dix = nix + shiftone - (x[i][0] - boxlo[0]) * delxinv;
-    FFT_SCALAR diy = niy + shiftone - (x[i][1] - boxlo[1]) * delyinv;
-    FFT_SCALAR diz = niz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
-    compute_rho1d(dix, diy, diz);
-    for (int jpos = 0; jpos < nmat; jpos++) {
+    for (int ifrag = 0; ifrag < nfrag; ifrag++) {
+      const int ipos = i_list[ifrag];
+      const FFT_SCALAR *ri = &rho_i[ifrag * order3];
       double aij = 0.;
-      for (int ni = nlower; ni <= nupper; ni++) {
-        double iz0 = rho1d[2][ni];
-        int miz = ni + niz;
-        for (int mi = nlower; mi <= nupper; mi++) {
-          double iy0 = iz0 * rho1d[1][mi];
-          int miy = mi + niy;
-          for (int li = nlower; li <= nupper; li++) {
-            int mix = li + nix;
-            double ix0 = iy0 * rho1d[0][li];
+      for (int ni = 0; ni < order; ni++) {
+        double iz0 = ri[2 * order + ni];
+        int miz = (ni + nlower) + grid_origin[ifrag * 3 + 2];
+        for (int mi = 0; mi < order; mi++) {
+          double iy0 = iz0 * ri[1 * order + mi];
+          int miy = (mi + nlower) + grid_origin[ifrag * 3 + 1];
+          for (int li = 0; li < order; li++) {
+            int mix = (li + nlower) + grid_origin[ifrag * 3 + 0];
+            double ix0 = iy0 * ri[0 * order + li];
             int miz0 = miz - nzlo_out;
             int miy0 = miy - nylo_out;
             int mix0 = mix - nxlo_out;
-            aij += ix0 * gw[jpos][nx_ele * ny_ele * miz0 + nx_ele * miy0 + mix0];
+            aij += ix0 * gw[nx_ele * ny_ele * miz0 + nx_ele * miy0 + mix0];
           }
         }
       }
@@ -1046,7 +1070,7 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
   }
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
-    utils::logmesg(lmp, "step 2 time: {:.4g} s\n", MPI_Wtime() - step2_time);
+    utils::logmesg(lmp, "Two step time: {:.4g} s\n", MPI_Wtime() - start_time);
 }
 
 /* ----------------------------------------------------------------------
@@ -1221,7 +1245,7 @@ void PPPMElectrode::deallocate()
   memory->destroy(greens_real_cache);
   memory->destroy(gw_cache);
   gw_cache = nullptr;
-  gw_cache_nmat = -1;
+  gw_cache_nxyz = -1;
   greens_real_cache = nullptr;
   greens_cache_nz = -1;
   memory->destroy(conv_scratch1);

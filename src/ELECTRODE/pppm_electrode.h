@@ -77,8 +77,8 @@ class PPPMElectrode : public PPPM, public ElectrodeKSpace {
   double *conv_scratch2 = nullptr;
   double *greens_real_cache = nullptr;
   bigint greens_cache_nz = -1;    // grid dims at cache build time
-  double **gw_cache = nullptr;
-  int gw_cache_nmat = -1;    // allocation size bookkeeping
+  double *gw_cache = nullptr;      // single transient gw row (brick frame)
+  int gw_cache_nxyz = -1;          // allocation size bookkeeping
   bool compute_vector_called;
 };
 
