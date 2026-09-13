@@ -121,7 +121,9 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
   iele_local = frag_iele;
   nlocalele = static_cast<int>(frag_iele.size());
   cap_frag.resize(nlocalele);
-  const char trans = 'T';
+  // the matrix is stored row-major; column-major LAPACK sees A_cm = A^T,
+  // so trans='N' (solve A_cm x = b) yields x = A^{-T} e_i = row i of A^{-1}
+  const char trans = 'N';
   const int nrhs = 1;
   std::vector<double> rhs(nele_world, 0.0);
   int info_rs;
@@ -145,11 +147,22 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
 
 /* ---------------------------------------------------------------------- */
 
-void ElectrodeInv::set_capacitance(int nele_world, double **capacitance)
+void ElectrodeInv::set_capacitance(int nele_world, double **capacitance,
+                                   const std::vector<int> &frag_iele)
 {
   cap_set = true;
   this->nele_world = nele_world;
   this->capacitance = capacitance;
+  // S3.4: the file provides the already-inverted capacitance; slice the
+  // owned rows into fragments directly and release the full copy
+  iele_local = frag_iele;
+  nlocalele = static_cast<int>(frag_iele.size());
+  cap_frag.resize(nlocalele);
+  for (int r = 0; r < nlocalele; r++)
+    cap_frag[r] = std::vector<double>(capacitance[frag_iele[r]],
+                                      capacitance[frag_iele[r]] + nele_world);
+  fragmented = true;
+  capacitance = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -527,18 +540,23 @@ void ElectrodeInv::buffer_and_gather(double const *ivec, double *elevec)
 
 void ElectrodeInv::symmetrize()
 {
-
+  // S3.3: fragment-local rank-1 update; AinvE/EAinvE are exchanged so each
+  // rank can update its own rows without the full matrix
   std::vector<double> AinvE(nele_world, 0.);
-  double EAinvE = 0.0;
-  for (int i = 0; i < nele_world; i++) {
+  double EAinvE_local = 0.0;
+  for (int r = 0; r < nlocalele; r++) {
+    const int iele = iele_local[r];
     double AinvEtmp = 0.0;
-    for (int j = 0; j < nele_world; j++) AinvEtmp += capacitance[i][j];
-    AinvE[i] = AinvEtmp;    // use temp accumulator to enable vectorization
-    EAinvE += AinvEtmp;
+    for (int j = 0; j < nele_world; j++) AinvEtmp += cap_frag[r][j];
+    AinvE[iele] = AinvEtmp;    // use temp accumulator to enable vectorization
+    EAinvE_local += AinvEtmp;
   }
-  for (int i = 0; i < nele_world; i++) {
-    double iAinvE = AinvE[i];
-    for (int j = 0; j < nele_world; j++) capacitance[i][j] -= AinvE[j] * iAinvE / EAinvE;
+  double EAinvE = 0.0;
+  MPI_Allreduce(&EAinvE_local, &EAinvE, 1, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(MPI_IN_PLACE, AinvE.data(), nele_world, MPI_DOUBLE, MPI_SUM, world);
+  for (int r = 0; r < nlocalele; r++) {
+    const double iAinvE = AinvE[iele_local[r]];
+    for (int j = 0; j < nele_world; j++) cap_frag[r][j] -= AinvE[j] * iAinvE / EAinvE;
   }
 }
 
@@ -546,11 +564,19 @@ void ElectrodeInv::symmetrize()
 
 void ElectrodeInv::compute_sd_vectors()
 {
+  // S3.2: fragment-local accumulation; sd[g][k] gets row k's entries at
+  // columns j in group g — row k is owned here, so accumulate row-locally
+  // and Allreduce over ranks
   sd_vectors = std::vector<std::vector<double>>(ngroups, std::vector<double>(nele_world, 0.));
-  for (int j = 0; j < nele_world; j++) {
-    int g = iele_to_group[j];
-    for (int k = 0; k < nele_world; k++) sd_vectors[g][k] += capacitance[k][j] * evscale;
+  for (int r = 0; r < nlocalele; r++) {
+    const int k = iele_local[r];
+    for (int j = 0; j < nele_world; j++) {
+      int g = iele_to_group[j];
+      sd_vectors[g][k] += cap_frag[r][j] * evscale;
+    }
   }
+  for (int g = 0; g < ngroups; g++)
+    MPI_Allreduce(MPI_IN_PLACE, sd_vectors[g].data(), nele_world, MPI_DOUBLE, MPI_SUM, world);
 }
 /* ---------------------------------------------------------------------- */
 
@@ -562,17 +588,29 @@ void ElectrodeInv::compute_sd_vectors_ffield(std::vector<int> group_bits)
   int *mask = atom->mask;
   tagint *tag = atom->tag;
   double zprd = domain->prd[2];
+  // S3.2: two-pass fragment-local form. Pass 1 builds coef[g][j] =
+  // gmult(g) * w_j summed over ranks, where w_j is the z-weight of the
+  // atom whose column is j. Pass 2 contracts each owned row against coef.
+  std::vector<std::vector<double>> coef(ngroups, std::vector<double>(nele_world, 0.));
   for (int i = 0; i < atom->nlocal; i++) {
-    if (mask[i] & groupbit) {
-      const int i_iele = tag_to_iele[tag[i]];
-      double const zprd_offset = (mask[i] & group_bits[top_group]) ? 0.0 : 1.0;
-      double const evscale_elez = evscale * (x[i][2] / zprd + zprd_offset);
-      for (int g = 0; g < ngroups; g++) {
-        double gmult = (g == top_group) ? -1.0 : 1.0;
-        for (int k = 0; k < nele_world; k++) {
-          sd_vectors[g][k] += gmult * capacitance[k][i_iele] * evscale_elez;
-        }
-      }
+    if (!(mask[i] & groupbit)) continue;
+    const int j = tag_to_iele[tag[i]];
+    double const zoff = (mask[i] & group_bits[top_group]) ? 0.0 : 1.0;
+    double const w = evscale * (x[i][2] / zprd + zoff);
+    for (int g = 0; g < ngroups; g++) {
+      double gmult = (g == top_group) ? -1.0 : 1.0;
+      coef[g][j] += gmult * w;
+    }
+  }
+  for (int g = 0; g < ngroups; g++)
+    MPI_Allreduce(MPI_IN_PLACE, coef[g].data(), nele_world, MPI_DOUBLE, MPI_SUM, world);
+
+  for (int r = 0; r < nlocalele; r++) {
+    const int k = iele_local[r];
+    for (int g = 0; g < ngroups; g++) {
+      double row_sum = 0.0;
+      for (int j = 0; j < nele_world; j++) row_sum += cap_frag[r][j] * coef[g][j];
+      sd_vectors[g][k] += row_sum;
     }
   }
   for (int g = 0; g < ngroups; g++) {
