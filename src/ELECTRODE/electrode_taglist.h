@@ -20,6 +20,7 @@
 
 #include "pointers.h"
 #include <unordered_map>
+#include <vector>
 
 namespace LAMMPS_NS {
 
@@ -31,6 +32,10 @@ class ElectrodeTaglist : public Pointers {
   void write_to_file(const std::string, double **);
   void write_to_file(const std::string, double *);
   void read_from_file(const std::string &, double **, const std::string &);
+  // reassemble a full n x n matrix (taglist order) on rank 0 and broadcast;
+  // frag[r] is the row of electrode index frag_iele[r] as held by this rank
+  void gather_full_matrix_to_zero(double **dst, const std::vector<std::vector<double>> &frag,
+                                  const std::vector<int> &frag_iele, std::size_t n);
   double memory_usage();
 
  private:

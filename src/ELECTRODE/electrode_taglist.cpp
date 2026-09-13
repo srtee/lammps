@@ -184,6 +184,57 @@ void ElectrodeTaglist::read_from_file(const std::string &input_file, double **ar
   MPI_Bcast(&array[0][0], n * n, MPI_DOUBLE, 0, world);
 }
 
+/* ----------------------------------------------------------------------
+    Reassemble the full n x n matrix from per-rank row fragments on rank 0
+    and broadcast it to all ranks (so read/write file paths keep working
+    after the replicated matrix has been released).
+------------------------------------------------------------------------- */
+
+void ElectrodeTaglist::gather_full_matrix_to_zero(double **dst,
+                                                  const std::vector<std::vector<double>> &frag,
+                                                  const std::vector<int> &frag_iele,
+                                                  std::size_t n)
+{
+  if (n == 0) return;
+  const int nprocs = comm->nprocs;
+  // serialize my fragments: (iele, row values)
+  std::vector<int> my_iele(frag_iele);
+  std::vector<double> my_vals;
+  my_vals.reserve(frag.size() * n);
+  for (const auto &row : frag) my_vals.insert(my_vals.end(), row.begin(), row.end());
+  int *recvcounts = new int[nprocs];
+  int *displs = new int[nprocs];
+  int my_count = static_cast<int>(frag.size());
+  MPI_Allgather(&my_count, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+  displs[0] = 0;
+  for (int p = 1; p < nprocs; p++) displs[p] = displs[p - 1] + recvcounts[p - 1];
+  const int total = displs[nprocs - 1] + recvcounts[nprocs - 1];
+
+  std::vector<int> all_iele((comm->me == 0) ? total : 0);
+  MPI_Gatherv(my_iele.data(), (int)frag.size(), MPI_INT,
+              (comm->me == 0) ? all_iele.data() : nullptr, recvcounts, displs, MPI_INT, 0, world);
+  std::vector<double> all_vals((comm->me == 0) ? (size_t)total * n : 0);
+  // value counts/displacements are in doubles: rows * n
+  std::vector<int> vcounts(nprocs), vdispls(nprocs);
+  for (int p = 0; p < nprocs; p++) {
+    vcounts[p] = recvcounts[p] * (int)n;
+    vdispls[p] = displs[p] * (int)n;
+  }
+  MPI_Gatherv(my_vals.data(), (int)(frag.size() * n), MPI_DOUBLE,
+              (comm->me == 0) ? all_vals.data() : nullptr, vcounts.data(), vdispls.data(),
+              MPI_DOUBLE, 0, world);
+
+  if (comm->me == 0) {
+    for (int idx = 0; idx < total; idx++) {
+      const int iele = all_iele[idx];
+      for (std::size_t j = 0; j < n; j++) dst[iele][j] = all_vals[(size_t)idx * n + j];
+    }
+  }
+  MPI_Bcast(&dst[0][0], (int)(n * n), MPI_DOUBLE, 0, world);
+  delete[] recvcounts;
+  delete[] displs;
+}
+
 /* ---------------------------------------------------------------------- */
 
 double ElectrodeTaglist::memory_usage()

@@ -44,7 +44,7 @@ extern "C" int MKL_Get_Max_Threads(void);
 
 ElectrodeInv::ElectrodeInv(LAMMPS *lmp) : Pointers(lmp), ChargeSolver()
 {
-  setup = cap_set = vac_cap_computed = false;
+  setup = cap_set = vac_cap_computed = fragmented = false;
   nmax = 0;
   memory->create(potential_i, nmax, "ElectrodeInv:potential_i");
   const int nprocs = comm->nprocs;
@@ -63,6 +63,8 @@ ElectrodeInv::~ElectrodeInv() noexcept
     memory->destroy(buf_gathered);
     memory->destroy(potential_iele);
   }
+  cap_frag.clear();
+  cap_frag.shrink_to_fit();
   delete[] recvcounts;
   delete[] displs;
 }
@@ -73,6 +75,9 @@ double ElectrodeInv::memory_use()
 {
   double bytes = 0.;
   if (setup) bytes += 3 * nele_world * sizeof(double);
+  // retained matrix storage: per-rank row fragments after setup
+  bytes += cap_frag.size() * nele_world * sizeof(double);
+  for (const auto &row : cap_frag) bytes += (row.capacity() - row.size()) * sizeof(double);
   bytes += qvec.capacity() * sizeof(double);
   bytes += iele_to_group.capacity() * sizeof(int);
   bytes += taglist_local.capacity() * sizeof(tagint);
@@ -160,16 +165,156 @@ void ElectrodeInv::setup_solver(int groupbit, std::unordered_map<tagint, int> ta
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "SD-vector and macro matrices time: {:.4g} s\n", MPI_Wtime() - start);
+
+  // build the local electrode list (normally updated by update_solver, but
+  // the first gather has not happened yet at setup time)
+  nlocalele = 0;
+  iele_local.clear();
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      iele_local.push_back(tag_to_iele[tag[i]]);
+      nlocalele++;
+    }
+  }
+
+  fragmentize();
 }
 
+/* ----------------------------------------------------------------------
+    Scatter the replicated capacitance matrix into per-rank row fragments
+    and release the full matrix. Fragment r holds the row of electrode
+    index iele_local[r]; every electrode index is owned by exactly one rank.
+    Uses the iele_gathered mapping produced by update_solver.
+------------------------------------------------------------------------- */
+
+void ElectrodeInv::fragmentize()
+{
+  assert(setup);
+  assert(!fragmented);
+  // owner of electrode index i is the rank whose iele_local contains i.
+  // Build the global ownership map here: gather the local electrode index
+  // lists (rank-ordered) instead of relying on update_solver state, because
+  // fragmentize runs inside setup_solver, before the first update_solver.
+  const int nprocs = comm->nprocs;
+  std::vector<int> recvcounts_frag(nprocs);
+  MPI_Allgather(&nlocalele, 1, MPI_INT, recvcounts_frag.data(), 1, MPI_INT, world);
+  std::vector<int> displs_frag(nprocs);
+  displs_frag[0] = 0;
+  for (int p = 1; p < nprocs; p++) displs_frag[p] = displs_frag[p - 1] + recvcounts_frag[p - 1];
+  std::vector<int> iele_gathered_frag(nele_world);
+  MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered_frag.data(),
+                 recvcounts_frag.data(), displs_frag.data(), MPI_INT, world);
+
+  std::vector<int> rowowner(nele_world);
+  for (int p = 0, idx = 0; p < nprocs; p++)
+    for (int k = 0; k < recvcounts_frag[p]; k++, idx++)
+      rowowner[iele_gathered_frag[idx]] = p;
+
+  // my own rows are already correct; wire traffic only for remote rows.
+  // supplier of row i is rank i % nprocs (fixed cyclic assignment).
+  cap_frag.resize(nlocalele);
+  for (int r = 0; r < nlocalele; r++)
+    cap_frag[r] = std::vector<double>(capacitance[iele_local[r]],
+                                      capacitance[iele_local[r]] + nele_world);
+
+  std::vector<int> scnt(nprocs, 0), sdis(nprocs), rcnt(nprocs), rdis(nprocs);
+  std::vector<size_t> srow;    // ascending electrode index I must send
+  for (int i = 0; i < nele_world; i++) {
+    if (i % nprocs != comm->me || rowowner[i] == comm->me) continue;
+    scnt[rowowner[i]]++;
+    srow.push_back(i);
+  }
+  int ssize = 0;
+  for (int p = 0; p < nprocs; p++) {
+    sdis[p] = ssize;
+    ssize += scnt[p];
+  }
+  for (int p = 0; p < nprocs; p++) scnt[p] *= (int)nele_world;    // in doubles now
+  for (int p = 0; p < nprocs; p++) sdis[p] *= (int)nele_world;
+
+  std::vector<double> sendbuf((size_t)ssize * nele_world);
+  {
+    size_t off = 0;
+    for (int i : srow) {
+      std::copy(capacitance[i], capacitance[i] + nele_world, sendbuf.begin() + off);
+      off += (size_t)nele_world;
+    }
+  }
+
+  // counts of doubles I will receive from each rank (scnt currently in
+  // doubles; Alltoall exchanges the same units we then use for Alltoallv)
+  MPI_Alltoall(scnt.data(), 1, MPI_INT, rcnt.data(), 1, MPI_INT, world);
+  int rsize = 0;
+  for (int p = 0; p < nprocs; p++) {
+    rdis[p] = rsize;
+    rsize += rcnt[p];
+  }
+
+  for (int p = 0; p < nprocs; p++) {
+    rcnt[p] *= (int)nele_world;    // rows -> doubles
+    rdis[p] *= (int)nele_world;
+  }
+
+  std::vector<double> recvbuf((size_t) rsize * nele_world);
+  MPI_Alltoallv(sendbuf.data(), scnt.data(), sdis.data(), MPI_DOUBLE, recvbuf.data(), rcnt.data(),
+                rdis.data(), MPI_DOUBLE, world);
+
+  // unpack: block p holds rows with ascending i, i%nprocs==p, owned by me
+  // local fragment position of each electrode index I own (-1 otherwise)
+  std::vector<int> frag_of_iele(nele_world, -1);
+  for (int r = 0; r < nlocalele; r++) frag_of_iele[iele_local[r]] = r;
+  {
+    size_t ioff = 0;
+    auto next = [&](int p, int start) {    // first i >= start with i%nprocs==p, owned by me
+      int i = start + ((p - start % nprocs + nprocs) % nprocs);
+      for (; i < nele_world; i += nprocs)
+        if (frag_of_iele[i] >= 0) return i;
+      return -1;
+    };
+    for (int p = 0; p < nprocs; p++) {
+      const int nrows = rcnt[p] / (int)nele_world;
+      int i = p;
+      for (int k = 0; k < nrows; k++) {
+        i = next(p, i);
+        cap_frag[frag_of_iele[i]].assign(recvbuf.begin() + ioff, recvbuf.begin() + ioff + nele_world);
+        ioff += (size_t)nele_world;
+        i += 1;
+      }
+    }
+  }
+
+  fragmented = true;
+  capacitance = nullptr;    // full replicated copy released
+}
 /* ---------------------------------------------------------------------- */
 
 void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
                                  std::vector<int> /*iele_to_group_local*/)
 {
   assert(setup);
-  nlocalele = taglist_local.size();
   this->taglist_local = taglist_local;
+  if (fragmented) {
+    // fragments are keyed by electrode index, so only the communication
+    // bookkeeping needs a refresh; iele_local rebuilds from the tag list
+    // exactly as pre-fragment
+    nlocalele = taglist_local.size();
+    const int nprocs = comm->nprocs;
+    delete[] recvcounts;
+    delete[] displs;
+    recvcounts = new int[nprocs];
+    displs = new int[nprocs];
+    MPI_Allgather(&nlocalele, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
+    displs[0] = 0;
+    for (int i = 1; i < nprocs; i++) displs[i] = displs[i - 1] + recvcounts[i - 1];
+    qvec.assign(nlocalele, 0.);
+    iele_local.clear();
+    iele_local.reserve(nlocalele);
+    for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
+    MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered, recvcounts, displs, MPI_INT,
+                   world);
+    return;
+  }
+  nlocalele = taglist_local.size();
   const int nprocs = comm->nprocs;
   qvec = std::vector<double>(nlocalele);
   delete[] recvcounts;
@@ -200,10 +345,9 @@ void ElectrodeInv::set_elyt_pot(double *b_nall)
   double mult_start = MPI_Wtime();
   for (int i = 0; i < nlocalele; i++) {
     double q_tmp = 0.;
-    const int iele = iele_local[i];
-    double *_noalias caprow = capacitance[iele];
+    const double *_noalias caprow = cap_frag[i].data();    // row of iele_local[i]
     for (int j = 0; j < nele_world; j++) { q_tmp -= caprow[j] * potential_iele[j]; }
-    sb_charges[iele_to_group[iele]] += q_tmp;
+    sb_charges[iele_to_group[iele_local[i]]] += q_tmp;
     qvec[i] = q_tmp;
   }
   MPI_Allreduce(MPI_IN_PLACE, sb_charges.data(), ngroups, MPI_DOUBLE, MPI_SUM, world);

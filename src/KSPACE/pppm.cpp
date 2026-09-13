@@ -2593,6 +2593,10 @@ void PPPM::fieldforce_peratom()
 
   int nlocal = atom->nlocal;
 
+  const int nx_ele = nxhi_out - nxlo_out + 1;
+  const int ny_ele = nyhi_out - nylo_out + 1;
+  const double *ubase = &u_brick[nzlo_out][nylo_out][nxlo_out];
+
   for (i = 0; i < nlocal; i++) {
     nx = part2grid[i][0];
     ny = part2grid[i][1];
@@ -2603,18 +2607,19 @@ void PPPM::fieldforce_peratom()
 
     compute_rho1d(dx,dy,dz);
 
-    u = v0 = v1 = v2 = v3 = v4 = v5 = ZEROF;
-    for (n = nlower; n <= nupper; n++) {
-      mz = n+nz;
-      z0 = rho1d[2][n];
-      for (m = nlower; m <= nupper; m++) {
-        my = m+ny;
-        y0 = z0*rho1d[1][m];
-        for (l = nlower; l <= nupper; l++) {
-          mx = l+nx;
-          x0 = y0*rho1d[0][l];
-          if (eflag_atom) u += x0*u_brick[mz][my][mx];
-          if (vflag_atom) {
+    u = ZEROF;
+    if (eflag_atom) u = gather_stencil_flat(nx, ny, nz, ubase, nx_ele, ny_ele);
+    if (vflag_atom) {
+      v0 = v1 = v2 = v3 = v4 = v5 = ZEROF;
+      for (n = nlower; n <= nupper; n++) {
+        mz = n+nz;
+        z0 = rho1d[2][n];
+        for (m = nlower; m <= nupper; m++) {
+          my = m+ny;
+          y0 = z0*rho1d[1][m];
+          for (l = nlower; l <= nupper; l++) {
+            mx = l+nx;
+            x0 = y0*rho1d[0][l];
             v0 += x0*v0_brick[mz][my][mx];
             v1 += x0*v1_brick[mz][my][mx];
             v2 += x0*v2_brick[mz][my][mx];
@@ -2873,6 +2878,33 @@ void PPPM::compute_drho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
     drho1d[1][k] = r2;
     drho1d[2][k] = r3;
   }
+}
+
+/* ----------------------------------------------------------------------
+   gather with PPPM stencil weights from a flat brick buffer
+   (nix,niy,niz) = global coords of the "lower left" stencil grid point,
+   buf = flat base with nx_brick x ny_brick in-plane strides, where
+   index (mz,my,mx) maps to (mz - nzlo_out) * ny_brick * nx_brick + ...
+   Caller must have run compute_rho1d() for particle i beforehand.
+------------------------------------------------------------------------- */
+
+double PPPM::gather_stencil_flat(int nix, int niy, int niz, const double *buf, int nx_brick,
+                                 int ny_brick)
+{
+  double v = 0.;
+  for (int n = nlower; n <= nupper; n++) {
+    double iz0 = rho1d[2][n];
+    int miz = (n + niz - nzlo_out) * nx_brick * ny_brick;
+    for (int m = nlower; m <= nupper; m++) {
+      double iy0 = iz0 * rho1d[1][m];
+      int miy = (m + niy - nylo_out) * nx_brick;
+      for (int l = nlower; l <= nupper; l++) {
+        int mix = l + nix - nxlo_out;
+        v += iz0 * iy0 * rho1d[0][l] * buf[miz + miy + mix];
+      }
+    }
+  }
+  return v;
 }
 
 /* ----------------------------------------------------------------------

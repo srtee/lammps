@@ -636,7 +636,7 @@ void FixElectrodeConp::setup_post_neighbor()
 
   if (matrix_algo) {
     assert(taglist_constructed);
-    memory->destroy(matrix);
+    if (matrix != nullptr) memory->destroy(matrix);
     memory->create(matrix, ngroup, ngroup, "fix_electrode:matrix");
     if (read_mat)
       electrode_taglist->read_from_file(input_file_mat, matrix, "elastance");
@@ -704,7 +704,25 @@ void FixElectrodeConp::setup_post_neighbor()
     electrode_taglist->write_to_file(output_file_vec, potential_iele);
     memory->destroy(potential_iele);
   }
-  if (write_inv) electrode_taglist->write_to_file(output_file_inv, matrix);
+  if (write_inv) {
+    // the solver has fragmentized the matrix by now; reassemble on demand
+    if (algo == Algo::MATRIX_INV) {
+      auto *inv = dynamic_cast<ElectrodeInv *>(charge_solver);
+      electrode_taglist->gather_full_matrix_to_zero(matrix, inv->get_fragments(),
+                                                    inv->get_fragment_iele(), ngroup);
+    } else if (algo == Algo::MATRIX_CG) {
+      auto *mat_cg = dynamic_cast<ElectrodeMatCG *>(charge_solver);
+      electrode_taglist->gather_full_matrix_to_zero(matrix, mat_cg->get_fragments(),
+                                                    mat_cg->get_fragment_iele(), ngroup);
+    }
+    electrode_taglist->write_to_file(output_file_inv, matrix);
+    memory->destroy(matrix);
+    matrix = nullptr;
+  }
+  if (matrix != nullptr) {
+    memory->destroy(matrix);
+    matrix = nullptr;
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1034,7 +1052,7 @@ FixElectrodeConp::~FixElectrodeConp()
   memory->destroy(potential_i);
 
   delete elyt_vector;
-  memory->destroy(matrix);
+  if (matrix != nullptr) memory->destroy(matrix);
   if (need_elec_vector) delete elec_vector;
   if (charge_solver != nullptr) delete charge_solver;
   if (taglist_constructed) delete electrode_taglist;
