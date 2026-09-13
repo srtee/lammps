@@ -35,6 +35,8 @@ extern "C" {
 void dgetrf_(const int *M, const int *N, double *A, const int *lda, int *ipiv, int *info);
 void dgetri_(const int *N, double *A, const int *lda, const int *ipiv, double *work,
              const int *lwork, int *info);
+void dgetrs_(const char *TRANS, const int *N, const int *NRHS, double *A, const int *LDA,
+             const int *IPIV, double *B, const int *LDB, int *INFO);
 }
 
 #if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
@@ -89,7 +91,8 @@ double ElectrodeInv::memory_use()
 
 /* ---------------------------------------------------------------------- */
 
-void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_flag)
+void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_flag,
+                                 const std::vector<int> &frag_iele)
 {
   cap_set = true;
   this->nele_world = nele_world;
@@ -100,20 +103,41 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
   if (timer_flag && (comm->me == 0)) utils::logmesg(lmp, "CONP inverting matrix\n");
   int m = nele_world, n = nele_world, lda = nele_world;
   std::vector<int> ipiv(nele_world);
-  const int lwork = nele_world * nele_world;
-  std::vector<double> work(lwork);
 
-  int info_rf, info_ri;
+  int info_rf;
 #if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
   int mkl_threads = MKL_Get_Max_Threads();
   MKL_Set_Num_Threads(1);
 #endif
   dgetrf_(&m, &n, &capacitance[0][0], &lda, ipiv.data(), &info_rf);
-  dgetri_(&n, &capacitance[0][0], &lda, ipiv.data(), work.data(), &lwork, &info_ri);
 #if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
   MKL_Set_Num_Threads(mkl_threads);
 #endif
-  if (info_rf != 0 || info_ri != 0) error->all(FLERR, "CONP matrix inversion failed!");
+  if (info_rf != 0) error->all(FLERR, "CONP matrix factorization failed!");
+
+  // S3.1: each rank solves A^T x = e_i for its OWNED rows i (dgetrs,
+  // trans='T'), giving row i of A^{-1} directly into the fragment — no
+  // N x N dgetri work array, no fragmentize() redistribution.
+  iele_local = frag_iele;
+  nlocalele = static_cast<int>(frag_iele.size());
+  cap_frag.resize(nlocalele);
+  const char trans = 'T';
+  const int nrhs = 1;
+  std::vector<double> rhs(nele_world, 0.0);
+  int info_rs;
+  for (int r = 0; r < nlocalele; r++) {
+    const int iele = frag_iele[r];
+    std::fill(rhs.begin(), rhs.end(), 0.0);
+    rhs[iele] = 1.0;
+    dgetrs_(&trans, &n, &nrhs, &capacitance[0][0], &lda, ipiv.data(), rhs.data(), &n,
+            &info_rs);
+    if (info_rs != 0) error->all(FLERR, "CONP matrix solve failed!");
+    cap_frag[r] = rhs;
+  }
+  fragmented = true;
+  // NOTE: capacitance (the factorized elastance) stays alive for now —
+  // symmetrize/compute_sd_vectors still consume the full matrix. S3.2/S3.3
+  // convert those to fragment-local form, then the release moves here.
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "Invert time: {:.4g} s\n", MPI_Wtime() - invert_time);
@@ -200,7 +224,7 @@ void ElectrodeInv::setup_solver(int groupbit, std::unordered_map<tagint, int> ta
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "SD-vector and macro matrices time: {:.4g} s\n", MPI_Wtime() - start);
 
-  fragmentize();
+  if (!fragmented) fragmentize();    // S3.1: fragments built by set_elastance
 }
 
 /* ----------------------------------------------------------------------

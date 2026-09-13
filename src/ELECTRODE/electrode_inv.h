@@ -50,7 +50,7 @@ class ElectrodeInv : public Pointers, public ChargeSolver {
 
   // setup
   void set_capacitance(int, double **);
-  void set_elastance(int, double **, bool);
+  void set_elastance(int, double **, bool, const std::vector<int> &frag_iele);
   void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
 
  private:

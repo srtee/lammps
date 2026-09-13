@@ -661,6 +661,7 @@ void FixElectrodeConp::setup_post_neighbor()
 
   if (matrix_algo) {
     assert(taglist_constructed);
+    gather_list_iele();    // fragment_iele must exist before set_elastance
     if (matrix != nullptr) memory->destroy(matrix);
     memory->create(matrix, ngroup, ngroup, "fix_electrode:matrix");
     if (read_mat)
@@ -691,7 +692,7 @@ void FixElectrodeConp::setup_post_neighbor()
         electrode_taglist->read_from_file(input_file_inv, matrix, "capacitance");
         inv->set_capacitance(ngroup, matrix);
       } else {
-        inv->set_elastance(ngroup, matrix, timer_flag);
+        inv->set_elastance(ngroup, matrix, timer_flag, fragment_iele);
       }
       assert(taglist_constructed);
       inv->setup_solver(groupbit, electrode_taglist->get_tag_to_iele(), group_bits, ffield,
@@ -715,6 +716,10 @@ void FixElectrodeConp::setup_post_neighbor()
     default:
       error->all(FLERR, "This algorithm is not implemented, yet");
   }
+  // the early gather_list_iele consumed nlocalele_outdated before the
+  // solver existed; refresh its bookkeeping now that it is constructed
+  if (charge_solver != nullptr)
+    charge_solver->update_solver(taglist_local, iele_to_group_local);
   if (qtotal_var_style == VarStyle::CONST) charge_solver->set_constraint(qtotal);
   // initial charges and b vector
   update_charges();
@@ -1223,7 +1228,7 @@ void FixElectrodeConp::gather_list_iele()
   nlocalele = static_cast<int>(taglist_local.size());
   assert((int) iele_to_group_local.size() == nlocalele);
   if (taglist_constructed) build_fragment_iele();
-  charge_solver->update_solver(taglist_local, iele_to_group_local);
+  if (charge_solver != nullptr) charge_solver->update_solver(taglist_local, iele_to_group_local);
   nlocalele_outdated = 0;
 }
 
