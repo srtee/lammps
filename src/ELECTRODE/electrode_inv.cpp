@@ -77,7 +77,11 @@ double ElectrodeInv::memory_use()
 {
   double bytes = 0.;
   if (setup) bytes += 3 * nele_world * sizeof(double);
-  // retained matrix storage: per-rank row fragments after setup
+  // retained matrix storage: per-rank row fragments; plus the retained LU
+  // factorization (full nele_world x nele_world) held until the last
+  // consumer of the full matrix is retired
+  bytes += nele_world * (double) nele_world * sizeof(double);
+  bytes += lu_ipiv.size() * sizeof(int);
   bytes += cap_frag.size() * nele_world * sizeof(double);
   for (const auto &row : cap_frag) bytes += (row.capacity() - row.size()) * sizeof(double);
   bytes += qvec.capacity() * sizeof(double);

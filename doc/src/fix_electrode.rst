@@ -141,7 +141,12 @@ matrices are pre-calculated before a run to provide computational
 speedup. These algorithms can be selected using the keyword *algo*:
 
 * *algo mat_inv* pre-calculates the capacitance matrix and obtains the
-  charge configuration in one matrix-vector calculation per time step
+  charge configuration in one matrix-vector calculation per time step.
+  The matrix is factorized redundantly on every MPI rank, but only the
+  rows of locally-owned electrode atoms are inverted and stored per rank
+  (a per-rank row *fragment*), so per-rank memory scales as
+  N^2/P + N^2 for the retained factorization rather than two full
+  N x N copies
 
 * *algo mat_cg* pre-calculates the elastance matrix (inverse of
   capacitance matrix) and obtains the charge configuration using a
