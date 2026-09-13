@@ -714,53 +714,57 @@ void PPPMElectrode::compute_matrix(bigint *imat, double **matrix, bool timer_fla
   }
   MPI_Allreduce(MPI_IN_PLACE, &(x_ele[0][0]), nmat * 3, MPI_DOUBLE, MPI_SUM, world);
 
+  // gather rho1d of ALL electrode atoms in iele order: each rank computes
+  // its local atoms' 1-D weights; the Allreduce reassembles the global
+  // table (exactly one rank owns each iele, zeros elsewhere)
+  const int order3 = 3 * order;
+  std::vector<FFT_SCALAR> rho1d_all(nmat * order3, FFT_SCALAR(0));
+  for (int i = 0; i < nlocal; i++) {
+    const int ipos = imat[i];
+    if (ipos < 0) continue;
+    const int nix = static_cast<int>((x[i][0] - boxlo[0]) * delxinv + shift) - OFFSET;
+    const int niy = static_cast<int>((x[i][1] - boxlo[1]) * delyinv + shift) - OFFSET;
+    const int niz = static_cast<int>((x[i][2] - boxlo[2]) * delzinv + shift) - OFFSET;
+    const FFT_SCALAR dix = nix + shiftone - (x[i][0] - boxlo[0]) * delxinv;
+    const FFT_SCALAR diy = niy + shiftone - (x[i][1] - boxlo[1]) * delyinv;
+    const FFT_SCALAR diz = niz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
+    compute_rho1d(dix, diy, diz);
+    for (int dim = 0; dim < 3; dim++)
+      for (int oi = 0; oi < order; oi++)
+        rho1d_all[ipos * order3 + dim * order + oi] = rho1d[dim][oi + nlower];
+  }
+  MPI_Allreduce(MPI_IN_PLACE, rho1d_all.data(), nmat * order3, MPI_FFT_SCALAR, MPI_SUM, world);
+
   if (conp_one_step)
-    one_step_multiplication(imat, greens_real, x_ele, matrix, nmat, timer_flag);
+    one_step_multiplication(imat, greens_real, x_ele, matrix, nmat, rho1d_all.data(), timer_flag);
   else
     two_step_multiplication(imat, greens_real, x_ele, matrix, nmat, timer_flag);
 
   memory->destroy(x_ele);
 }
 
+
 /* ----------------------------------------------------------------------*/
 
 void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, double **x_ele,
-                                            double **matrix, const int nmat, bool timer_flag)
+                                            double **matrix, const int nmat,
+                                            const FFT_SCALAR *rho1d_all, bool timer_flag)
 {
   // map green's function in real space from mesh to particle positions
-  // with matrix multiplication 'W^T G W' in one steps. Uses less memory than
-  // two_step_multiplication
-  //
+  // with matrix multiplication 'W^T G W' in one step. Full-row scheme:
+  // each rank fills only the rows of its own electrode atoms (all j per
+  // row), so no checkerboard parity skip and no mirror writes are needed.
   const int nlocal = atom->nlocal;
-  double **x = atom->x;
   MPI_Barrier(world);
   double step1_time = MPI_Wtime();
 
-  // precalculate rho_1d for local electrode
-  std::vector<int> j_list;
-  for (int j = 0; j < nlocal; j++) {
-    int jpos = imat[j];
-    if (jpos < 0) continue;
-    j_list.push_back(j);
+  // my fragment rows: imat of local electrode atoms, ascending
+  std::vector<int> i_list;
+  for (int i = 0; i < nlocal; i++) {
+    const int ipos = imat[i];
+    if (ipos >= 0) i_list.push_back(ipos);
   }
-  const int nj_local = j_list.size();
-
-  FFT_SCALAR ***rho1d_j;
-  memory->create(rho1d_j, nj_local, 3, order, "pppm/electrode:rho1d_j");
-
-  for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
-    int j = j_list[jlist_pos];
-    int njx = part2grid[j][0];
-    int njy = part2grid[j][1];
-    int njz = part2grid[j][2];
-    FFT_SCALAR const djx = njx + shiftone - (x[j][0] - boxlo[0]) * delxinv;
-    FFT_SCALAR const djy = njy + shiftone - (x[j][1] - boxlo[1]) * delyinv;
-    FFT_SCALAR const djz = njz + shiftone - (x[j][2] - boxlo[2]) * delzinv;
-    compute_rho1d(djx, djy, djz);
-    for (int dim = 0; dim < 3; dim++) {
-      for (int oi = 0; oi < order; oi++) { rho1d_j[jlist_pos][dim][oi] = rho1d[dim][oi + nlower]; }
-    }
-  }
+  std::sort(i_list.begin(), i_list.end());
 
   // nested loops over weights of electrode atoms i and j
   // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
@@ -770,7 +774,7 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
   // njz-niz); identical offsets recur across electrode pairs (rigid
   // electrode geometry), so cache the gathered kernel tensors per call
   std::unordered_map<std::int64_t, std::vector<double>> amesh_cache;
-  amesh_cache.reserve(2 * nj_local);
+  amesh_cache.reserve(2 * nmat);
   auto offset_key = [&](int dx, int dy, int dz) {
     return ((std::int64_t)(dz + 4 * nz_pppm) * (8 * (std::int64_t) ny_pppm)
             + (std::int64_t)(dy + 4 * ny_pppm)) * (8 * (std::int64_t) nx_pppm)
@@ -778,9 +782,10 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
   };
   const int order2 = order * order;
   const int order6 = order2 * order2 * order2;
+  const int order3 = 3 * order;
   double *amesh;
   memory->create(amesh, order6, "pppm/electrode:amesh");
-  for (int ipos = 0; ipos < nmat; ipos++) {
+  for (const int ipos : i_list) {
     double *_noalias xi_ele = x_ele[ipos];
     // new calculation for nx, ny, nz because part2grid available for
     // nlocal, only
@@ -791,15 +796,21 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
     FFT_SCALAR const diy = niy + shiftone - (xi_ele[1] - boxlo[1]) * delyinv;
     FFT_SCALAR const diz = niz + shiftone - (xi_ele[2] - boxlo[2]) * delzinv;
     compute_rho1d(dix, diy, diz);
+    const FFT_SCALAR *rho_i[3] = {&rho1d_all[ipos * order3],
+                                  &rho1d_all[ipos * order3 + order],
+                                  &rho1d_all[ipos * order3 + 2 * order]};
     int njx = -1;
     int njy = -1;
     int njz = -1;    // force initial build_amesh
-    for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
-      int j = j_list[jlist_pos];
-      if (njx != part2grid[j][0] || njy != part2grid[j][1] || njz != part2grid[j][2]) {
-        njx = part2grid[j][0];
-        njy = part2grid[j][1];
-        njz = part2grid[j][2];
+    for (int jpos = 0; jpos < nmat; jpos++) {
+      double *_noalias xj_ele = x_ele[jpos];
+      const int njx_new = static_cast<int>((xj_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
+      const int njy_new = static_cast<int>((xj_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
+      const int njz_new = static_cast<int>((xj_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
+      if (njx != njx_new || njy != njy_new || njz != njz_new) {
+        njx = njx_new;
+        njy = njy_new;
+        njz = njz_new;
         const std::int64_t key = offset_key(njx - nix, njy - niy, njz - niz);
         auto it = amesh_cache.find(key);
         if (it == amesh_cache.end()) {
@@ -809,23 +820,24 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
           std::copy(it->second.begin(), it->second.end(), amesh);
         }
       }
-      int jpos = imat[j];
-      if ((ipos < jpos) == !((ipos - jpos) % 2)) continue;
+      const FFT_SCALAR *rho_j[3] = {&rho1d_all[jpos * order3],
+                                    &rho1d_all[jpos * order3 + order],
+                                    &rho1d_all[jpos * order3 + 2 * order]};
       double aij = 0.;
       int ind_amesh = 0;
-      for (int ni = nlower; ni <= nupper; ni++) {    // i's rho1d[dim] indexed from nlower to nupper
-        FFT_SCALAR const iz0 = rho1d[2][ni];
-        for (int nj = 0; nj < order; nj++) {    // j's rho1d_j[][dim] indexed from 0 to order-1
-          FFT_SCALAR const jz0 = rho1d_j[jlist_pos][2][nj];
-          for (int mi = nlower; mi <= nupper; mi++) {
-            FFT_SCALAR const iy0 = iz0 * rho1d[1][mi];
+      for (int ni = 0; ni < order; ni++) {
+        FFT_SCALAR const iz0 = rho_i[2][ni];
+        for (int nj = 0; nj < order; nj++) {
+          FFT_SCALAR const jz0 = rho_j[2][nj];
+          for (int mi = 0; mi < order; mi++) {
+            FFT_SCALAR const iy0 = iz0 * rho_i[1][mi];
             for (int mj = 0; mj < order; mj++) {
-              FFT_SCALAR const jy0 = jz0 * rho1d_j[jlist_pos][1][mj];
-              for (int li = nlower; li <= nupper; li++) {
-                FFT_SCALAR const ix0 = iy0 * rho1d[0][li];
+              FFT_SCALAR const jy0 = jz0 * rho_j[1][mj];
+              for (int li = 0; li < order; li++) {
+                FFT_SCALAR const ix0 = iy0 * rho_i[0][li];
                 double aij_xscan = 0.;
                 for (int lj = 0; lj < order; lj++) {
-                  aij_xscan += (double) amesh[ind_amesh] * rho1d_j[jlist_pos][0][lj];
+                  aij_xscan += (double) amesh[ind_amesh] * rho_j[0][lj];
                   ind_amesh++;
                 }
                 aij += (double) ix0 * jy0 * aij_xscan;
@@ -835,11 +847,9 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
         }
       }
       matrix[ipos][jpos] += aij / volume;
-      if (ipos != jpos) matrix[jpos][ipos] += aij / volume;
     }
   }
   memory->destroy(amesh);
-  memory->destroy(rho1d_j);
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "Single step time: {:.4g} s\n", MPI_Wtime() - step1_time);
