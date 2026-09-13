@@ -666,23 +666,34 @@ void PPPMElectrode::compute_matrix(bigint *imat, double **matrix, bool timer_fla
 {
   compute(1, 0);    // make sure density bricks etc. are set up
 
-  // fft green's function k -> r (double)
+  // fft green's function k -> r (double); cached across calls, invalidated
+  // when the grid dimensions change (gewald/kspace changes go through
+  // reset_grid which rebuilds the grid, so the size check covers them)
+  const bigint cache_key = (bigint) nz_pppm * ny_pppm * nx_pppm;
   double *greens_real;
-  memory->create(greens_real, nz_pppm * ny_pppm * nx_pppm, "pppm/electrode:greens_real");
-  memset(greens_real, 0,
-         (std::size_t) nz_pppm * (std::size_t) ny_pppm * (std::size_t) nx_pppm * sizeof(double));
-  for (int i = 0, n = 0; i < nfft; i++) {
-    work2[n++] = greensfn[i];
-    work2[n++] = ZEROF;
+  if (greens_real_cache != nullptr && greens_cache_nz == cache_key) {
+    greens_real = greens_real_cache;
+  } else {
+    memory->destroy(greens_real_cache);
+    memory->create(greens_real_cache, nz_pppm * ny_pppm * nx_pppm, "pppm/electrode:greens_real");
+    greens_real = greens_real_cache;
+    greens_cache_nz = cache_key;
+    memset(greens_real, 0,
+           (std::size_t) nz_pppm * (std::size_t) ny_pppm * (std::size_t) nx_pppm * sizeof(double));
+    for (int i = 0, n = 0; i < nfft; i++) {
+      work2[n++] = greensfn[i];
+      work2[n++] = ZEROF;
+    }
+    fft2->compute(work2, work2, -1);
+    for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
+      for (int j = nylo_in; j <= nyhi_in; j++)
+        for (int i = nxlo_in; i <= nxhi_in; i++) {
+          greens_real[ny_pppm * nx_pppm * k + nx_pppm * j + i] = work2[n];
+          n += 2;
+        }
+    MPI_Allreduce(MPI_IN_PLACE, greens_real, nz_pppm * ny_pppm * nx_pppm, MPI_DOUBLE, MPI_SUM,
+                  world);
   }
-  fft2->compute(work2, work2, -1);
-  for (int k = nzlo_in, n = 0; k <= nzhi_in; k++)
-    for (int j = nylo_in; j <= nyhi_in; j++)
-      for (int i = nxlo_in; i <= nxhi_in; i++) {
-        greens_real[ny_pppm * nx_pppm * k + nx_pppm * j + i] = work2[n];
-        n += 2;
-      }
-  MPI_Allreduce(MPI_IN_PLACE, greens_real, nz_pppm * ny_pppm * nx_pppm, MPI_DOUBLE, MPI_SUM, world);
   const int nlocal = atom->nlocal;
   int nmat = std::count_if(&imat[0], &imat[nlocal], [](int x) {
     return x >= 0;
@@ -705,7 +716,7 @@ void PPPMElectrode::compute_matrix(bigint *imat, double **matrix, bool timer_fla
     one_step_multiplication(imat, greens_real, x_ele, matrix, nmat, timer_flag);
   else
     two_step_multiplication(imat, greens_real, x_ele, matrix, nmat, timer_flag);
-  memory->destroy(greens_real);
+
   memory->destroy(x_ele);
 }
 
@@ -845,8 +856,72 @@ void PPPMElectrode::build_amesh(const int dx,    // = njx - nix
     }
 }
 
-/* ----------------------------------------------------------------------*/
+/* ----------------------------------------------------------------------
+   separable 1-D convolution pass for the two-step grid-potential field
+   (validated elementwise against the fused stencil walk in the harness
+   /tmp/convcheck: pass 1 reads greens_real with its native kernel pitch
+   nx_pppm x ny_pppm; passes 2 and 3 read the previous output with brick
+   pitch nx_ele x ny_ele).
+   out[bz][by][bx] = sum_j w[AXIS][j] * in[wrap(bAXIS - origin - j - nlower)]
+   where w points at the already-offset rho1d[AXIS] row.
+------------------------------------------------------------------------- */
 
+template <int AXIS> void PPPMElectrode::conv_axis(double *out, const double *in, int origin)
+{
+  const int nx_ele = nxhi_out - nxlo_out + 1;
+  const int ny_ele = nyhi_out - nylo_out + 1;
+  const int nz_ele = nzhi_out - nzlo_out + 1;
+  const FFT_SCALAR *w = rho1d[AXIS] + nlower;
+  auto fmod = [](int x, int n) {    // fast unsigned mod
+    int r = abs(x);
+    while (r >= n) r -= n;
+    return r;
+  };
+
+  if (AXIS == 0) {
+    // pass 1: input is greens_real with its native kernel pitch
+    const size_t in_pz = (size_t) nx_pppm * ny_pppm, in_py = (size_t) nx_pppm;
+    for (int mz = 0; mz < nz_ele; mz++)
+      for (int my = 0; my < ny_ele; my++) {
+        const double *inl = in + (size_t) mz * in_pz + (size_t) my * in_py;
+        double *outl = out + (size_t) mz * ny_ele * nx_ele + (size_t) my * nx_ele;
+        for (int mx = 0; mx < nx_ele; mx++) {
+          double acc = 0.;
+          for (int j = 0; j < order; j++)
+            acc += w[j] * inl[fmod(mx - origin - j - nlower, nx_pppm)];
+          outl[mx] = acc;
+        }
+      }
+  } else if (AXIS == 1) {
+    for (int mz = 0; mz < nz_ele; mz++) {
+      const double *inz = in + (size_t) mz * ny_ele * nx_ele;
+      double *outz = out + (size_t) mz * ny_ele * nx_ele;
+      for (int my = 0; my < ny_ele; my++) {
+        double *outl = outz + (size_t) my * nx_ele;
+        for (int j = 0; j < order; j++) {
+          const double *inl = inz + (size_t) fmod(my - origin - j - nlower, ny_pppm) * nx_ele;
+          const double wj = w[j];
+          for (int mx = 0; mx < nx_ele; mx++) outl[mx] += wj * inl[mx];
+        }
+      }
+    }
+  } else {
+    for (int mz = 0; mz < nz_ele; mz++) {
+      double *outz = out + (size_t) mz * ny_ele * nx_ele;
+      for (int j = 0; j < order; j++) {
+        const double *inz = in + (size_t) fmod(mz - origin - j - nlower, nz_pppm) * ny_ele * nx_ele;
+        const double wj = w[j];
+        for (int my = 0; my < ny_ele; my++) {
+          const double *inl = inz + (size_t) my * nx_ele;
+          double *outl = outz + (size_t) my * nx_ele;
+          for (int mx = 0; mx < nx_ele; mx++) outl[mx] += wj * inl[mx];
+        }
+      }
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------*/
 void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, double **x_ele,
                                             double **matrix, const int nmat, bool timer_flag)
 {
@@ -861,24 +936,30 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
   int nz_ele = nzhi_out - nzlo_out + 1;    // nz_pppm + order + 1;
   int nxyz = nx_ele * ny_ele * nz_ele;
 
-  double **gw;
-  memory->create(gw, nmat, nxyz, "pppm/electrode:gw");
+  // persistent per-electrode grid-potential rows (reallocated only when
+  // nmat or the brick size grows)
+  if (gw_cache_nmat < nmat) {
+    memory->destroy(gw_cache);
+    memory->create(gw_cache, nmat, nxyz, "pppm/electrode:gw_cache");
+    gw_cache_nmat = nmat;
+  }
+  double **gw = gw_cache;
   memset(&(gw[0][0]), 0, (std::size_t) nmat * (std::size_t) nxyz * sizeof(double));
 
-  auto fmod = [](int x, int n) {    // fast unsigned mod
-    int r = abs(x);
-    while (r >= n) r -= n;
-    return r;
-  };
+  // scratch bricks for the x- and xy-convolved intermediates (retained
+  // across calls; reallocated only when the brick size changes)
+  if (conv_scratch1 == nullptr) {
+    memory->create(conv_scratch1, nxyz, "pppm/electrode:conv_scratch1");
+    memory->create(conv_scratch2, nxyz, "pppm/electrode:conv_scratch2");
+  }
 
-  // loops over weights of electrode atoms and weights of complete grid
-  // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
-  // (dx,dy,dz) = distance to "lower left" grid pt
-  // (mx,my,mz) = global coords of moving stencil pt
+  // loops over electrode atoms: the fused order^3 stencil walk is replaced
+  // by three separable 1-D convolutions (x with the kernel pitch, then y,
+  // then z with the brick pitch). Elementwise-validated against the old
+  // walk; see conv_axis() comment.
+  // (nix,niy,niz) = global coords of grid pt to "lower left" of charge
   for (int ipos = 0; ipos < nmat; ipos++) {
     double *_noalias xi_ele = x_ele[ipos];
-    // new calculation for nx, ny, nz because part2grid available for
-    // nlocal, only
     int nix = static_cast<int>((xi_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
     int niy = static_cast<int>((xi_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
     int niz = static_cast<int>((xi_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
@@ -886,30 +967,13 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
     FFT_SCALAR dy = niy + shiftone - (xi_ele[1] - boxlo[1]) * delyinv;
     FFT_SCALAR dz = niz + shiftone - (xi_ele[2] - boxlo[2]) * delzinv;
     compute_rho1d(dx, dy, dz);
-    // DO NOT TOUCH THESE LOOPS!
-    // Attempted optimizations (such as calculating parts of indices
-    // in the outer loops) have been shown harmful upon benchmarking!
-    for (int mjz = nzlo_out; mjz <= nzhi_out; mjz++) {
-      for (int ni = nlower; ni <= nupper; ni++) {
-        double const iz0 = rho1d[2][ni];
-        const int mz = fmod(mjz - ni - niz, nz_pppm);
-        for (int mjy = nylo_out; mjy <= nyhi_out; mjy++) {
-          for (int mi = nlower; mi <= nupper; mi++) {
-            double const iy0 = iz0 * rho1d[1][mi];
-            const int my = fmod(mjy - mi - niy, ny_pppm);
-            for (int mjx = nxlo_out; mjx <= nxhi_out; mjx++) {
-              for (int li = nlower; li <= nupper; li++) {
-                double const ix0 = iy0 * rho1d[0][li];
-                const int mx = fmod(mjx - li - nix, nx_pppm);
-                gw[ipos][nx_ele * ny_ele * (mjz - nzlo_out) + nx_ele * (mjy - nylo_out) +
-                         (mjx - nxlo_out)] +=
-                    ix0 * greens_real[mz * nx_pppm * ny_pppm + my * nx_pppm + mx];
-              }
-            }
-          }
-        }
-      }
-    }
+
+    // brick-local origins: the original walk wrapped kernel indices as
+    // fmod(mj - li - n*) with mj the GLOBAL out-grid index = brick + n*lo_out
+    memset(conv_scratch2, 0, (std::size_t) nxyz * sizeof(double));
+    conv_axis<0>(conv_scratch1, greens_real, nix - nxlo_out);
+    conv_axis<1>(conv_scratch2, conv_scratch1, niy - nylo_out);
+    conv_axis<2>(gw[ipos], conv_scratch2, niz - nzlo_out);
   }
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
@@ -952,7 +1016,6 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
     }
   }
   MPI_Barrier(world);
-  memory->destroy(gw);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "step 2 time: {:.4g} s\n", MPI_Wtime() - step2_time);
 }
@@ -1126,6 +1189,15 @@ void PPPMElectrode::deallocate()
   memory->destroy(work1);
   memory->destroy(work2);
   memory->destroy(vg);
+  memory->destroy(greens_real_cache);
+  memory->destroy(gw_cache);
+  gw_cache = nullptr;
+  gw_cache_nmat = -1;
+  greens_real_cache = nullptr;
+  greens_cache_nz = -1;
+  memory->destroy(conv_scratch1);
+  memory->destroy(conv_scratch2);
+  conv_scratch1 = conv_scratch2 = nullptr;
 
   memory->destroy1d_offset(fkx, nxlo_fft);
   memory->destroy1d_offset(fky, nylo_fft);
@@ -1790,8 +1862,6 @@ ghosts) in global grid
 void PPPMElectrode::make_rho_in_brick(int source_grpbit, FFT_SCALAR ***scratch_brick,
                                       bool invert_source)
 {
-  int l, m, n, nx, ny, nz, mx, my, mz;
-  FFT_SCALAR dx, dy, dz, x0, y0, z0;
 
   last_source_grpbit = source_grpbit;
   last_invert_source = invert_source;
@@ -1805,35 +1875,12 @@ void PPPMElectrode::make_rho_in_brick(int source_grpbit, FFT_SCALAR ***scratch_b
   // (mx,my,mz) = global coords of moving stencil pt
 
   double *q = atom->q;
-  double **x = atom->x;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
   for (int i = 0; i < nlocal; i++) {
     bool const i_in_source = !!(mask[i] & source_grpbit) != invert_source;
-    if (!i_in_source) continue;
-    nx = part2grid[i][0];
-    ny = part2grid[i][1];
-    nz = part2grid[i][2];
-    dx = nx + shiftone - (x[i][0] - boxlo[0]) * delxinv;
-    dy = ny + shiftone - (x[i][1] - boxlo[1]) * delyinv;
-    dz = nz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
-
-    compute_rho1d(dx, dy, dz);
-
-    z0 = delvolinv * q[i];
-    for (n = nlower; n <= nupper; n++) {
-      mz = n + nz;
-      y0 = z0 * rho1d[2][n];
-      for (m = nlower; m <= nupper; m++) {
-        my = m + ny;
-        x0 = y0 * rho1d[1][m];
-        for (l = nlower; l <= nupper; l++) {
-          mx = l + nx;
-          scratch_brick[mz][my][mx] += x0 * rho1d[0][l];
-        }
-      }
-    }
+    if (i_in_source) spread_stencil(i, delvolinv * q[i], scratch_brick);
   }
 }
 

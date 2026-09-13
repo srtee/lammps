@@ -1930,8 +1930,6 @@ void PPPM::particle_map()
 
 void PPPM::make_rho()
 {
-  int l,m,n,nx,ny,nz,mx,my,mz;
-  FFT_SCALAR dx,dy,dz,x0,y0,z0;
 
   // clear 3d density array
 
@@ -1944,33 +1942,10 @@ void PPPM::make_rho()
   // (mx,my,mz) = global indices of moving stencil pt
 
   double *q = atom->q;
-  double **x = atom->x;
   int nlocal = atom->nlocal;
 
   for (int i = 0; i < nlocal; i++) {
-
-    nx = part2grid[i][0];
-    ny = part2grid[i][1];
-    nz = part2grid[i][2];
-    dx = nx+shiftone - (x[i][0]-boxlo[0])*delxinv;
-    dy = ny+shiftone - (x[i][1]-boxlo[1])*delyinv;
-    dz = nz+shiftone - (x[i][2]-boxlo[2])*delzinv;
-
-    compute_rho1d(dx,dy,dz);
-
-    z0 = delvolinv * q[i];
-    for (n = nlower; n <= nupper; n++) {
-      mz = n+nz;
-      y0 = z0*rho1d[2][n];
-      for (m = nlower; m <= nupper; m++) {
-        my = m+ny;
-        x0 = y0*rho1d[1][m];
-        for (l = nlower; l <= nupper; l++) {
-          mx = l+nx;
-          density_brick[mz][my][mx] += x0*rho1d[0][l];
-        }
-      }
-    }
+    spread_stencil(i, delvolinv * q[i], density_brick);
   }
 }
 
@@ -2905,6 +2880,37 @@ double PPPM::gather_stencil_flat(int nix, int niy, int niz, const double *buf, i
     }
   }
   return v;
+}
+
+/* ----------------------------------------------------------------------
+   spread particle i's charge onto brick grid points with PPPM weights
+   (the walk shared by make_rho and make_rho_in_brick); weight includes
+   the charge and the cell-volume normalisation
+------------------------------------------------------------------------- */
+
+void PPPM::spread_stencil(int i, double weight, FFT_SCALAR ***brick)
+{
+  const double *xi = atom->x[i];
+  int nx = part2grid[i][0];
+  int ny = part2grid[i][1];
+  int nz = part2grid[i][2];
+  FFT_SCALAR dx = nx + shiftone - (xi[0] - boxlo[0]) * delxinv;
+  FFT_SCALAR dy = ny + shiftone - (xi[1] - boxlo[1]) * delyinv;
+  FFT_SCALAR dz = nz + shiftone - (xi[2] - boxlo[2]) * delzinv;
+  compute_rho1d(dx, dy, dz);
+
+  for (int n = nlower; n <= nupper; n++) {
+    int mz = n + nz;
+    FFT_SCALAR y0 = weight * rho1d[2][n];
+    for (int m = nlower; m <= nupper; m++) {
+      int my = m + ny;
+      FFT_SCALAR x0 = y0 * rho1d[1][m];
+      for (int l = nlower; l <= nupper; l++) {
+        int mx = l + nx;
+        brick[mz][my][mx] += x0 * rho1d[0][l];
+      }
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------

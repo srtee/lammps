@@ -142,7 +142,7 @@ class PPPM : public KSpace {
   void compute_rho_coeff();
   virtual void slabcorr();
   double gather_stencil_flat(int, int, int, const double *, int, int);
-  void gather_brick(int, FFT_SCALAR ***);
+  void spread_stencil(int, double, FFT_SCALAR ***);
 
  public:
   // grid communication
