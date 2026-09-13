@@ -100,6 +100,9 @@ class FixElectrodeConp : public Fix {
   bool need_elec_vector;			// can build their own custom
   double eta;					// ElectrodeVectorIntel
 
+  bool pairflag;                              // whether a pair style is specified (KK subclass)
+  std::string pair_str;
+
  private:
   std::string output_file_inv, output_file_mat, output_file_vec;
   std::string input_file_inv, input_file_mat;
@@ -125,8 +128,6 @@ class FixElectrodeConp : public Fix {
   bool enflag, hardnessflag;                  // qeq parameters set
   bool etapropflag;                           // eta specified as atom property
   int eta_index, hardness_index, en_index;    // index of atom properties
-  bool pairflag;                              // whether a pair style is specified
-  std::string pair_str;
   bool timer_flag;
   std::map<int, double> tf_types;
   int predictor_cols;

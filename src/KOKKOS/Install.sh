@@ -267,6 +267,10 @@ action fix_nvt_sllod_kokkos.h
 action fix_nvk_kokkos.cpp fix_nvk.cpp
 action fix_nvk_kokkos.h fix_nvk.h
 action fix_oneway_kokkos.cpp fix_oneway.cpp
+action fix_electrode_conp_kokkos.cpp fix_electrode_conp.cpp
+action fix_electrode_conp_kokkos.h fix_electrode_conp.h
+action fix_electrode_conq_kokkos.h fix_electrode_conq.h
+action fix_electrode_thermo_kokkos.h fix_electrode_thermo.h
 action fix_oneway_kokkos.h fix_oneway.h
 action fix_planeforce_kokkos.cpp
 action fix_planeforce_kokkos.h
@@ -551,6 +555,8 @@ action pair_lj_cut_coul_wolf_kokkos.cpp pair_lj_cut_coul_wolf.cpp
 action pair_lj_cut_coul_wolf_kokkos.h pair_lj_cut_coul_wolf.h
 action pair_lj_cut_coul_long_kokkos.cpp pair_lj_cut_coul_long.cpp
 action pair_lj_cut_coul_long_kokkos.h pair_lj_cut_coul_long.h
+action pair_lj_cut_coul_long_gauss_kokkos.cpp pair_lj_cut_coul_long_gauss.cpp
+action pair_lj_cut_coul_long_gauss_kokkos.h pair_lj_cut_coul_long_gauss.h
 action pair_lj_charmmfsw_coul_charmmfsh_kokkos.cpp pair_lj_charmmfsw_coul_charmmfsh.cpp
 action pair_lj_charmmfsw_coul_charmmfsh_kokkos.h pair_lj_charmmfsw_coul_charmmfsh.h
 action pair_lj_expand_sphere_kokkos.cpp pair_lj_expand_sphere.cpp
