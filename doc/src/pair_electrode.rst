@@ -129,6 +129,18 @@ These pair styles are part of the ELECTRODE package. They are only enabled if
 LAMMPS was built with that package.  See the :doc:`Build package
 <Build_package>` page for more info.
 
+KOKKOS versions
+"""""""""""""""
+
+Both pair styles have KOKKOS variants, *lj/cut/coul/long/gauss/kk* and
+*lj/cut/coul/wolf/gauss/kk* (with */kk/device* and */kk/host* suffixes).
+They implement the :doc:`fix electrode <fix_electrode>` *pair* keyword
+device-side: the force/energy loop, the constant-potential vector (the
+CG matvec short-range term) and the elastance-matrix pair terms all
+execute as Kokkos kernels over a standard half neighbor list. The
+*eta* fix mode (no *pair* keyword) stays on the host under */kk* styles.
+The KOKKOS variants require the ELECTRODE and KOKKOS packages.
+
 Related commands
 """"""""""""""""
 
@@ -140,6 +152,8 @@ Default
 none
 
 ----------
+
+.. include:: accel_styles.rst
 
 .. _GingrichWilson:
 
