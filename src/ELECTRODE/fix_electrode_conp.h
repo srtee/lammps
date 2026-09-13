@@ -137,6 +137,8 @@ class FixElectrodeConp : public Fix {
   int nlocalele_outdated;    // trigger rebuilding of following structures:
   std::vector<tagint> taglist_local;
   std::vector<int> iele_to_group_local;
+  std::vector<int> fragment_iele;    // ascending iele of local electrode atoms
+  void build_fragment_iele();        // fragment_iele from taglist_local
 
   int nlocalele;              // current no. of local electrode atoms
   void gather_list_iele();    // build iele_gathered

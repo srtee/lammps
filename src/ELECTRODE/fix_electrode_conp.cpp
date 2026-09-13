@@ -1222,8 +1222,28 @@ void FixElectrodeConp::gather_list_iele()
   }
   nlocalele = static_cast<int>(taglist_local.size());
   assert((int) iele_to_group_local.size() == nlocalele);
+  if (taglist_constructed) build_fragment_iele();
   charge_solver->update_solver(taglist_local, iele_to_group_local);
   nlocalele_outdated = 0;
+}
+
+/* ----------------------------------------------------------------------
+    Build the row-fragment index list: iele of every local electrode atom,
+    ascending. Empty until the taglist exists (single-group conp: the map
+    is global; multi-group: get_tag_to_iele covers all groups).
+------------------------------------------------------------------------- */
+
+void FixElectrodeConp::build_fragment_iele()
+{
+  const auto &t2i = electrode_taglist->get_tag_to_iele();
+  fragment_iele.clear();
+  fragment_iele.reserve(taglist_local.size());
+  for (tagint t : taglist_local) {
+    auto it = t2i.find(t);
+    if (it != t2i.end()) fragment_iele.push_back(it->second);
+  }
+  std::sort(fragment_iele.begin(), fragment_iele.end());
+  assert((int) fragment_iele.size() == nlocalele);
 }
 
 /* ---------------------------------------------------------------------- */
