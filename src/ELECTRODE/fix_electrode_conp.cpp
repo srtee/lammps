@@ -529,14 +529,39 @@ void FixElectrodeConp::init()
                        "without matrix ('algo cg').",
                        fix->id, fix->style);
   }
-
-  // check for package intel
-  if (etypes_neighlists)
+  // matrix list: full + newton off so the owner of electrode row i sees every
+  // partner j within cutoff (enabler for row-sharded matrix builds). The
+  // list skips electrolyte-electrolyte pairs: with etypes via the etype skip
+  // arrays, otherwise via types inferred from the electrode group.
+  const int ntypes = atom->ntypes;
+  int *iskip_mat = new int[ntypes + 1];
+  int **ijskip_mat;
+  memory->create(ijskip_mat, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_mat");
+  if (etypes_neighlists) {
+    delete[] iskip_mat;    // etypes path builds its own skip arrays
+    memory->destroy(ijskip_mat);
     request_etypes_neighlists();
-  else {
-    auto *Req = neighbor->add_request(this);
+  } else {
+    auto elec_type = std::vector<int>(ntypes + 1, 0);
+    int *mask = atom->mask;
+    int *type = atom->type;
+    for (int i = 0; i < atom->nlocal; i++)
+      if (mask[i] & groupbit) elec_type[type[i]] = 1;
+    MPI_Allreduce(MPI_IN_PLACE, elec_type.data(), ntypes + 1, MPI_INT, MPI_SUM, world);
+    for (int itype = 1; itype <= ntypes; ++itype) {
+      iskip_mat[itype] = !elec_type[itype];
+      for (int jtype = 1; jtype <= ntypes; ++jtype)
+        ijskip_mat[itype][jtype] = (!elec_type[itype] || !elec_type[jtype]) ? 1 : 0;
+    }
+    auto *Req = neighbor->add_request(this, NeighConst::REQ_OCCASIONAL |
+                                                NeighConst::REQ_FULL |
+                                                NeighConst::REQ_NEWTON_OFF);
+    Req->set_skip(iskip_mat, ijskip_mat);
+    Req->set_id(1);
     if (intelflag) Req->enable_intel();
   }
+  // else: iskip_mat/ijskip_mat ownership transferred to the NeighRequest,
+  // which frees them in its destructor
 }
 
 /* ---------------------------------------------------------------------- */
@@ -641,7 +666,7 @@ void FixElectrodeConp::setup_post_neighbor()
     if (read_mat)
       electrode_taglist->read_from_file(input_file_mat, matrix, "elastance");
     else if (!read_inv) {
-      if (etypes_neighlists) neighbor->build_one(mat_neighlist);
+      neighbor->build_one(mat_neighlist);    // matrix list is occasional
       auto array_compute = std::make_unique<ElectrodeMatrix>(lmp, igroup, eta);
       array_compute->setup(electrode_taglist->get_tag_to_iele(), pair, mat_neighlist, pairflag);
       if (etapropflag) array_compute->setup_eta(eta_index);
@@ -1125,7 +1150,9 @@ void FixElectrodeConp::request_etypes_neighlists()
   }
 
   if (need_array_compute) {
-    auto *matReq = neighbor->add_request(this, NeighConst::REQ_OCCASIONAL);
+    auto *matReq = neighbor->add_request(this, NeighConst::REQ_OCCASIONAL |
+                                                NeighConst::REQ_FULL |
+                                                NeighConst::REQ_NEWTON_OFF);
     matReq->set_skip(iskip_mat, ijskip_mat);
     matReq->set_id(1);
     if (intelflag) matReq->enable_intel();

@@ -200,8 +200,10 @@ void ElectrodeMatrix::pair_contribution(double **array)
         // newton on or off?
         if (!newton_pair && j >= nlocal) aij *= 0.5;
         bigint jpos = mpos[j];
+        // full neighbor list visits each ordered pair once per direction;
+        // writing only [ipos][jpos] fills both symmetric entries across the
+        // two directions without double counting
         array[ipos][jpos] += aij;
-        array[jpos][ipos] += aij;
       }
     }
   }

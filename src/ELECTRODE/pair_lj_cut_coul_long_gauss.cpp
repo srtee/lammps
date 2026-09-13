@@ -574,8 +574,9 @@ void PairLJCutCoulLongGauss::compute_matrix(bigint *mpos, double **array, int gr
         if (!newton_pair && j >= nlocal) aij *= 0.5;
         bigint jpos = mpos[j];
         assert(jpos >= 0);
+        // full neighbor list: write only [ipos][jpos]; the (j,i) visit fills
+        // the symmetric partner entry
         array[ipos][jpos] += aij;
-        array[jpos][ipos] += aij;
       }
     }
   }
