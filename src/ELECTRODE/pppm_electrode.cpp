@@ -17,6 +17,8 @@
 
 #include "pppm_electrode.h"
 
+#include <unordered_map>
+
 #include "angle.h"
 #include "atom.h"
 #include "bond.h"
@@ -764,14 +766,24 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
   // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
   // (dx,dy,dz) = distance to "lower left" grid pt
   // (mx,my,mz) = global coords of moving stencil pt
+  // amesh depends only on the stencil-offset triple (njx-nix, njy-niy,
+  // njz-niz); identical offsets recur across electrode pairs (rigid
+  // electrode geometry), so cache the gathered kernel tensors per call
+  std::unordered_map<std::int64_t, std::vector<double>> amesh_cache;
+  amesh_cache.reserve(2 * nj_local);
+  auto offset_key = [&](int dx, int dy, int dz) {
+    return ((std::int64_t)(dz + 4 * nz_pppm) * (8 * (std::int64_t) ny_pppm)
+            + (std::int64_t)(dy + 4 * ny_pppm)) * (8 * (std::int64_t) nx_pppm)
+           + (dx + 4 * nx_pppm);
+  };
   const int order2 = order * order;
   const int order6 = order2 * order2 * order2;
   double *amesh;
   memory->create(amesh, order6, "pppm/electrode:amesh");
   for (int ipos = 0; ipos < nmat; ipos++) {
     double *_noalias xi_ele = x_ele[ipos];
-    // new calculation for nx, ny, nz because part2grid available for nlocal,
-    // only
+    // new calculation for nx, ny, nz because part2grid available for
+    // nlocal, only
     int nix = static_cast<int>((xi_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
     int niy = static_cast<int>((xi_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
     int niz = static_cast<int>((xi_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
@@ -784,16 +796,23 @@ void PPPMElectrode::one_step_multiplication(bigint *imat, double *greens_real, d
     int njz = -1;    // force initial build_amesh
     for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
       int j = j_list[jlist_pos];
-      int ind_amesh = 0;
-      int jpos = imat[j];
-      if ((ipos < jpos) == !((ipos - jpos) % 2)) continue;
-      double aij = 0.;
       if (njx != part2grid[j][0] || njy != part2grid[j][1] || njz != part2grid[j][2]) {
         njx = part2grid[j][0];
         njy = part2grid[j][1];
         njz = part2grid[j][2];
-        build_amesh(njx - nix, njy - niy, njz - niz, amesh, greens_real);
+        const std::int64_t key = offset_key(njx - nix, njy - niy, njz - niz);
+        auto it = amesh_cache.find(key);
+        if (it == amesh_cache.end()) {
+          build_amesh(njx - nix, njy - niy, njz - niz, amesh, greens_real);
+          amesh_cache.emplace(key, std::vector<double>(amesh, amesh + order6));
+        } else {
+          std::copy(it->second.begin(), it->second.end(), amesh);
+        }
       }
+      int jpos = imat[j];
+      if ((ipos < jpos) == !((ipos - jpos) % 2)) continue;
+      double aij = 0.;
+      int ind_amesh = 0;
       for (int ni = nlower; ni <= nupper; ni++) {    // i's rho1d[dim] indexed from nlower to nupper
         FFT_SCALAR const iz0 = rho1d[2][ni];
         for (int nj = 0; nj < order; nj++) {    // j's rho1d_j[][dim] indexed from 0 to order-1
