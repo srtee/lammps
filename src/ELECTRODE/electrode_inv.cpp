@@ -77,11 +77,8 @@ double ElectrodeInv::memory_use()
 {
   double bytes = 0.;
   if (setup) bytes += 3 * nele_world * sizeof(double);
-  // retained matrix storage: per-rank row fragments; plus the retained LU
-  // factorization (full nele_world x nele_world) held until the last
-  // consumer of the full matrix is retired
-  bytes += nele_world * (double) nele_world * sizeof(double);
-  bytes += lu_ipiv.size() * sizeof(int);
+  // retained matrix storage: per-rank row fragments only — each row
+  // travels with its atom via pack/unpack_exchange on migration
   bytes += cap_frag.size() * nele_world * sizeof(double);
   for (const auto &row : cap_frag) bytes += (row.capacity() - row.size()) * sizeof(double);
   bytes += qvec.capacity() * sizeof(double);
@@ -139,17 +136,12 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
             &info_rs);
     if (info_rs != 0) error->all(FLERR, "CONP matrix solve failed!");
     cap_frag[r] = rhs;
+    frag_row_of_iele[frag_iele[r]] = r;
   }
   fragmented = true;
-  // retain the LU factorization and the fragment keying so update_solver
-  // can re-solve rows for newly-owned atoms after atom migration
-  lu_ipiv = ipiv;
-  lu_nele = nele_world;
-  frag_row_of_iele.clear();
-  for (int r = 0; r < nlocalele; r++) frag_row_of_iele[frag_iele[r]] = r;
-  // NOTE: capacitance (the factorized elastance) stays alive for now —
-  // symmetrize/compute_sd_vectors still consume the full matrix. S3.2/S3.3
-  // convert those to fragment-local form, then the release moves here.
+  capacitance = nullptr;    // full matrix (factorized) no longer needed:
+  // every consumer (sd_vectors, symmetrize, write paths) is fragment-based
+  // and rows travel with their atoms via pack/unpack_exchange on migration
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "Invert time: {:.4g} s\n", MPI_Wtime() - invert_time);
@@ -168,9 +160,11 @@ void ElectrodeInv::set_capacitance(int nele_world, double **capacitance,
   iele_local = frag_iele;
   nlocalele = static_cast<int>(frag_iele.size());
   cap_frag.resize(nlocalele);
-  for (int r = 0; r < nlocalele; r++)
+  for (int r = 0; r < nlocalele; r++) {
     cap_frag[r] = std::vector<double>(capacitance[frag_iele[r]],
                                       capacitance[frag_iele[r]] + nele_world);
+    frag_row_of_iele[frag_iele[r]] = r;
+  }
   fragmented = true;
   capacitance = nullptr;
 }
@@ -377,30 +371,22 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
   for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
   MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered, recvcounts, displs, MPI_INT,
                  world);
-  // S3.1: cap_frag[r] was keyed to set_elastance's fragment order
-  // (frag_row_of_iele); re-key it to the freshly rebuilt iele_local (atom
-  // order). Rows are complete nele_world vectors, so this is an in-memory
-  // reorder. Rows for newly-owned atoms (absent from the old keying) are
-  // re-solved from the retained LU factorization.
+  // S3.1: cap_frag rows belong to ATOMS (keyed by iele via
+  // frag_row_of_iele) and travel with them through pack/unpack_exchange.
+  // update_solver only reorders the local fragment list to match the new
+  // atom indexing. A row that is neither carried by migration nor already
+  // held means an electrode atom appeared without a solve — not supported
+  // by the matrix algorithms.
   std::vector<std::vector<double>> new_frag(nlocalele);
-  const char trans = 'N';
-  const int nrhs = 1;
-  std::vector<double> rhs(nele_world, 0.0);
-  int info_rs;
   for (int r = 0; r < nlocalele; r++) {
     const int iele = iele_local[r];
     auto it = frag_row_of_iele.find(iele);
-    if (it != frag_row_of_iele.end()) {
-      new_frag[r] = std::move(cap_frag[it->second]);
-      frag_row_of_iele.erase(it);
-    } else {
-      std::fill(rhs.begin(), rhs.end(), 0.0);
-      rhs[iele] = 1.0;
-      dgetrs_(&trans, &lu_nele, &nrhs, &capacitance[0][0], &lu_nele, lu_ipiv.data(),
-              rhs.data(), &lu_nele, &info_rs);
-      if (info_rs != 0) error->all(FLERR, "CONP matrix solve failed!");
-      new_frag[r] = rhs;
-    }
+    if (it == frag_row_of_iele.end())
+      error->all(FLERR,
+                 "ELECTRODE atom {} has no matrix row; rows cannot be created "
+                 "after setup (new electrode atoms require algo cg)", iele);
+    new_frag[r] = std::move(cap_frag[it->second]);
+    frag_row_of_iele.erase(it);
   }
   cap_frag = std::move(new_frag);
 }
@@ -568,6 +554,39 @@ void ElectrodeInv::buffer_and_gather(double const *ivec, double *elevec)
                  MPI_DOUBLE, world);
 
   for (int i = 0; i < nele_world; i++) elevec[iele_gathered[i]] = buf_gathered[i];
+}
+
+/* ----------------------------------------------------------------------
+    Matrix-row transport for atom migration: the row of A^{-1} owned by an
+    electrode atom travels with the atom through LAMMPS' exchange buffers.
+------------------------------------------------------------------------- */
+
+int ElectrodeInv::pack_row_size()
+{
+  return setup ? nele_world + 1 : 0;
+}
+
+int ElectrodeInv::pack_row(int i, double *buf)
+{
+  if (!setup || !(atom->mask[i] & groupbit)) return 0;
+  const int iele = tag_to_iele[atom->tag[i]];
+  auto it = frag_row_of_iele.find(iele);
+  if (it == frag_row_of_iele.end())
+    error->one(FLERR, "ELECTRODE atom {} has no matrix row to migrate", iele);
+  buf[0] = iele;
+  std::copy(cap_frag[it->second].begin(), cap_frag[it->second].end(), buf + 1);
+  // drop the row from this rank; the atom is leaving
+  cap_frag[it->second] = std::vector<double>();
+  frag_row_of_iele.erase(it);
+  return nele_world + 1;
+}
+
+int ElectrodeInv::unpack_row(int nlocal, const double *buf)
+{
+  const int iele = static_cast<int>(buf[0]);
+  cap_frag.push_back(std::vector<double>(buf + 1, buf + 1 + nele_world));
+  frag_row_of_iele[iele] = static_cast<int>(cap_frag.size()) - 1;
+  return nele_world + 1;
 }
 
 /* ----------------------------------------------------------------------

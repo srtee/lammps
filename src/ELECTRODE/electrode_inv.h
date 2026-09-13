@@ -50,6 +50,9 @@ class ElectrodeInv : public Pointers, public ChargeSolver {
 
   // setup
   void set_capacitance(int, double **, const std::vector<int> &frag_iele);
+  int pack_row(int, double *) override;
+  int unpack_row(int, const double *) override;
+  int pack_row_size() override;
   void set_elastance(int, double **, bool, const std::vector<int> &frag_iele);
   void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
 
@@ -64,8 +67,6 @@ class ElectrodeInv : public Pointers, public ChargeSolver {
   double **capacitance;                      // full matrix during setup only
   std::vector<std::vector<double>> cap_frag; // rows owned by this rank, nlocalele x nele_world
   std::unordered_map<int, int> frag_row_of_iele; // iele -> cap_frag slot
-  std::vector<int> lu_ipiv;                  // LU pivot vector retained for re-solves
-  int lu_nele = 0;                           // matrix dimension of the retained LU
 
   std::vector<double> qvec;
   std::vector<double> sb_charges;    // group charges w/o potential

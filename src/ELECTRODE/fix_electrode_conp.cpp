@@ -661,6 +661,12 @@ void FixElectrodeConp::setup_post_neighbor()
 
   if (matrix_algo) {
     assert(taglist_constructed);
+    // migrating electrode atoms carry their matrix row through the
+    // exchange buffers; declare the size (nele_world + iele slot)
+    if (charge_solver == nullptr && algo == Algo::MATRIX_INV) {
+      maxexchange = ngroup + 1;
+      maxexchange_dynamic = 1;    // re-read each exchange (cheap, always right)
+    }
     gather_list_iele();    // fragment_iele must exist before set_elastance
     if (matrix != nullptr) memory->destroy(matrix);
     memory->create(matrix, ngroup, ngroup, "fix_electrode:matrix");
@@ -1183,22 +1189,26 @@ void FixElectrodeConp::request_etypes_neighlists()
 
 /* ---------------------------------------------------------------------- */
 
-int FixElectrodeConp::pack_exchange(int i, double * /* buf */)
+int FixElectrodeConp::pack_exchange(int i, double *buf)
 {
+  int n = 0;
   if (atom->mask[i] & groupbit) {
     nlocalele_outdated = 1;
     nlocalele--;    // decrement nlocalele if we are packing away a particle
+    // the atom's matrix row travels with it (matrix algorithms only)
+    if (charge_solver != nullptr) n = charge_solver->pack_row(i, buf);
   }
-  return 0;
+  return n;
 }
 
 /* ---------------------------------------------------------------------- */
 
-int FixElectrodeConp::unpack_exchange(int nlocal, double * /* buf */)
+int FixElectrodeConp::unpack_exchange(int nlocal, double *buf)
 {
   if (atom->mask[nlocal] & groupbit) {    // this should work
     nlocalele_outdated = 1;
     nlocalele++;    // increment nlocalele if we are unpacking a particle
+    if (charge_solver != nullptr) charge_solver->unpack_row(nlocal, buf);
   }
   return 0;
 }

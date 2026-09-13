@@ -144,9 +144,10 @@ speedup. These algorithms can be selected using the keyword *algo*:
   charge configuration in one matrix-vector calculation per time step.
   The matrix is factorized redundantly on every MPI rank, but only the
   rows of locally-owned electrode atoms are inverted and stored per rank
-  (a per-rank row *fragment*), so per-rank memory scales as
-  N^2/P + N^2 for the retained factorization rather than two full
-  N x N copies
+  (a per-rank row *fragment*), so per-rank memory scales as N^2/P rather
+  than a full N x N copy. Rows belong to their atoms: when an electrode
+  particle migrates between MPI ranks, its row travels with it through
+  the standard atom-exchange protocol
 
 * *algo mat_cg* pre-calculates the elastance matrix (inverse of
   capacitance matrix) and obtains the charge configuration using a
