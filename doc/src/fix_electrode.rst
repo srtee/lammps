@@ -442,11 +442,16 @@ counts towards LAMMPS's limitation on the total number of groups
 (currently 32), which may not allow scripts that use that many groups to
 run with this fix.
 
-The matrix-based algorithms (*algo mat_inv* and *algo mat_cg*) currently
-store an interaction matrix (either elastance or capacitance) of *N* by
-*N* doubles for each MPI process. This memory requirement may be
-prohibitive for large electrode groups.  The fix will issue a warning if
-it expects to use more than 0.5 GiB of memory.
+The matrix-based algorithms (*algo mat_inv* and *algo mat_cg*) build an
+interaction matrix (either elastance or capacitance) of *N* by *N* doubles
+on each MPI process during setup. With *algo mat_inv* (the default), this
+matrix is inverted and then scattered into row fragments: after setup each
+MPI process retains only the rows of its locally-owned electrode atoms,
+(*N*/*P*)\ *N* doubles per process for *P* processes, plus the *N* doubles
+of the gathered electrode-potential vector. Setup-time peak memory is
+unchanged (the full matrix must be inverted). With *algo mat_cg* the full
+matrix is currently retained on every MPI process. The fix will issue a
+warning if it expects to use more than 0.5 GiB of memory.
 
 Default
 """""""

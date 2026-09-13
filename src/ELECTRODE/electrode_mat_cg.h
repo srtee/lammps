@@ -34,18 +34,11 @@ class ElectrodeMatCG : public ElectrodeCG {
   //setup
   void setup_solver(double, std::unordered_map<tagint, int>, int);
   void set_elastance(int, double **);
-  // fragment access for write_inv: fragment r is the row of iele_local[r]
-  const std::vector<std::vector<double>> &get_fragments() const { return el_frag; }
-  std::vector<int> get_fragment_iele() const { return iele_local; }
-  // after setup, the full matrix is scattered into per-rank row fragments;
-  // fragment r holds the row of electrode index iele_local[r]
-  void fragmentize();
 
  private:
   int n_mat;
-  bool matrix_set, fragmented;
-  double **elastance;                        // full matrix during setup only
-  std::vector<std::vector<double>> el_frag;  // rows owned by this rank, nele x nele_world
+  bool matrix_set;
+  double **elastance;
   std::vector<double> qele_world;
   std::unordered_map<tagint, int> tag_to_iele;    // inverse of global taglist:
   std::vector<int> iele_local;                    // electrode IDs owned by me

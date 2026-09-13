@@ -705,19 +705,18 @@ void FixElectrodeConp::setup_post_neighbor()
     memory->destroy(potential_iele);
   }
   if (write_inv) {
-    // the solver has fragmentized the matrix by now; reassemble on demand
     if (algo == Algo::MATRIX_INV) {
+      // the inv solver fragmentized the matrix; reassemble on demand
       auto *inv = dynamic_cast<ElectrodeInv *>(charge_solver);
       electrode_taglist->gather_full_matrix_to_zero(matrix, inv->get_fragments(),
                                                     inv->get_fragment_iele(), ngroup);
-    } else if (algo == Algo::MATRIX_CG) {
-      auto *mat_cg = dynamic_cast<ElectrodeMatCG *>(charge_solver);
-      electrode_taglist->gather_full_matrix_to_zero(matrix, mat_cg->get_fragments(),
-                                                    mat_cg->get_fragment_iele(), ngroup);
+      electrode_taglist->write_to_file(output_file_inv, matrix);
+      memory->destroy(matrix);
+      matrix = nullptr;
+    } else {
+      // mat_cg retains the full replicated matrix
+      electrode_taglist->write_to_file(output_file_inv, matrix);
     }
-    electrode_taglist->write_to_file(output_file_inv, matrix);
-    memory->destroy(matrix);
-    matrix = nullptr;
   }
   if (matrix != nullptr) {
     memory->destroy(matrix);

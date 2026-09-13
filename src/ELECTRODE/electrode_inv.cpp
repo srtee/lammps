@@ -147,6 +147,40 @@ void ElectrodeInv::setup_solver(int groupbit, std::unordered_map<tagint, int> ta
   group_pot = std::vector<double>(ngroups, 0.);
   int *mask = atom->mask;
   tagint *tag = atom->tag;
+
+  // build the local electrode list (normally updated by update_solver, but
+  // the first gather has not happened yet at setup time). The electrode
+  // index is the position of the tag in the globally sorted tag list:
+  // gather tags (rank-ordered), sort, and map - independent of the
+  // tag_to_iele map, whose mapping may be rank-local.
+  std::vector<tagint> local_tags;
+  nlocalele = 0;
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      local_tags.push_back(tag[i]);
+      nlocalele++;
+    }
+  }
+  {
+    std::vector<int> gather_counts(comm->nprocs);
+    MPI_Allgather(&nlocalele, 1, MPI_INT, gather_counts.data(), 1, MPI_INT, world);
+    std::vector<int> gather_displs(comm->nprocs);
+    gather_displs[0] = 0;
+    for (int p = 1; p < comm->nprocs; p++)
+      gather_displs[p] = gather_displs[p - 1] + gather_counts[p - 1];
+    std::vector<tagint> all_tags(nele_world);
+    MPI_Allgatherv(local_tags.data(), nlocalele, MPI_LMP_TAGINT, all_tags.data(),
+                   gather_counts.data(), gather_displs.data(), MPI_LMP_TAGINT, world);
+    std::sort(all_tags.begin(), all_tags.end());
+    std::unordered_map<tagint, int> iele_of_tag;
+    iele_of_tag.reserve(nele_world);
+    for (int i = 0; i < nele_world; i++) iele_of_tag.emplace(all_tags[i], i);
+    iele_local.clear();
+    iele_local.reserve(nlocalele);
+    for (tagint t : local_tags) iele_local.push_back(iele_of_tag[t]);
+    this->tag_to_iele = iele_of_tag;
+  }
+
   iele_to_group = std::vector<int>(nele_world, -1);
   for (int i = 0; i < nlocal; i++) {
     for (int g = 0; g < ngroups; g++) {
@@ -165,17 +199,6 @@ void ElectrodeInv::setup_solver(int groupbit, std::unordered_map<tagint, int> ta
   MPI_Barrier(world);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "SD-vector and macro matrices time: {:.4g} s\n", MPI_Wtime() - start);
-
-  // build the local electrode list (normally updated by update_solver, but
-  // the first gather has not happened yet at setup time)
-  nlocalele = 0;
-  iele_local.clear();
-  for (int i = 0; i < nlocal; i++) {
-    if (mask[i] & groupbit) {
-      iele_local.push_back(tag_to_iele[tag[i]]);
-      nlocalele++;
-    }
-  }
 
   fragmentize();
 }
@@ -293,30 +316,11 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
 {
   assert(setup);
   this->taglist_local = taglist_local;
-  if (fragmented) {
-    // fragments are keyed by electrode index, so only the communication
-    // bookkeeping needs a refresh; iele_local rebuilds from the tag list
-    // exactly as pre-fragment
-    nlocalele = taglist_local.size();
-    const int nprocs = comm->nprocs;
-    delete[] recvcounts;
-    delete[] displs;
-    recvcounts = new int[nprocs];
-    displs = new int[nprocs];
-    MPI_Allgather(&nlocalele, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
-    displs[0] = 0;
-    for (int i = 1; i < nprocs; i++) displs[i] = displs[i - 1] + recvcounts[i - 1];
-    qvec.assign(nlocalele, 0.);
-    iele_local.clear();
-    iele_local.reserve(nlocalele);
-    for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
-    MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered, recvcounts, displs, MPI_INT,
-                   world);
-    return;
-  }
+  // refresh the communication bookkeeping; iele_local rebuilds from the tag
+  // list exactly as pre-fragment (fragments are keyed by electrode index)
   nlocalele = taglist_local.size();
   const int nprocs = comm->nprocs;
-  qvec = std::vector<double>(nlocalele);
+  qvec.assign(nlocalele, 0.);
   delete[] recvcounts;
   delete[] displs;
   recvcounts = new int[nprocs];
@@ -324,8 +328,6 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
   MPI_Allgather(&nlocalele, 1, MPI_INT, recvcounts, 1, MPI_INT, world);
   displs[0] = 0;
   for (int i = 1; i < nprocs; i++) displs[i] = displs[i - 1] + recvcounts[i - 1];
-
-  qvec.resize(nlocalele);
   iele_local.clear();
   iele_local.reserve(nlocalele);
   for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
