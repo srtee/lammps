@@ -36,6 +36,8 @@
 #include "utils.h"
 
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 
 
 namespace LAMMPS_NS {
@@ -471,7 +473,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector(double *vec, int g
   // vec lives on the host (the fix gathers it); mirror to device, zero, accumulate
   const int nall = nlocal + atom->nghost;
   d_vec = typename AT::t_kkacc_1d("pair:gauss_vec", nall);
-
+  Kokkos::deep_copy(d_vec, 0);    // kernel accumulates: fresh view is NOT guaranteed zero on GPU
   vec_groupbit = groupbit;
   vec_source_grpbit = source_grpbit;
   vec_inv = inv;
@@ -481,6 +483,19 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector(double *vec, int g
 
   auto h_vec = Kokkos::create_mirror_view(d_vec);
   Kokkos::deep_copy(h_vec, d_vec);
+  if (const char *pv2 = std::getenv("K31_DUMP_MASK")) {
+    FILE *fp2 = fopen(pv2, "a");
+    if (fp2 != nullptr) {
+      auto h_mask = Kokkos::create_mirror_view(mask);
+      Kokkos::deep_copy(h_mask, mask);
+      auto h_q = Kokkos::create_mirror_view(q);
+      Kokkos::deep_copy(h_q, q);
+      fprintf(fp2, "%d %d\n", nlocal, inum);
+      for (int i = 0; i < nlocal; i++)
+        fprintf(fp2, "%d %d %.17g\n", i, h_mask(i), static_cast<double>(h_q(i)));
+      fclose(fp2);
+    }
+  }
   for (int i = 0; i < nlocal + atom->nghost; i++) vec[i] += static_cast<double>(h_vec(i));
 
   copymode = 0;
@@ -606,6 +621,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_matrix(bigint *mpos, doub
   // host contract: allocate ngroup x ngroup, accumulate, copy back
   typename AT::t_kkfloat_2d k_mat("pair:gauss:matrix", ngroup, ngroup);
   d_matrix = k_mat;
+  Kokkos::deep_copy(d_matrix, 0);    // kernel accumulates: fresh view is NOT guaranteed zero on GPU
   vec_groupbit = groupbit;
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairGaussMatrix<0>>(0, list->inum),
