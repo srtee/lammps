@@ -253,6 +253,7 @@ void PPPMElectrodeKokkos<DeviceType>::compute_vector(double *vec, int sensor_grp
   Kokkos::parallel_for(
       Kokkos::RangePolicy<DeviceType, TagPPPMElectrode_poisson_pot3>(0, inum_inout), *this);
   this->copymode = 0;
+  d_psi_brick.template modify<DeviceType>();
 
   // ghost exchange of u_brick (FORWARD_AD, 1 scalar per point)
   this->gc->forward_comm(Grid3d::KSPACE, this, this->FORWARD_AD, 1, sizeof(FFT_SCALAR),
