@@ -477,14 +477,9 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector(double *vec, int g
   vec_groupbit = groupbit;
   vec_source_grpbit = source_grpbit;
   vec_inv = inv;
-  // HALFTHREAD/FULL builds a full-stencil device list: every local-local pair
-  // is visited from both i- and j-side, so the mirror write must be skipped
-  // for local j (ghost j still needs it -- those pairs appear only once)
-  vec_full_list = !newton_pair;
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairGaussVector<0>>(0, inum), *this);
-
   auto h_vec = Kokkos::create_mirror_view(d_vec);
   Kokkos::deep_copy(h_vec, d_vec);
   for (int i = 0; i < nlocal + atom->nghost; i++) vec[i] += static_cast<double>(h_vec(i));
@@ -568,9 +563,8 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
     if (factor_coul < static_cast<KK_FLOAT>(1.0))
       aij -= (static_cast<KK_FLOAT>(1.0) - factor_coul) * rinv *
           (static_cast<KK_FLOAT>(1.0) - erfc_eta);
-    if (i_in_sensor) d_vec(i) += static_cast<KK_ACC_FLOAT>(aij * q(j));
-    if (j_in_sensor && (!vec_inv || !i_in_sensor) &&
-        (j >= nlocal || !vec_full_list))
+    if (i_in_sensor) Kokkos::atomic_add(&d_vec(i), static_cast<KK_ACC_FLOAT>(aij * q(j)));
+    if (j_in_sensor && (!vec_inv || !i_in_sensor))
       Kokkos::atomic_add(&d_vec(j), static_cast<KK_ACC_FLOAT>(aij * qtmp));
   }
 }
