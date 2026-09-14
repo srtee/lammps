@@ -49,6 +49,7 @@ struct TagPPPMElectrode_poisson_pot3{};
 struct TagPPPMElectrode_pack_fwd{};
 struct TagPPPMElectrode_unpack_fwd{};
 struct TagPPPMElectrode_project_psi{};
+struct TagPPPMElectrode_greens_pack{};
 
 template<class DeviceType>
 class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpace {
@@ -57,6 +58,7 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   typedef ArrayTypes<DeviceType> AT;
   typedef FFTArrayTypes<DeviceType> FFT_AT;
   typedef PPPMKokkos<DeviceType> Base;
+
 
   PPPMElectrodeKokkos(class LAMMPS *);
   ~PPPMElectrodeKokkos() override;
@@ -116,9 +118,41 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   KOKKOS_INLINE_FUNCTION
   void operator()(TagPPPMElectrode_unpack_fwd, const int&) const;
 
+  // NOLINTNEXTLINE
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagPPPMElectrode_greens_pack, const int&) const;
+
  protected:
   void allocate() override;
   void deallocate() override;
+
+  // host matrix construction (mat_inv / mat_cg): one-time cost, runs on
+  // the host for both onestep and twostep paths — private copies of the
+  // PPPMElectrode algorithms, same pattern as PPPMElectrodeIntel
+  void matrix_one_step(bigint *imat, double *greens_real, double **x_ele, double **matrix,
+                       const int nmat, const FFT_SCALAR *rho1d_all, bool timer_flag);
+  void matrix_two_step(bigint *imat, double *greens_real, double **x_ele, double **matrix,
+                       const int nmat, bool timer_flag);
+  void matrix_build_amesh(int dx, int dy, int dz, double *amesh, double *greens_real);
+  template <int AXIS> void matrix_conv_axis(double *out, const double *in, int origin);
+
+
+  void matrix_compute_rho_coeff();
+  void matrix_compute_rho1d(const FFT_SCALAR &, const FFT_SCALAR &, const FFT_SCALAR &);
+
+  // matrix weights (own copies; PPPMKokkos::allocate never builds the
+  // host rho1d/rho_coeff arrays) — allocated on first matrix call
+  FFT_SCALAR **m_rho1d = nullptr;      // [3][-nlower..nupper]
+  FFT_SCALAR **m_rho_coeff = nullptr;  // [order][(1-order)/2..order/2]
+  FFT_SCALAR **m_drho_coeff = nullptr;
+  int m_order = -1;                    // allocation bookkeeping
+  double *m_greens_real_cache = nullptr;
+  bigint m_greens_cache_key = -1;
+  double *m_conv_scratch1 = nullptr;
+  double *m_conv_scratch2 = nullptr;
+  double *m_gw_cache = nullptr;
+  int m_gw_cache_nxyz = -1;
+  typename FFT_AT::t_FFT_SCALAR_3d d_greens_real;    // device greens brick (brick frame)
 
   // electrode-specific grid state (device mirrors of the host
   // electrolyte_density_brick / electrolyte_density_fft buffers plus a

@@ -1041,6 +1041,7 @@ void PPPMElectrode::two_step_multiplication(bigint *imat, double *greens_real, d
     // brick-local origins: the original walk wrapped kernel indices as
     // fmod(mj - li - n*) with mj the GLOBAL out-grid index = brick + n*lo_out
     memset(conv_scratch2, 0, (std::size_t) nxyz * sizeof(double));
+    memset(gw, 0, (std::size_t) nxyz * sizeof(double));
     conv_axis<0>(conv_scratch1, greens_real, njx - nxlo_out);
     conv_axis<1>(conv_scratch2, conv_scratch1, njy - nylo_out);
     conv_axis<2>(gw, conv_scratch2, njz - nzlo_out);
