@@ -29,6 +29,7 @@ FixStyle(electrode/thermo/kk/host,FixElectrodeThermoKokkos<LMPHostType>);
 #ifndef LMP_FIX_ELECTRODE_THERMO_KOKKOS_H
 #define LMP_FIX_ELECTRODE_THERMO_KOKKOS_H
 
+#include "atom_masks.h"
 #include "fix_electrode_conp_kokkos.h"
 #include "fix_electrode_thermo.h"
 #include "fix_electrode_conp_kokkos.h"

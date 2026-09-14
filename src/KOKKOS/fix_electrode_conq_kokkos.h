@@ -29,6 +29,8 @@ FixStyle(electrode/conq/kk/host,FixElectrodeConqKokkos<LMPHostType>);
 #ifndef LMP_FIX_ELECTRODE_CONQ_KOKKOS_H
 #define LMP_FIX_ELECTRODE_CONQ_KOKKOS_H
 
+#include "atom_kokkos.h"
+#include "atom_masks.h"
 #include "fix_electrode_conp_kokkos.h"
 #include "fix_electrode_conq.h"
 #include "kokkos_type.h"
@@ -50,10 +52,21 @@ class FixElectrodeConqKokkos : public FixElectrodeConq {
     FixElectrodeConq::init();
     mark_kokkos_lists();
   }
+  void set_charges(std::vector<double> q_local) override
+  {
+    FixElectrodeConq::set_charges(std::move(q_local));
+  }
+  void device_charge_sync() override
+  {
+    if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
+    atomKK->modified(Host, Q_MASK);
+    atomKK->sync(this->execution_space, Q_MASK);
+  }
 
  private:
   // shares the neighbor-list dispatch logic with conp/kk via a free function
   void mark_kokkos_lists() { electrode_kk_mark_lists<DeviceType>(lmp, this); }
+  class AtomKokkos *atomKK = nullptr;
 };
 
 }    // namespace LAMMPS_NS

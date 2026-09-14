@@ -91,6 +91,9 @@ class FixElectrodeConp : public Fix {
   std::string fixname;                // used by electrode/ffield to set up internal efield
   bool intelflag;
   inline virtual void intel_pack_buffers() {}
+  // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
+  // after the host q array changes so device copies can be refreshed
+  inline virtual void device_charge_sync() {}
   double qtotal;
   std::string qtotal_var_name;
   int qtotal_var_id;

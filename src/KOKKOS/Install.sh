@@ -721,6 +721,8 @@ action pppm_kokkos.cpp pppm.cpp
 action pppm_kokkos.h pppm.h
 action pppm_tip4p_kokkos.cpp pppm_tip4p.cpp
 action pppm_tip4p_kokkos.h pppm_tip4p.h
+action pppm_electrode_kokkos.cpp pppm_electrode.cpp
+action pppm_electrode_kokkos.h pppm_electrode.h
 action rand_pool_wrap_kokkos.cpp
 action rand_pool_wrap_kokkos.h
 action region_block_kokkos.cpp

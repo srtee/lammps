@@ -37,14 +37,18 @@ namespace LAMMPS_NS {
 template<class DeviceType>
 void electrode_kk_mark_lists(class LAMMPS *, class FixElectrodeConp *);
 
+
 template<class DeviceType>
 class FixElectrodeConpKokkos : public FixElectrodeConp {
  public:
   FixElectrodeConpKokkos(class LAMMPS *, int, char **);
   void init() override;
+  void set_charges(std::vector<double>) override;
+  void device_charge_sync() override;
 
  protected:
   void mark_kokkos_lists();
+  class AtomKokkos *atomKK = nullptr;
  };
 
 }    // namespace LAMMPS_NS

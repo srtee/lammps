@@ -892,6 +892,7 @@ void FixElectrodeConp::set_charges(std::vector<double> q_local)
   for (int i = 0; i < nlocalele; i++) q[atom->map(taglist_local[i])] = q_local[i];
   comm->forward_comm(this);
   intel_pack_buffers();
+  device_charge_sync();
 }
 
 /* ---------------------------------------------------------------------- */

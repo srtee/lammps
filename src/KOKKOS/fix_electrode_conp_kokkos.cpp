@@ -20,9 +20,10 @@
 
 
 
+#include "atom_kokkos.h"
+#include "atom_masks.h"
 #include "error.h"
-#include "fix_electrode_thermo.h"
-#include "kokkos.h"
+#include "neighbor.h"
 #include "neigh_request.h"
 
 #include <algorithm>
@@ -40,6 +41,22 @@ FixElectrodeConpKokkos<DeviceType>::FixElectrodeConpKokkos(class LAMMPS *lmp, in
 }
 
 template<class DeviceType>
+void FixElectrodeConpKokkos<DeviceType>::set_charges(std::vector<double> q_local)
+{
+  FixElectrodeConp::set_charges(std::move(q_local));
+}
+
+template<class DeviceType>
+void FixElectrodeConpKokkos<DeviceType>::device_charge_sync()
+{
+  // the CG matvec changes electrode charges between device kspace calls;
+  // mark the host q write so the device view is refreshed
+  if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
+  atomKK->modified(Host, Q_MASK);
+  atomKK->sync(this->execution_space, Q_MASK);
+}
+
+template<class DeviceType>
 void FixElectrodeConpKokkos<DeviceType>::init()
 {
   // gauss-pair mode is the device path; eta mode falls back to the host
@@ -51,7 +68,6 @@ void FixElectrodeConpKokkos<DeviceType>::init()
   FixElectrodeConp::init();
   mark_kokkos_lists();
 }
-
 template<class DeviceType>
 void FixElectrodeConpKokkos<DeviceType>::mark_kokkos_lists()
 {
@@ -70,6 +86,17 @@ void FixElectrodeConpKokkos<DeviceType>::mark_kokkos_lists()
    the header-only /thermo/kk and /conq/kk styles derive from the host base
    (no MI); they reuse the conp dispatch through this shared free function
 ------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void electrode_kk_sync_q(class FixElectrodeConp *fix)
+{
+  // mark host-side charge writes so the device q view is refreshed; used
+  // by the CG matvec between device kspace vector calls
+  auto *atomKK = static_cast<AtomKokkos *>(fix->lmp->atom);
+  atomKK->modified(Host, Q_MASK);
+  atomKK->sync(fix->execution_space, Q_MASK);
+}
+
 
 template<class DeviceType>
 void electrode_kk_mark_lists(class LAMMPS *lmp, FixElectrodeConp *fix)
