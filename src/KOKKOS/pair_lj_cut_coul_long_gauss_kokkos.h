@@ -33,18 +33,24 @@ PairStyle(lj/cut/coul/long/gauss/kk/host,PairLJCutCoulLongGaussKokkos<LMPHostTyp
 #include "kokkos_type.h"
 #include "pair_kokkos.h"    // EV_FLOAT, KK_FLOAT, SBBITS, AtomMask enums, pair_virial_fdotr_compute
 #include "pair_lj_cut_coul_long_gauss.h"
+#include "electrode_pair_kokkos.h"
 
 namespace LAMMPS_NS {
 
+class NeighList;
 template<int NEIGHFLAG, int NEWTON_PAIR, int EVFLAG>
 struct TagPairGaussForce{};
 template<int NEWTON_PAIR>
 struct TagPairGaussVector{};
 template<int NEWTON_PAIR>
 struct TagPairGaussMatrix{};
+template<int NEWTON_PAIR>
+struct TagPairGaussVectorNele{};
+template<int NEWTON_PAIR>
+struct TagPairGaussSelfNele{};
 
 template<class DeviceType>
-class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss {
+class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss, public ElectrodePairKokkos<DeviceType> {
  public:
   typedef DeviceType device_type;
   typedef ArrayTypes<DeviceType> AT;
@@ -63,6 +69,12 @@ class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss {
   void compute_vector_self(double *, int, int, bool) override;
   void compute_matrix(bigint *, double **, int) override;
   void compute_matrix_self(bigint *, double **, int) override;
+
+  // ElectrodePairKokkos device paths (device-resident CG, stage K4)
+  void compute_vector_nele(NeighList *, typename AT::t_kkacc_1d &, typename AT::t_int_1d &,
+                           int, int, bool) override;
+  void compute_vector_self_nele(typename AT::t_kkacc_1d &, typename AT::t_int_1d &, int, int,
+                                bool) override;
 
   // device kernels
   template<int NEIGHFLAG, int NEWTON_PAIR, int EVFLAG>
@@ -83,6 +95,14 @@ class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss {
 // NOLINTNEXTLINE
   KOKKOS_INLINE_FUNCTION
   void operator()(TagPairGaussMatrix<NEWTON_PAIR>, const int &) const;
+  template<int NEWTON_PAIR>
+// NOLINTNEXTLINE
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagPairGaussVectorNele<NEWTON_PAIR>, const int &) const;
+  template<int NEWTON_PAIR>
+// NOLINTNEXTLINE
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagPairGaussSelfNele<NEWTON_PAIR>, const int &) const;
   friend void pair_virial_fdotr_compute<PairLJCutCoulLongGaussKokkos<DeviceType>>(
       PairLJCutCoulLongGaussKokkos<DeviceType> *);
 
@@ -117,10 +137,11 @@ class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss {
   typename AT::t_int_1d_randomread d_numneigh;
 
   // ElectrodePair kernel state (bound per call, not owned)
-  typename AT::t_kkacc_1d d_vec;           // sensor potential accumulator
+  typename AT::t_kkacc_1d d_vec;           // sensor potential accumulator (nall)
   typename AT::t_kkfloat_1d d_q;           // gathered electrode charges (iele order)
   typename AT::t_int_1d_randomread d_mpos; // atom index -> iele position (-1 none)
-  typename AT::t_kkfloat_2d d_matrix;        // device matrix fragment view
+  typename AT::t_kkfloat_2d d_matrix;      // device matrix fragment view
+  typename AT::t_int_1d_randomread d_imap; // atom index -> local electrode index (nele, K4)
   int vec_groupbit, vec_source_grpbit;
   bool vec_inv;
 };

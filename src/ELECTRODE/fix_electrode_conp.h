@@ -34,6 +34,7 @@ namespace LAMMPS_NS {
 // forward decls
 
 class ChargeSolver;
+class ElectrodeCG;
 class ElectrodeTaglist;
 class ElectrodeVector;
 class NeighList;
@@ -57,9 +58,13 @@ class FixElectrodeConp : public Fix {
   int modify_param(const std::string &);
   void init() override;
   void init_list(int, NeighList *) override;
-  void post_constructor() override;    // used by ffield to set up fix efield
   double memory_usage() override;
+  void post_constructor() override;    // used by ffield to set up fix efield
   virtual void set_charges(std::vector<double>); // used by ElectrodeCG
+  // accelerator variants (KOKKOS): device CG uses a full newton-off matvec
+  // list; base CG keeps the default half list
+  virtual bool cg_device_needs_full_list() const { return false; }
+  virtual ElectrodeCG *new_cg_solver();
 
   // atomvec-based tracking of electrode atoms
   int pack_exchange(int, double *) override;
@@ -141,12 +146,15 @@ class FixElectrodeConp : public Fix {
   int nlocalele_outdated;    // trigger rebuilding of following structures:
   std::vector<tagint> taglist_local;
   std::vector<int> iele_to_group_local;
+  int nlocalele;              // current no. of local electrode atoms
+  void gather_list_iele();    // build iele_gathered
   std::vector<int> fragment_iele;    // ascending iele of local electrode atoms
   void build_fragment_iele();        // fragment_iele from taglist_local
 
-  int nlocalele;              // current no. of local electrode atoms
-  void gather_list_iele();    // build iele_gathered
+protected:
+  NeighList *cg_kk_neighlist = nullptr;    // full newton-off device-CG list (id 4)
 
+private:
   int nmax;
 };
 

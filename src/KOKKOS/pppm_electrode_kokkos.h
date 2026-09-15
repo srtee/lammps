@@ -49,6 +49,7 @@ struct TagPPPMElectrode_poisson_pot3{};
 struct TagPPPMElectrode_pack_fwd{};
 struct TagPPPMElectrode_unpack_fwd{};
 struct TagPPPMElectrode_project_psi{};
+struct TagPPPMElectrode_project_psi_nele{};
 struct TagPPPMElectrode_greens_pack{};
 
 template<class DeviceType>
@@ -70,6 +71,16 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   void compute_vector_corr(double *, int, int, bool) override;
   void compute_matrix(bigint *, double **, bool) override;
   void compute_matrix_corr(bigint *, double **) override;
+
+  // Device-resident sensor path (stage K4): same pipeline as compute_vector
+  // but the sensor interpolation scatters into d_out (nele entries, iele
+  // order) through d_imap instead of a host nlocal buffer.
+  void compute_vector_nele(typename AT::t_kkacc_1d &d_out, typename AT::t_int_1d &d_imap,
+                           int groupbit, int source_grpbit, bool invert_source) override;
+
+  // shared density->FFT->Green->psi pipeline; on return d_psi_brick holds
+  // the interpolated-ready potential brick (ghost exchange completed)
+  void vector_pipeline(int sensor_grpbit, int source_grpbit, bool invert_source);
   void compute_group_group(int, int, int) override;
 
   // grid ghost exchange for the psi potential brick (FORWARD_AD): the
@@ -93,7 +104,6 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   // NOLINTNEXTLINE
   KOKKOS_INLINE_FUNCTION
   void operator()(TagPPPMElectrode_brick2fft, const int&) const;
-
   // NOLINTNEXTLINE
   KOKKOS_INLINE_FUNCTION
   void operator()(TagPPPMElectrode_poisson_pot1, const int&) const;
@@ -109,6 +119,11 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   // NOLINTNEXTLINE
   KOKKOS_INLINE_FUNCTION
   void operator()(TagPPPMElectrode_project_psi, const int&) const;
+
+  // NOLINTNEXTLINE
+  KOKKOS_INLINE_FUNCTION
+  void operator()(TagPPPMElectrode_project_psi_nele, const int&) const;
+
 
   // NOLINTNEXTLINE
   KOKKOS_INLINE_FUNCTION
@@ -171,6 +186,10 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   typename AT::t_kkfloat_1d_randomread d_q;      // charges (group filter)
   typename AT::t_int_1d_randomread d_mask;
   typename FFT_AT::t_FFT_SCALAR_1d d_u_pot;      // sensor output (atomic add)
+
+  // device-resident CG path (compute_vector_nele): scatter targets bound per call
+  typename AT::t_kkacc_1d d_out_nele;            // nele-ordered accumulation vector
+  typename AT::t_int_1d_randomread d_imap_nele;  // local atom -> electrode index (negative = skip)
 
   // sensor group / source group selection for the current call
   int sensor_grpbit_kk;

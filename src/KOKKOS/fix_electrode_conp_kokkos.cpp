@@ -25,6 +25,7 @@
 #include "error.h"
 #include "neighbor.h"
 #include "neigh_request.h"
+#include "electrode_cg_kokkos.h"
 
 #include <algorithm>
 
@@ -67,6 +68,26 @@ void FixElectrodeConpKokkos<DeviceType>::init()
 
   FixElectrodeConp::init();
   mark_kokkos_lists();
+  // the device-CG solver must locate the device pair/kspace interfaces
+  // only after the base init bound elec_vec to the device-CG list
+  if (algo == Algo::CG)
+    dynamic_cast<ElectrodeCGKokkos<DeviceType> *>(charge_solver)->setup_device();
+}
+
+/* ----------------------------------------------------------------------
+   device CG: the device-matvec solver over the full newton-off list
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+bool FixElectrodeConpKokkos<DeviceType>::cg_device_needs_full_list() const
+{
+  return true;
+}
+
+template<class DeviceType>
+ElectrodeCG *FixElectrodeConpKokkos<DeviceType>::new_cg_solver()
+{
+  return new ElectrodeCGKokkos<DeviceType>(lmp, this);
 }
 template<class DeviceType>
 void FixElectrodeConpKokkos<DeviceType>::mark_kokkos_lists()

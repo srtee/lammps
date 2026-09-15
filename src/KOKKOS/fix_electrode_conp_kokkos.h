@@ -34,15 +34,20 @@ FixStyle(electrode/conp/kk/host,FixElectrodeConpKokkos<LMPHostType>);
 
 namespace LAMMPS_NS {
 
+class ElectrodeCG;
+class FixElectrodeConp;
+
 template<class DeviceType>
 void electrode_kk_mark_lists(class LAMMPS *, class FixElectrodeConp *);
-
 
 template<class DeviceType>
 class FixElectrodeConpKokkos : public FixElectrodeConp {
  public:
   FixElectrodeConpKokkos(class LAMMPS *, int, char **);
   void init() override;
+  bool cg_device_needs_full_list() const override;
+  ElectrodeCG *new_cg_solver() override;
+  class NeighList *get_cg_neighlist() const { return cg_kk_neighlist; }
   void set_charges(std::vector<double>) override;
   void device_charge_sync() override;
 

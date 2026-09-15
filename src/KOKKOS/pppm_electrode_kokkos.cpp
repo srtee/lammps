@@ -164,8 +164,8 @@ void PPPMElectrodeKokkos<DeviceType>::start_compute_electrode()
 ------------------------------------------------------------------------- */
 
 template<class DeviceType>
-void PPPMElectrodeKokkos<DeviceType>::compute_vector(double *vec, int sensor_grpbit,
-                                                     int source_grpbit, bool invert_source)
+void PPPMElectrodeKokkos<DeviceType>::vector_pipeline(int sensor_grpbit, int source_grpbit,
+                                                      bool invert_source)
 {
   const int nlocal = this->atomKK->nlocal;
 
@@ -254,6 +254,21 @@ void PPPMElectrodeKokkos<DeviceType>::compute_vector(double *vec, int sensor_grp
   this->scaleinv_kk = static_cast<KK_FLOAT>(this->scaleinv);
   sensor_grpbit_kk = sensor_grpbit;
 
+
+}
+
+/* ----------------------------------------------------------------------
+   ELECTRODE vector (device CG path): scatter interpolated psi into the
+   nele-ordered device accumulation vector through d_imap
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void PPPMElectrodeKokkos<DeviceType>::compute_vector(double *vec, int sensor_grpbit,
+                                                     int source_grpbit, bool invert_source)
+{
+  vector_pipeline(sensor_grpbit, source_grpbit, invert_source);
+
+  const int nlocal = this->atomKK->nlocal;
   // zero the device-side sensor accumulation buffer, project on device,
   // then copy the contributions back to the host vector
   if (d_u_pot.extent(0) < (std::size_t) nlocal)
@@ -270,6 +285,31 @@ void PPPMElectrodeKokkos<DeviceType>::compute_vector(double *vec, int sensor_grp
   Kokkos::deep_copy(h_pot, d_u_pot);
   for (int i = 0; i < nlocal; i++) vec[i] += h_pot(i);
 }
+
+template<class DeviceType>
+void PPPMElectrodeKokkos<DeviceType>::compute_vector_nele(
+    typename AT::t_kkacc_1d &d_out, typename AT::t_int_1d &d_imap, int sensor_grpbit,
+    int source_grpbit, bool invert_source)
+{
+  vector_pipeline(sensor_grpbit, source_grpbit, invert_source);
+
+  const int nlocal = this->atomKK->nlocal;
+
+  // device-resident sensor accumulation: no host round-trip
+  if (d_u_pot.extent(0) < (std::size_t) nlocal)
+    d_u_pot = typename FFT_AT::t_FFT_SCALAR_1d("pppm/electrode/kk:u_pot", nlocal);
+  Kokkos::deep_copy(d_u_pot, 0);
+
+  d_imap_nele = d_imap;
+  d_out_nele = d_out;
+
+  this->copymode = 1;
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<DeviceType, TagPPPMElectrode_project_psi_nele>(0, nlocal), *this);
+  this->copymode = 0;
+  Kokkos::fence();
+}
+
 
 /* ----------------------------------------------------------------------
    EW3DC boundary corrections: delegate to the host correction object
@@ -572,6 +612,44 @@ void PPPMElectrodeKokkos<DeviceType>::operator()(TagPPPMElectrode_project_psi, c
     }
   }
   d_u_pot[i] += static_cast<KK_FLOAT>(v * this->scaleinv_kk);
+}
+
+template<class DeviceType>
+// NOLINTNEXTLINE
+KOKKOS_INLINE_FUNCTION
+void PPPMElectrodeKokkos<DeviceType>::operator()(TagPPPMElectrode_project_psi_nele,
+                                                 const int &i) const
+{
+  if (!(d_mask(i) & sensor_grpbit_kk)) return;
+
+  const int nix = this->d_part2grid(i, 0);
+  const int niy = this->d_part2grid(i, 1);
+  const int niz = this->d_part2grid(i, 2);
+  const FFT_SCALAR dix = static_cast<FFT_SCALAR>(static_cast<KK_FLOAT>(nix) + this->shiftone_kk -
+                                                 (this->x(i, 0) - this->boxlo_kk[0]) * this->delxinv_kk);
+  const FFT_SCALAR diy = static_cast<FFT_SCALAR>(static_cast<KK_FLOAT>(niy) + this->shiftone_kk -
+                                                 (this->x(i, 1) - this->boxlo_kk[1]) * this->delyinv_kk);
+  const FFT_SCALAR diz = static_cast<FFT_SCALAR>(static_cast<KK_FLOAT>(niz) + this->shiftone_kk -
+                                                 (this->x(i, 2) - this->boxlo_kk[2]) * this->delzinv_kk);
+
+  Base::compute_rho1d(i, dix, diy, diz);
+
+  FFT_SCALAR v = 0;
+  for (int ni = this->nlower; ni <= this->nupper; ni++) {
+    const int miz = ni + niz - this->nzlo_out;
+    const FFT_SCALAR iz0 = this->d_rho1d(i, ni + Base::order / 2, 2);
+    for (int mi = this->nlower; mi <= this->nupper; mi++) {
+      const int miy = mi + niy - this->nylo_out;
+      const FFT_SCALAR iy0 = iz0 * this->d_rho1d(i, mi + Base::order / 2, 1);
+      for (int li = this->nlower; li <= this->nupper; li++) {
+        const int mix = li + nix - this->nxlo_out;
+        v += iy0 * this->d_rho1d(i, li + Base::order / 2, 0) * d_psi_brick.view<DeviceType>()(miz, miy, mix);
+      }
+    }
+  }
+  // scatter into the nele-ordered device vector through the electrode map
+  const int ipos = d_imap_nele(i);
+  if (ipos >= 0) d_out_nele(ipos) += static_cast<KK_ACC_FLOAT>(v * this->scaleinv_kk);
 }
 
 /* ----------------------------------------------------------------------

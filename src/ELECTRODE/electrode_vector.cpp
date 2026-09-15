@@ -171,6 +171,17 @@ void ElectrodeVector::compute_pot(double *vector)
   vector = pot;
 }
 
+/* ----------------------------------------------------------------------
+   TF + hardness contributions only (pair/kspace handled elsewhere);
+   used by the KOKKOS device matvec which computes pair+kspace on device
+------------------------------------------------------------------------- */
+
+void ElectrodeVector::nonpair_contribution(double *vector)
+{
+  if (tfflag) tf_contribution(vector);
+  if (hardnessflag) hardness_contribution(vector);
+}
+
 /* ---------------------------------------------------------------------- */
 
 void ElectrodeVector::pair_contribution(double *vector)

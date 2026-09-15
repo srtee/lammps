@@ -580,6 +580,142 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
   }
 }
 
+/* ----------------------------------------------------------------------
+   ElectrodePairKokkos device paths (stage K4, device-resident CG): same
+   pair math as TagPairGaussVector but the accumulator is a nele-scattered
+   device view addressed through d_imap, so the CG solver never touches a
+   host nall buffer. The CG path's list is full + newton-off, so each
+   local sensor row sees every partner once -> plain i-side writes, no
+   atomics, no reverse comm. Ghost rows are duplicates of their local
+   twin's row and are skipped (mirrors the matrix kernel).
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector_nele(NeighList *neigh,
+                                                                   typename AT::t_kkacc_1d &d_out,
+                                                                   typename AT::t_int_1d &d_imap_io,
+                                                                   int groupbit, int source_grpbit,
+                                                                   bool inv)
+{
+  build_device_tables();
+  // the kernels read the nlocal member; keep it current (compute() may not
+  // have run yet at CG setup time)
+  nlocal = atom->nlocal;
+
+  atomKK->sync(execution_space, X_MASK | Q_MASK | TYPE_MASK | MASK_MASK);
+  x = atomKK->k_x.view<DeviceType>();
+  q = atomKK->k_q.view<DeviceType>();
+  type = atomKK->k_type.view<DeviceType>();
+  mask = atomKK->k_mask.view<DeviceType>();
+
+  NeighListKokkos<DeviceType> *k_list = static_cast<NeighListKokkos<DeviceType> *>(neigh);
+  d_numneigh = k_list->d_numneigh;
+  d_neighbors = k_list->d_neighbors;
+  d_ilist = k_list->d_ilist;
+
+  d_vec = d_out;    // caller pre-zeroed, pre-sized (nele)
+  d_imap = d_imap_io;
+  vec_groupbit = groupbit;
+  vec_source_grpbit = source_grpbit;
+  vec_inv = inv;
+
+  copymode = 1;
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<DeviceType, TagPairGaussVectorNele<0>>(0, neigh->inum), *this);
+  copymode = 0;
+}
+
+template<class DeviceType>
+void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector_self_nele(
+    typename AT::t_kkacc_1d &d_out, typename AT::t_int_1d &d_imap_io,
+    int groupbit, int source_grpbit, bool inv)
+{
+  d_vec = d_out;
+  d_imap = d_imap_io;
+  vec_groupbit = groupbit;
+  vec_source_grpbit = source_grpbit;
+  vec_inv = inv;
+
+  copymode = 1;
+  Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairGaussSelfNele<0>>(0, nlocal),
+                       *this);
+  copymode = 0;
+}
+
+/* ----------------------------------------------------------------------
+   nele vector kernel: full + newton-off list, each ordered (i,j) pair once
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+template<int NEWTON_PAIR>
+KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()(
+    TagPairGaussVectorNele<NEWTON_PAIR>, const int &ii) const
+{
+  const int i = d_ilist[ii];
+  if (i >= nlocal) return;    // ghost rows duplicate their local twin's row
+  const bool i_in_sensor = (mask(i) & vec_groupbit);
+  const bool i_in_source = !!(mask(i) & vec_source_grpbit) != vec_inv;
+  if (!(i_in_sensor || i_in_source)) return;
+  const KK_FLOAT xtmp = x(i, 0);
+  const KK_FLOAT ytmp = x(i, 1);
+  const KK_FLOAT ztmp = x(i, 2);
+  const int itype = type[i];
+  const bool ipoint = d_ispoint(itype) != 0;
+
+  const int jnum = d_numneigh[i];
+  for (int jj = 0; jj < jnum; jj++) {
+    int j = d_neighbors(i, jj);
+    j &= NEIGHMASK;
+    // write only the sensor side; the full list visits the transposed pair
+    // from the partner's own row
+    if (!(i_in_sensor && (!!(mask(j) & vec_source_grpbit) != vec_inv))) continue;
+
+    const KK_FLOAT delx = xtmp - x(j, 0);
+    const KK_FLOAT dely = ytmp - x(j, 1);
+    const KK_FLOAT delz = ztmp - x(j, 2);
+    const KK_FLOAT rsq = delx * delx + dely * dely + delz * delz;
+    const int jtype = type[j];
+    if (rsq >= d_cutsq(itype, jtype)) continue;
+
+    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
+    const KK_FLOAT r = Kokkos::sqrt(rsq);
+    const KK_FLOAT rinv = static_cast<KK_FLOAT>(1.0) / r;
+    KK_FLOAT aij = rinv * ElectrodeMath::safe_erfc(g_ewald_kk * r);
+    KK_FLOAT erfc_eta = 0.0;
+    if (!(ipoint && d_ispoint(jtype) != 0)) {
+      erfc_eta = ElectrodeMath::safe_erfc(d_eta_ij(itype, jtype) * r);
+      aij -= rinv * erfc_eta;
+    }
+    if (factor_coul < static_cast<KK_FLOAT>(1.0))
+      aij -= (static_cast<KK_FLOAT>(1.0) - factor_coul) * rinv *
+          (static_cast<KK_FLOAT>(1.0) - erfc_eta);
+
+    const int ipos = d_imap(i);
+    if (ipos >= 0) d_vec(ipos) += static_cast<KK_ACC_FLOAT>(aij * q(j));
+  }
+}
+
+/* ----------------------------------------------------------------------
+   nele self kernel: diagonal terms for every local sensor atom that is a
+   source (erfc(0) = 1 cancels the rinv divergence, cf. host self term)
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+template<int NEWTON_PAIR>
+KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()(
+    TagPairGaussSelfNele<NEWTON_PAIR>, const int &i) const
+{
+  if (!(mask(i) & vec_groupbit)) return;
+  if (!! (mask(i) & vec_source_grpbit) == vec_inv) return;
+  const int ipos = d_imap(i);
+  if (ipos < 0) return;
+  const int itype = type[i];
+  KK_FLOAT aii = -static_cast<KK_FLOAT>(2.0) / static_cast<KK_FLOAT>(MY_PIS) * g_ewald_kk;
+  if (d_ispoint(itype) == 0)
+    aii += static_cast<KK_FLOAT>(2.0) / static_cast<KK_FLOAT>(MY_PIS) * d_eta_ij(itype, itype);
+  d_vec(ipos) += static_cast<KK_ACC_FLOAT>(aii * q(i));
+}
+
 template<class DeviceType>
 void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_matrix(bigint *mpos, double **array,
                                                               int groupbit)

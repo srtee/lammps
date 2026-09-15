@@ -197,6 +197,11 @@ set(KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/kokkos.cpp
                        ${KOKKOS_PKG_SOURCES_DIR}/tune_kokkos.cpp
                        ${KOKKOS_PKG_SOURCES_DIR}/variable_kokkos.cpp)
 
+# ELECTRODE device-CG solver: concrete non-style class, like fix_rigid/nh/small
+if(PKG_ELECTRODE)
+  list(APPEND KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/electrode_cg_kokkos.cpp)
+endif()
+
 
 # fix wall/gran has been refactored in an incompatible way. Use old version of base class for now
 if(PKG_GRANULAR)

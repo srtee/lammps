@@ -581,15 +581,31 @@ void FixElectrodeConp::init()
       Req->set_id(1);
       if (intelflag) Req->enable_intel();
     }
+    if (need_elec_vector && cg_device_needs_full_list()) {
+      // device CG matvec: separate perpetual full newton-off list; the
+      // default id-1 list keeps serving the host bvec/force paths
+      int *iskip_cg = new int[ntypes + 1];
+      int **ijskip_cg;
+      memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
+      for (int itype = 0; itype <= ntypes; ++itype) {
+        iskip_cg[itype] = iskip_mat[itype];
+        for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
+      }
+      auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
+      ReqKK->set_skip(iskip_cg, ijskip_cg);
+      ReqKK->set_id(4);
+    }
   }
-  // else: iskip_mat/ijskip_mat ownership transferred to the NeighRequest,
-  // which frees them in its destructor
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixElectrodeConp::init_list(int id, NeighList *ptr)
 {
+  if (id == 4) {
+    cg_kk_neighlist = ptr;
+    return;
+  }
   if (etypes_neighlists) {
     if (id == 1)
       mat_neighlist = ptr;
@@ -599,6 +615,11 @@ void FixElectrodeConp::init_list(int id, NeighList *ptr)
       force_neighlist = ptr;
   } else
     mat_neighlist = vec_neighlist = force_neighlist = ptr;
+}
+
+ElectrodeCG *FixElectrodeConp::new_cg_solver()
+{
+  return new ElectrodeCG(lmp, this);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -675,7 +696,9 @@ void FixElectrodeConp::setup_post_neighbor()
   elyt_vector->setup_general(pair, vec_neighlist, pairflag, timer_flag);
   if (etapropflag) elyt_vector->setup_eta(eta_index);
   if (need_elec_vector) {
-    elec_vector->setup_general(pair, mat_neighlist, pairflag, timer_flag);
+    elec_vector->setup_general(pair,
+                               cg_device_needs_full_list() ? cg_kk_neighlist : mat_neighlist,
+                               pairflag, timer_flag);
     if (etapropflag) elec_vector->setup_eta(eta_index);
     if (tfflag) elec_vector->setup_tf(tf_types);
     if (hardnessflag) elec_vector->setup_hardness(hardness_index);
@@ -736,7 +759,7 @@ void FixElectrodeConp::setup_post_neighbor()
       break;
     }
     case Algo::CG: {
-      ElectrodeCG *cg = new ElectrodeCG(lmp, this);
+      ElectrodeCG *cg = new_cg_solver();
       cg->setup_solver(cg_threshold, elec_vector, predictor_cols);
       charge_solver = cg;
       break;
@@ -1198,6 +1221,19 @@ void FixElectrodeConp::request_etypes_neighlists()
   } else {
     delete[] iskip_mat;
     memory->destroy(ijskip_mat);
+  }
+  if (need_elec_vector && cg_device_needs_full_list()) {
+    // device CG matvec: separate perpetual full newton-off list (etypes variant)
+    int *iskip_cg = new int[ntypes + 1];
+    int **ijskip_cg;
+    memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
+    for (int itype = 0; itype <= ntypes; ++itype) {
+      iskip_cg[itype] = iskip_mat[itype];
+      for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
+    }
+    auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
+    ReqKK->set_skip(iskip_cg, ijskip_cg);
+    ReqKK->set_id(4);
   }
 
   auto *vecReq = neighbor->add_request(this);

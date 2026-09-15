@@ -55,19 +55,25 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   virtual std::vector<double> ele_ele_interaction(const std::vector<double> &);
   FixElectrodeConp *fix;
 
- private:
+  std::vector<tagint> taglist;
+  std::vector<int> iele_to_group;
+  std::vector<double> q_ele;
+  ElectrodeVector *elec_vec;    // bound by setup_solver; device matvec reuses it
+  double *potential_i;    // potentials, i-indexed (0 for non-electrode atoms)
   int nmax;
+  double evscale, threshold;
+  virtual std::vector<double> cg_solve(std::vector<double> b, const std::vector<double> &x_init,
+                                       bool constrain, int max_iter);
+  virtual std::vector<double> pot_to_vector(double *);
+  virtual double dot_product(const std::vector<double> &, const std::vector<double> &);
+  void predict_q();
+
+private:
   long nstep, ncall;
   bigint elyt_step;
   bool setup, a_cached_flag;
-  double evscale, threshold;
-  ElectrodeVector *elec_vec;
-  std::vector<double> q_ele;
   int predictor_index, predictor_cols, predictor_count;
   std::vector<std::vector<double>> predictor_weights;
-  std::vector<tagint> taglist;
-  std::vector<int> iele_to_group;
-  double *potential_i;    // potentials, i-indexed (0 for non-electrode atoms)
   std::vector<double> bvec, a_cached;
 
   // macro quantities for electrode/thermo + array output
@@ -81,13 +87,7 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
  private:
   void compute_macro_calibration();
   void compute_sb();
-  std::vector<double> cg_solve(std::vector<double> b, const std::vector<double> &x_init,
-                               bool constrain, int max_iter);
-
-  void predict_q();
-  std::vector<double> pot_to_vector(double *);
   std::vector<double> constraint_projection(std::vector<double>, bool);
-  double dot_product(const std::vector<double> &, const std::vector<double> &);
 };
 
 }    // namespace LAMMPS_NS
