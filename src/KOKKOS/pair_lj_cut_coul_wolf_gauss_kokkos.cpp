@@ -43,13 +43,17 @@ namespace LAMMPS_NS {
 using namespace MathConst;
 using namespace EwaldConst;
 
-/* ---------------------------------------------------------------------- */
-
 template<class DeviceType>
 PairLJCutCoulWolfGaussKokkos<DeviceType>::PairLJCutCoulWolfGaussKokkos(class LAMMPS *lmp) :
     PairLJCutCoulWolfGauss(lmp)
 {
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
+  // stock pair masks: never claim X/Q/TYPE as device-modified (only what
+  // the kernels write); the ALL_MASK defaults from the host base Pair ctor
+  // break the verlet/dump force sync pipeline
+  atomKK = (AtomKokkos *) atom;
+  datamask_read = X_MASK | F_MASK | Q_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
+  datamask_modify = F_MASK | ENERGY_MASK | VIRIAL_MASK;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -164,7 +168,7 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
 
   ev_init(eflag, vflag, 0);
 
-  atomKK->sync(execution_space, X_MASK | F_MASK | Q_MASK | TYPE_MASK);
+  atomKK->sync(execution_space, datamask_read);
   if (eflag || vflag) atomKK->modified(execution_space, datamask_modify);
   else atomKK->modified(execution_space, F_MASK);
 
@@ -191,23 +195,26 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
   d_neighbors = k_list->d_neighbors;
   d_ilist = k_list->d_ilist;
 
-  // dispatch on the list geometry (always half here), not lmp->kokkos->neighflag
+  // the pair's neighbor list is always half (see init_style); the force
+  // kernel must run HALFTHREAD: a half list means several rows write the
+  // same twin's force slot, which needs atomic accumulation -- HALF's
+  // non-atomic unmanaged alias silently drops updates on concurrent backends
   EV_FLOAT ev;
   copymode = 1;
   if (newton_pair) {
     if (evflag)
       Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 1, 1>>(0, inum), *this, ev);
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 1, 1>>(0, inum), *this, ev);
     else
       Kokkos::parallel_for(
-          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 1, 0>>(0, inum), *this);
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 1, 0>>(0, inum), *this);
   } else {
     if (evflag)
       Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 0, 1>>(0, inum), *this, ev);
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 0, 1>>(0, inum), *this, ev);
     else
       Kokkos::parallel_for(
-          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 0, 0>>(0, inum), *this);
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 0, 0>>(0, inum), *this);
   }
 
   copymode = 0;

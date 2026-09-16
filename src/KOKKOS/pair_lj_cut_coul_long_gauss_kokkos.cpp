@@ -52,8 +52,13 @@ PairLJCutCoulLongGaussKokkos<DeviceType>::PairLJCutCoulLongGaussKokkos(class LAM
     PairLJCutCoulLongGauss(lmp)
 {
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
+  // stock pair masks: never claim X/Q/TYPE as device-modified (only what
+  // the kernels write); the ALL_MASK defaults from the host base Pair ctor
+  // break the verlet/dump force sync pipeline
+  atomKK = (AtomKokkos *) atom;
+  datamask_read = X_MASK | F_MASK | Q_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
+  datamask_modify = F_MASK | ENERGY_MASK | VIRIAL_MASK;
 }
-
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
@@ -226,6 +231,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       KK_FLOAT forcecoul = 0.0;
       KK_FLOAT ecoul = 0.0;
       KK_FLOAT erfc_eta = 0.0;
+      KK_FLOAT forcecorr = 0.0;
       if (rsq < cut_coulsq) {
         const KK_FLOAT r = Kokkos::sqrt(rsq);
         const KK_FLOAT grij = g_ewald_kk * r;
@@ -249,12 +255,12 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
                       te * (static_cast<KK_FLOAT>(A3) +
                       te * (static_cast<KK_FLOAT>(A4) +
                       te * static_cast<KK_FLOAT>(A5))))) * expm2_eta;
-          const KK_FLOAT forcecorr = erfc_eta + static_cast<KK_FLOAT>(EWALD_F) * etarij * expm2_eta;
+          forcecorr = erfc_eta + static_cast<KK_FLOAT>(EWALD_F) * etarij * expm2_eta;
           forcecoul -= prefactor * forcecorr;
         }
         if (factor_coul < static_cast<KK_FLOAT>(1.0))
           forcecoul -= (static_cast<KK_FLOAT>(1.0) - factor_coul) * prefactor *
-              (static_cast<KK_FLOAT>(1.0) - (needcorr ? erfc_eta : static_cast<KK_FLOAT>(0.0)));
+              (static_cast<KK_FLOAT>(1.0) - forcecorr);
         if (EVFLAG && eflag) {
           ecoul = prefactor * erfc;
           if (needcorr) ecoul -= prefactor * erfc_eta;
@@ -355,7 +361,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
     d_vatom = k_vatom.view<DeviceType>();
   }
 
-  atomKK->sync(execution_space, X_MASK | F_MASK | Q_MASK | TYPE_MASK);
+  atomKK->sync(execution_space, datamask_read);
   if (eflag || vflag) atomKK->modified(execution_space, datamask_modify);
   else atomKK->modified(execution_space, F_MASK);
 
@@ -385,40 +391,25 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
   copymode = 1;
 
   EV_FLOAT ev;
-  // the pair's neighbor list is always half (see init_style): dispatch on the
-  // list geometry, not lmp->kokkos->neighflag (FULL on GPU by default)
-  if (neighflag == HALF || neighflag == FULL) {
-    if (newton_pair) {
-      if (evflag)
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 1, 1>>(0, inum), *this, ev);
-      else
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 1, 0>>(0, inum), *this);
-    } else {
-      if (evflag)
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 0, 1>>(0, inum), *this, ev);
-      else
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALF, 0, 0>>(0, inum), *this);
-    }
-  } else if (neighflag == FULL) {
-    if (newton_pair) {
-      if (evflag)
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<FULL, 1, 1>>(0, inum), *this, ev);
-      else
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<FULL, 1, 0>>(0, inum), *this);
-    } else {
-      if (evflag)
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<FULL, 0, 1>>(0, inum), *this, ev);
-      else
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<DeviceType, TagPairGaussForce<FULL, 0, 0>>(0, inum), *this);
-    }
+  // the pair's neighbor list is always half (see init_style); the force
+  // kernel must run HALFTHREAD regardless of lmp->kokkos->neighflag
+  // (FULL on GPU): a half list means several rows write the same twin's
+  // force slot, which needs atomic accumulation -- HALF's non-atomic
+  // unmanaged alias silently drops updates on concurrent backends
+  if (newton_pair) {
+    if (evflag)
+      Kokkos::parallel_reduce(
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 1, 1>>(0, inum), *this, ev);
+    else
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 1, 0>>(0, inum), *this);
+  } else {
+    if (evflag)
+      Kokkos::parallel_reduce(
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 0, 1>>(0, inum), *this, ev);
+    else
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<DeviceType, TagPairGaussForce<HALFTHREAD, 0, 0>>(0, inum), *this);
   }
 
   if (eflag_global) {
