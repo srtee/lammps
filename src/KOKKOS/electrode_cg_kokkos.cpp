@@ -52,9 +52,19 @@ template<class DeviceType>
 ElectrodeCGKokkos<DeviceType>::~ElectrodeCGKokkos() noexcept = default;
 
 /* ----------------------------------------------------------------------
-   locate the device interfaces; must run after FixElectrodeConp::init()
-   has bound elec_vec to the device-CG neighbor list (id 4)
+   solver setup: run the base binding (elec_vec -> device-CG list), then
+   locate the device interfaces. Runs from setup_post_neighbor() where the
+   fix constructs the solver -- never from fix init(), where charge_solver
+   does not exist yet.
 ------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void ElectrodeCGKokkos<DeviceType>::setup_solver(double cg_threshold, ElectrodeVector *vec,
+                                                 int predictor_cols)
+{
+  ElectrodeCG::setup_solver(cg_threshold, vec, predictor_cols);
+  setup_device();
+}
 
 template<class DeviceType>
 void ElectrodeCGKokkos<DeviceType>::setup_device()

@@ -76,7 +76,7 @@ class PPPMElectrodeKokkos : public PPPMKokkos<DeviceType>, public ElectrodeKSpac
   // but the sensor interpolation scatters into d_out (nele entries, iele
   // order) through d_imap instead of a host nlocal buffer.
   void compute_vector_nele(typename AT::t_kkacc_1d &d_out, typename AT::t_int_1d &d_imap,
-                           int groupbit, int source_grpbit, bool invert_source) override;
+                           int groupbit, int source_grpbit, bool invert_source);
 
   // shared density->FFT->Green->psi pipeline; on return d_psi_brick holds
   // the interpolated-ready potential brick (ghost exchange completed)

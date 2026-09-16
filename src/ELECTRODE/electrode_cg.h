@@ -47,8 +47,7 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   double vacuum_capacitance() override;
 
   //setup
-  void setup_solver(double, ElectrodeVector *, int);
-
+  virtual void setup_solver(double, ElectrodeVector *, int);
  protected:
   int nele, nele_world, ngroups;
   virtual void setup_cg(double, int);

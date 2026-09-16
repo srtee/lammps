@@ -68,10 +68,9 @@ void FixElectrodeConpKokkos<DeviceType>::init()
 
   FixElectrodeConp::init();
   mark_kokkos_lists();
-  // the device-CG solver must locate the device pair/kspace interfaces
-  // only after the base init bound elec_vec to the device-CG list
-  if (algo == Algo::CG)
-    dynamic_cast<ElectrodeCGKokkos<DeviceType> *>(charge_solver)->setup_device();
+  // device-CG binding happens in ElectrodeCGKokkos::setup_solver(), which
+  // runs from setup_post_neighbor() once the solver exists (never here:
+  // Modify::init() precedes solver construction)
 }
 
 /* ----------------------------------------------------------------------

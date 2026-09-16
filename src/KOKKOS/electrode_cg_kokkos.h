@@ -26,6 +26,7 @@
 #include "fix_electrode_conp_kokkos.h"
 
 #include "electrode_pair_kokkos.h"
+#include "pppm_electrode_kokkos.h"
 
 namespace LAMMPS_NS {
 
@@ -35,20 +36,21 @@ class ElectrodeCGKokkos : public ElectrodeCG {
   ElectrodeCGKokkos(class LAMMPS *, class FixElectrodeConp *);
   ~ElectrodeCGKokkos() noexcept override;
 
-  // called by FixElectrodeConpKokkos::init() after setup_general bound
+  // setup_solver override calls setup_device() after the base binds
   // elec_vec to the device-CG list; locates the device pair/kspace interfaces
-  void setup_device();
-
- protected:
+  void setup_solver(double, ElectrodeVector *, int) override;
   std::vector<double> ele_ele_interaction(const std::vector<double> &) override;
 
  private:
+  // locate device pair/kspace interfaces; called from setup_solver()
+  void setup_device();
+
   class FixElectrodeConpKokkos<DeviceType> *fix_kk = nullptr;
   typename ArrayTypes<DeviceType>::t_kkacc_1d d_out;    // nele accumulator
   typename ArrayTypes<DeviceType>::t_int_1d d_imap;     // atom -> iele (-1 none)
   class ElectrodeVector *dev_vec = nullptr;    // elec_vec bound to the device list
+  PPPMElectrodeKokkos<DeviceType> *kspace_kk = nullptr;  // device vector path
   ElectrodePairKokkos<DeviceType> *pair_kk = nullptr;
-  class ElectrodeKSpace *kspace_kk = nullptr;  // device vector path (PPPMElectrodeKokkos)
 };
 
 }    // namespace LAMMPS_NS
