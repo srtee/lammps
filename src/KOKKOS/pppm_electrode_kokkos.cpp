@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <unordered_map>
 
+
 // mirrors of KSPACE/pppm.cpp file-local constants (not exported in pppm.h)
 constexpr int ELEK_OFFSET = 16384;
 constexpr FFT_SCALAR ELEK_ZEROF = 0.0;
@@ -715,6 +716,10 @@ void PPPMElectrodeKokkos<DeviceType>::pack_forward_grid_kokkos(int flag, FFT_DAT
                                                                int nlist, DAT::tdual_int_2d_lr &k_list,
                                                                int index)
 {
+  if (flag != this->FORWARD_AD) {
+    Base::pack_forward_grid_kokkos(flag, k_buf, nlist, k_list, index);
+    return;
+  }
   typename AT::t_int_2d_lr_um d_list = k_list.view<DeviceType>();
   this->d_list_index = Kokkos::subview(d_list, index, Kokkos::ALL());
   this->d_buf = k_buf.view<DeviceType>();
@@ -744,6 +749,10 @@ void PPPMElectrodeKokkos<DeviceType>::unpack_forward_grid_kokkos(int flag, FFT_D
                                                                  int offset, int nlist,
                                                                  DAT::tdual_int_2d_lr &k_list, int index)
 {
+  if (flag != this->FORWARD_AD) {
+    Base::unpack_forward_grid_kokkos(flag, k_buf, offset, nlist, k_list, index);
+    return;
+  }
   typename AT::t_int_2d_lr_um d_list = k_list.view<DeviceType>();
   this->d_list_index = Kokkos::subview(d_list, index, Kokkos::ALL());
   this->d_buf = k_buf.view<DeviceType>();
