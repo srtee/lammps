@@ -691,10 +691,10 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       if (factor_coul < static_cast<KK_FLOAT>(1.0))
         aij -= (static_cast<KK_FLOAT>(1.0) - factor_coul) * rinv *
             (static_cast<KK_FLOAT>(1.0) - erfc_eta);
-      // half-list write rule (mirrors host pair_contribution): each local
-      // row writes only its own [ipos][jpos]; with newton off the ghost-j
-      // visits are halved because the local twin's row also sees this pair
-      // from the ghost side... folded through the local row by the caller
+      // full-list write rule (mirrors the host kernels): each local row
+      // writes only its own [ipos][jpos] at full weight; the owner of the
+      // mirror entry fills it from its row, and compute_array symmetrizes
+      // after the MPI row exchange (a no-op by construction)
       d_matrix(ipos, jpos) += static_cast<KK_ACC_FLOAT>(aij);
     }
   }
