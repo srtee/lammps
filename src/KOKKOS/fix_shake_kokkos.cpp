@@ -2293,6 +2293,15 @@ void FixShakeKokkos<DeviceType>::correct_coordinates(int vflag) {
     }
   }
 
+  // the restore loop above wrote the dual-view host side of f and v directly.
+  // mark the host side authoritative and refresh the device side; without
+  // this, the device keeps the constraint-only forces written by post_force()
+  // above (zeros for unconstrained atoms) with sync flags claiming
+  // consistency, and any later sync pushes the stale/zeroed state around
+
+  atomKK->modified(Host,V_MASK|F_MASK);
+  atomKK->sync(Device,V_MASK|F_MASK);
+
   if (!rattle) {
     dtfsq = update->dt * update->dt * force->ftm2v;
     dtfsq_kk = static_cast<KK_FLOAT>(dtfsq);

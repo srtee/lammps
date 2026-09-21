@@ -56,7 +56,11 @@ PairLJCutCoulLongGaussKokkos<DeviceType>::PairLJCutCoulLongGaussKokkos(class LAM
   // the kernels write); the ALL_MASK defaults from the host base Pair ctor
   // break the verlet/dump force sync pipeline
   atomKK = (AtomKokkos *) atom;
-  datamask_read = X_MASK | F_MASK | Q_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
+  // no F_MASK: the style never reads forces, it accumulates into them; a
+  // read-claim on F would run the host<->device f round trip at every
+  // compute() entry, eating the device-dirty mark the reverse-comm pull
+  // relies on (stale host f then propagates on the next sync(Device,F))
+  datamask_read = X_MASK | Q_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
   datamask_modify = F_MASK | ENERGY_MASK | VIRIAL_MASK;
 }
 /* ---------------------------------------------------------------------- */
@@ -361,9 +365,17 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
     d_vatom = k_vatom.view<DeviceType>();
   }
 
+  // this style only writes forces; drop stale sync claims on f before the
+  // sync/modified round trip below (device f is authoritative between force
+  // computations; a bare modified(Device,F) would otherwise trip the
+  // DualView checker on a leftover host-f claim, e.g. from shake's
+  // setup-time correct_coordinates)
+  atomKK->k_f.clear_sync_state();
   atomKK->sync(execution_space, datamask_read);
-  if (eflag || vflag) atomKK->modified(execution_space, datamask_modify);
-  else atomKK->modified(execution_space, F_MASK);
+  // no self-claim of forces here: the run loop and reverse communication own
+  // the force-claim timing (a claim made before the kernel below, under
+  // auto_sync, would immediately pull the force_clear zeros onto the host and
+  // leave host f stale for the rest of the step)
 
   x = atomKK->k_x.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
@@ -387,7 +399,6 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
   d_numneigh = k_list->d_numneigh;
   d_neighbors = k_list->d_neighbors;
   d_ilist = k_list->d_ilist;
-
   copymode = 1;
 
   EV_FLOAT ev;
