@@ -477,25 +477,16 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector(double *vec, int g
   vec_groupbit = groupbit;
   vec_source_grpbit = source_grpbit;
   vec_inv = inv;
+  // HALFTHREAD/FULL builds a full-stencil device list: every local-local pair
+  // is visited from both i- and j-side, so the mirror write must be skipped
+  // for local j (ghost j still needs it -- those pairs appear only once)
+  vec_full_list = !newton_pair;
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairGaussVector<0>>(0, inum), *this);
 
   auto h_vec = Kokkos::create_mirror_view(d_vec);
   Kokkos::deep_copy(h_vec, d_vec);
-  if (const char *pv2 = std::getenv("K31_DUMP_MASK")) {
-    FILE *fp2 = fopen(pv2, "a");
-    if (fp2 != nullptr) {
-      auto h_mask = Kokkos::create_mirror_view(mask);
-      Kokkos::deep_copy(h_mask, mask);
-      auto h_q = Kokkos::create_mirror_view(q);
-      Kokkos::deep_copy(h_q, q);
-      fprintf(fp2, "%d %d\n", nlocal, inum);
-      for (int i = 0; i < nlocal; i++)
-        fprintf(fp2, "%d %d %.17g\n", i, h_mask(i), static_cast<double>(h_q(i)));
-      fclose(fp2);
-    }
-  }
   for (int i = 0; i < nlocal + atom->nghost; i++) vec[i] += static_cast<double>(h_vec(i));
 
   copymode = 0;
@@ -578,7 +569,9 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       aij -= (static_cast<KK_FLOAT>(1.0) - factor_coul) * rinv *
           (static_cast<KK_FLOAT>(1.0) - erfc_eta);
     if (i_in_sensor) d_vec(i) += static_cast<KK_ACC_FLOAT>(aij * q(j));
-    if (j_in_sensor && (!vec_inv || !i_in_sensor)) d_vec(j) += static_cast<KK_ACC_FLOAT>(aij * qtmp);
+    if (j_in_sensor && (!vec_inv || !i_in_sensor) &&
+        (j >= nlocal || !vec_full_list))
+      Kokkos::atomic_add(&d_vec(j), static_cast<KK_ACC_FLOAT>(aij * qtmp));
   }
 }
 
@@ -626,7 +619,6 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_matrix(bigint *mpos, doub
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairGaussMatrix<0>>(0, list->inum),
                        *this);
-
   auto h_mat = Kokkos::create_mirror_view(d_matrix);
   Kokkos::deep_copy(h_mat, d_matrix);
   for (int a = 0; a < ngroup; a++)
@@ -709,7 +701,6 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       // row writes only its own [ipos][jpos]; with newton off the ghost-j
       // visits are halved because the local twin's row also sees this pair
       // from the ghost side... folded through the local row by the caller
-      if (!newton_pair && j >= nlocal) aij *= static_cast<KK_FLOAT>(0.5);
       d_matrix(ipos, jpos) += static_cast<KK_ACC_FLOAT>(aij);
     }
   }

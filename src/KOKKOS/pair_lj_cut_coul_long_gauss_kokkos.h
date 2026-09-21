@@ -123,6 +123,7 @@ class PairLJCutCoulLongGaussKokkos : public PairLJCutCoulLongGauss {
   typename AT::t_kkfloat_2d d_matrix;        // device matrix fragment view
   int vec_groupbit, vec_source_grpbit;
   bool vec_inv;
+  bool vec_full_list;    // neighbor list is full-stencil (j-side visits exist)
 };
 
 }    // namespace LAMMPS_NS
