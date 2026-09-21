@@ -169,6 +169,18 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
     std::copy(allrows.begin() + (std::size_t) idx * ngroup,
               allrows.begin() + (std::size_t) (idx + 1) * ngroup, &array[iele][0]);
   }
+
+  // the real-space pair stage on a half neighbor list distributes each
+  // unordered pair's terms between [i][j] and [j][i] according to the
+  // list build's arbitrary pair ownership (backend- and newton-dependent);
+  // the physical matrix is symmetric, so enforce symmetry before the
+  // matrix is written out or handed to any solver
+  for (int i = 0; i < ngroup; i++)
+    for (int j = i + 1; j < ngroup; j++) {
+      const double avg = 0.5 * (array[i][j] + array[j][i]);
+      array[i][j] = avg;
+      array[j][i] = avg;
+    }
 }
 
 /* ---------------------------------------------------------------------- */

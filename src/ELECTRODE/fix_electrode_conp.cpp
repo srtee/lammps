@@ -88,6 +88,16 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   extvector = 0;
   extarray = 0;
 
+  // the only per-atom data this fix reads or writes is the charge array
+  // (host side, via update_charges()/set_charges()).  the Fix base class
+  // defaults both masks to ALL_MASK, and ModifyKokkos syncs+claims them on
+  // the fix's execution space around every pre_force/pre_reverse hook --
+  // an ALL_MASK claim there marks host f dirty from stale data, which the
+  // next sync(Device,F) consumer (shake, comm) pushes over live device
+  // forces on the GPU
+  datamask_read = Q_MASK;
+  datamask_modify = Q_MASK;
+
   virial_global_flag = 1;    // use virials of this fix
   thermo_virial = 1;         // set vflags for v_tally
 
