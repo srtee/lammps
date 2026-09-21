@@ -111,7 +111,17 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
 
   update_mpos();
   if (pairflag) {
+    // compute_matrix must traverse the fix's FULL newton-off list (the
+    // pairflag kernels write only [ipos][jpos] per row). The pair's own
+    // perpetual list is a HALF list: over it each unordered pair is seen
+    // once, so only one triangle gets filled and the symmetrize below
+    // halves every pair term; kokkos newton-off half lists additionally
+    // store periodic-image pairs as two ordered entries, doubling them.
+    // Swap the list in for the matrix call and restore afterward.
+    NeighList *pair_own_list = pair->list;
+    pair->init_list(1, list);
     electrode_pair->compute_matrix(mpos.data(), array, groupbit);
+    pair->init_list(1, pair_own_list);
     electrode_pair->compute_matrix_self(mpos.data(), array, groupbit);
   } else {
     pair_contribution(array);
@@ -196,8 +206,7 @@ void ElectrodeMatrix::pair_contribution(double **array)
   tagint *tag = atom->tag;
   int *type = atom->type;
   int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-  int newton_pair = force->newton_pair;
+
 
   // neighbor list will be ready because called from post_neighbor
   inum = list->inum;
@@ -243,12 +252,10 @@ void ElectrodeMatrix::pair_contribution(double **array)
         aij = rinv;
         aij *= ElectrodeMath::safe_erfc(g_ewald * r);
         aij -= ElectrodeMath::safe_erfc(etaij * r) * rinv;
-        // newton on or off?
-        if (!newton_pair && j >= nlocal) aij *= 0.5;
         bigint jpos = mpos[j];
-        // full neighbor list visits each ordered pair once per direction;
-        // writing only [ipos][jpos] fills both symmetric entries across the
-        // two directions without double counting
+        // full newton-off list: each local row writes only its own
+        // [ipos][jpos]; a ghost partner is the ONLY visit filling this
+        // entry (its owner rank fills the mirror), so never halve
         array[ipos][jpos] += aij;
       }
     }

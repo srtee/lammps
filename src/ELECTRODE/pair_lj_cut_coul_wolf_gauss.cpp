@@ -525,8 +525,7 @@ void PairLJCutCoulWolfGauss::compute_matrix(bigint *mpos, double **array, int gr
   double **x = atom->x;
   int *type = atom->type;
   int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-  int newton_pair = force->newton_pair;
+
   int inum = list->inum;
   int *ilist = list->ilist;
   double *special_coul = force->special_coul;
@@ -570,12 +569,11 @@ void PairLJCutCoulWolfGauss::compute_matrix(bigint *mpos, double **array, int gr
           aij -= rinv * erfc_eta - eshift_eta[itype][jtype];
         }
         if (factor_coul < 1.0) aij -= (1.0 - factor_coul) * rinv * (1.0 - erfc_eta);
-        // newton on or off?
-        if (!newton_pair && j >= nlocal) aij *= 0.5;
         bigint jpos = mpos[j];
         assert(jpos >= 0);
-        // full neighbor list: write only [ipos][jpos]; the (j,i) visit fills
-        // the symmetric partner entry
+        // full newton-off fix list: each local row writes only its own
+        // [ipos][jpos]; a ghost partner is the ONLY visit filling this
+        // entry (its owner rank fills the mirror), so never halve
         array[ipos][jpos] += aij;
       }
     }
