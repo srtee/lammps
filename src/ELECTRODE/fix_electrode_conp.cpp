@@ -886,7 +886,6 @@ int FixElectrodeConp::get_top_group()
 
 void FixElectrodeConp::update_charges()
 {
-  MPI_Barrier(world);
   double start = MPI_Wtime();
   if (n_equal) modify->clearstep_compute();
   if (atom->nmax > nmax) {
@@ -902,7 +901,8 @@ void FixElectrodeConp::update_charges()
   update_psi_set_constraint();
   set_charges(charge_solver->solve(group_psi));
   if (n_equal) modify->addstep_compute(update->ntimestep + 1);
-  MPI_Barrier(world);
+  // update_time is now per-rank unsynchronized host time (no per-step barrier:
+  // the sync stalled GPU pipelining and hid latency rather than work).
   update_time += MPI_Wtime() - start;
 }
 
