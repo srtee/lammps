@@ -68,6 +68,15 @@ PairLJCutCoulLongGaussKokkos<DeviceType>::PairLJCutCoulLongGaussKokkos(class LAM
 template<class DeviceType>
 PairLJCutCoulLongGaussKokkos<DeviceType>::~PairLJCutCoulLongGaussKokkos()
 {
+  if (copymode) return;
+
+  if (allocated) {
+    // allocate() aliases the base eatom/vatom pointers to Kokkos-owned
+    // host memory; destroy the views (which nulls the raw pointers) so
+    // the base Pair destructor does not delete[] Kokkos allocations.
+    memoryKK->destroy_kokkos(k_eatom, eatom);
+    memoryKK->destroy_kokkos(k_vatom, vatom);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
