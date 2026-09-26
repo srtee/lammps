@@ -49,7 +49,7 @@ class FixElectrodeConpKokkos : public FixElectrodeConp {
   bool cg_device_needs_full_list() const override;
   ElectrodeCG *new_cg_solver() override;
   ElectrodeInv *new_inv_solver() override;
-  bool device_mat_inv() const override { return !std::is_same_v<DeviceType, LMPHostType>; }
+  bool device_mat_inv() const override { return device_solve && !std::is_same_v<DeviceType, LMPHostType>; }
   ElectrodeVector *device_elyt_vector() const override { return elyt_vector; }
   int device_elyt_group() const override;
   class NeighList *get_cg_neighlist() const { return cg_kk_neighlist; }

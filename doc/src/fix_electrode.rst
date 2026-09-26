@@ -44,7 +44,7 @@ Syntax
                 rng_v = integer used to initialize random number generator
 
 * zero or more keyword/value pairs may be appended
-* keyword = *algo* or *couple* or *etypes* or *ffield* or *write_mat* or *write_inv* or *read_mat* or *read_inv* or *qtotal* or *eta* or *hardness* or *electronegativity* or *pair*
+* keyword = *algo* or *couple* or *etypes* or *device* or *ffield* or *write_mat* or *write_inv* or *read_mat* or *read_inv* or *qtotal* or *eta* or *hardness* or *electronegativity* or *pair*
 
 .. parsed-literal::
 
@@ -282,6 +282,16 @@ not compatible with the *eta* keyword.
 
 .. versionadded:: TBD
 
+The keyword-value *device on* runs the charge solve on the GPU for the
+*electrode/conp/kk* device lane (matrix inversion, electrode potential
+vector, and the short-range and reciprocal potential calculations all
+execute as Kokkos kernels; only one small buffer transfer in and out per
+step). It requires *algo mat_inv* (the default) and the *pair* keyword
+with a KOKKOS ELECTRODE pair style; the default *device off* executes
+the solve on the host. The */kk/host* variant and the eta mode always
+use the host solver.
+.. versionadded:: TBD
+
 The keywords *hardness* and *electronegativity* enable the charge
 equilibration (QEq) (:ref:`Rappe <Rappe>`) with the following terms
 added to the total Coulomb energy:
@@ -466,14 +476,16 @@ These fixes have KOKKOS variants, *electrode/conp/kk*, *electrode/conq/kk*
 and *electrode/thermo/kk* (with */kk/device* and */kk/host* suffixes),
 which run the short-range electrostatics through a KOKKOS *pair* style
 (currently *lj/cut/coul/long/gauss/kk* and *lj/cut/coul/wolf/gauss/kk*)
-when the *pair* keyword is used. The solver arithmetic (algo cg/mat_inv)
-and the *eta* mode (no *pair* keyword) currently execute on the host.
+when the *pair* keyword is used. By default the solver arithmetic
+(algo cg/mat_inv) and the *eta* mode (no *pair* keyword) execute on the
+host; *device on* (above) moves the *mat_inv* solve onto the device.
+
 
 Default
 """""""
 
 The default keyword-option settings are *algo mat_inv*, *etypes off*,
-*ffield off* and *predictor 1*.
+*device off*, *ffield off* and *predictor 1*.
 
 ----------
 

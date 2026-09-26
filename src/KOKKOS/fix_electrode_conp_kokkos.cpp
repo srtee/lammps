@@ -68,6 +68,11 @@ void FixElectrodeConpKokkos<DeviceType>::init()
                       "pair style implementing ElectrodePair (eta mode is host-only)");
 
   FixElectrodeConp::init();
+  if constexpr (std::is_same_v<DeviceType, LMPHostType>) {
+    if (device_solve)
+      error->all(FLERR, "Fix {} device on requires the Kokkos device lane; /kk/host uses the host solve",
+                 style);
+  }
   mark_kokkos_lists();
   // device-CG binding happens in ElectrodeCGKokkos::setup_solver(), which
   // runs from setup_post_neighbor() once the solver exists (never here:
@@ -93,11 +98,12 @@ ElectrodeCG *FixElectrodeConpKokkos<DeviceType>::new_cg_solver()
 template<class DeviceType>
 ElectrodeInv *FixElectrodeConpKokkos<DeviceType>::new_inv_solver()
 {
-  // the device-resident solve needs the full newton-off device neighbor
-  // list, which only the device lane requests; the host lane keeps the
-  // portable host ElectrodeInv
+  // the device-resident solve (device on) needs the full newton-off device
+  // neighbor list, which only the device lane requests; the host lane and
+  // the default (device off) keep the portable host ElectrodeInv
   if constexpr (std::is_same_v<DeviceType, LMPHostType>) return new ElectrodeInv(lmp);
-  else return new ElectrodeInvKokkos<DeviceType>(lmp, this);
+  else if (device_solve) return new ElectrodeInvKokkos<DeviceType>(lmp, this);
+  else return new ElectrodeInv(lmp);
 }
 
 template<class DeviceType>

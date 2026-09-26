@@ -122,6 +122,7 @@ class FixElectrodeConp : public Fix {
 
   bool pairflag;                              // whether a pair style is specified (KK subclass)
   std::string pair_str;
+  bool device_solve;                          // device on: mat_inv solve runs on the GPU (/kk only)
 
  private:
   std::string output_file_inv, output_file_mat, output_file_vec;

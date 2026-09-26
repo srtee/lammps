@@ -75,7 +75,8 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), charge_solver(nullptr), potential_i(nullptr), elyt_vector(nullptr),
     elec_vector(nullptr), matrix(nullptr), pair(nullptr), mat_neighlist(nullptr),
     vec_neighlist(nullptr), force_neighlist(nullptr), electrode_taglist(nullptr),
-    eta_index(-1), hardness_index(-1), en_index(-1)    // property indices: -1 until the keyword sets them
+    eta_index(-1), hardness_index(-1), en_index(-1),    // property indices: -1 until the keyword sets them
+    device_solve(false)
 
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_electrode);
@@ -291,6 +292,9 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
       etypes_neighlists = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if ((strncmp(arg[iarg], "symm", 4) == 0)) {
       symm = utils::logical(FLERR, arg[++iarg], false, lmp);
+    } else if ((strcmp(arg[iarg], "device") == 0)) {
+      if (iarg + 2 > narg) error->all(FLERR, "Need one argument after device keyword");
+      device_solve = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if ((strcmp(arg[iarg], "ffield") == 0)) {
       ffield = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if (iarg == 4) {    // deprecated option to specify eta as fourth argument
@@ -498,6 +502,14 @@ void FixElectrodeConp::init()
   // run style respa provides no hooks -> the charges would silently never be updated
   if (utils::strmatch(update->integrate_style, "^respa"))
     error->all(FLERR, Error::NOLASTLINE, "Fix {} is not compatible with run_style respa", style);
+
+  // device solve is opt-in; only the Kokkos device-lane mat_inv implements it
+  if (device_solve) {
+    if (algo != Algo::MATRIX_INV)
+      error->all(FLERR, "Fix {} device on requires algo mat_inv", style);
+    if (!utils::strmatch(style, "/kk$"))
+      error->all(FLERR, "Fix {} device on requires the device-lane fix style electrode/conp/kk", style);
+  }
 
   pair = nullptr;    // not sure if needed -- remove if unnecessary
   if (pairflag) {
