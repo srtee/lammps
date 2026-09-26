@@ -54,9 +54,9 @@ class ElectrodeInv : public Pointers, public ChargeSolver {
   int unpack_row(int, const double *) override;
   int pack_row_size() override;
   void set_elastance(int, double **, bool, const std::vector<int> &frag_iele);
-  void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
+  virtual void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
 
- private:
+ protected:    // device variants (ElectrodeInvKokkos) build on these
   int groupbit;
   int nmax, nlocalele;
   int ngroups, nele_world;

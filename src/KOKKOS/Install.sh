@@ -273,6 +273,8 @@ action fix_electrode_conq_kokkos.h fix_electrode_conq.h
 action fix_electrode_thermo_kokkos.h fix_electrode_thermo.h
 action electrode_cg_kokkos.cpp electrode_cg.cpp
 action electrode_cg_kokkos.h electrode_cg.h
+action electrode_inv_kokkos.cpp electrode_inv.cpp
+action electrode_inv_kokkos.h electrode_inv.h
 action fix_oneway_kokkos.h fix_oneway.h
 action fix_planeforce_kokkos.cpp
 action fix_planeforce_kokkos.h

@@ -74,7 +74,8 @@ static const char cite_fix_electrode[] =
 FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), charge_solver(nullptr), potential_i(nullptr), elyt_vector(nullptr),
     elec_vector(nullptr), matrix(nullptr), pair(nullptr), mat_neighlist(nullptr),
-    vec_neighlist(nullptr), force_neighlist(nullptr), electrode_taglist(nullptr)
+    vec_neighlist(nullptr), force_neighlist(nullptr), electrode_taglist(nullptr),
+    eta_index(-1), hardness_index(-1), en_index(-1)    // property indices: -1 until the keyword sets them
 
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_electrode);
@@ -581,18 +582,12 @@ void FixElectrodeConp::init()
       Req->set_id(1);
       if (intelflag) Req->enable_intel();
     }
-    if (need_elec_vector && cg_device_needs_full_list()) {
-      // device CG matvec: separate perpetual full newton-off list; the
-      // default id-1 list keeps serving the host bvec/force paths
-      int *iskip_cg = new int[ntypes + 1];
-      int **ijskip_cg;
-      memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
-      for (int itype = 0; itype <= ntypes; ++itype) {
-        iskip_cg[itype] = iskip_mat[itype];
-        for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
-      }
+    if ((need_elec_vector && cg_device_needs_full_list()) || device_mat_inv()) {
+      // device matvec (device-CG or device-resident mat_inv): separate
+      // perpetual full newton-off list. NOT a type-skipped copy: skip lists
+      // inherit a parent built later/elsewhere and their device views are
+      // empty at the setup solve; the kernel filters rows by group mask.
       auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
-      ReqKK->set_skip(iskip_cg, ijskip_cg);
       ReqKK->set_id(4);
     }
   }
@@ -620,6 +615,11 @@ void FixElectrodeConp::init_list(int id, NeighList *ptr)
 ElectrodeCG *FixElectrodeConp::new_cg_solver()
 {
   return new ElectrodeCG(lmp, this);
+}
+
+ElectrodeInv *FixElectrodeConp::new_inv_solver()
+{
+  return new ElectrodeInv(lmp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -693,7 +693,12 @@ void FixElectrodeConp::setup_post_neighbor()
   // pair and list setups:
 
   evscale = force->qe2f / force->qqrd2e;
-  elyt_vector->setup_general(pair, vec_neighlist, pairflag, timer_flag);
+  // device mat_inv (/kk): the electrolyte-potential vector carries the
+  // sensor/source bits for the device b-assembly and must pair with the
+  // full newton-off device list, not the id-2 half list
+  elyt_vector->setup_general(
+      pair, device_mat_inv() && algo == Algo::MATRIX_INV ? cg_kk_neighlist : vec_neighlist,
+      pairflag, timer_flag);
   if (etapropflag) elyt_vector->setup_eta(eta_index);
   if (need_elec_vector) {
     elec_vector->setup_general(pair,
@@ -734,7 +739,7 @@ void FixElectrodeConp::setup_post_neighbor()
   switch (algo) {
     case Algo::MATRIX_INV: {
       assert(taglist_constructed);
-      ElectrodeInv *inv = new ElectrodeInv(lmp);
+      ElectrodeInv *inv = new_inv_solver();
       if (read_inv) {
         if (comm->me == 0 && ffield)
           error->warning(FLERR,
@@ -894,9 +899,11 @@ void FixElectrodeConp::update_charges()
     memory->create(potential_i, nmax, "FixElectrode:potential_i");
   }
   gather_list_iele();
-  memset(potential_i, 0., atom->nmax * sizeof(double));
-  elyt_vector->compute_pot(potential_i);
-  if (enflag) add_electronegativity(potential_i);
+  if (!device_mat_inv()) {
+    memset(potential_i, 0., atom->nmax * sizeof(double));
+    elyt_vector->compute_pot(potential_i);
+    if (enflag) add_electronegativity(potential_i);
+  }
   charge_solver->set_elyt_pot(potential_i);
   update_psi_set_constraint();
   set_charges(charge_solver->solve(group_psi));

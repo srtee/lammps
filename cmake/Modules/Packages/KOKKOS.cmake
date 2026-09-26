@@ -200,6 +200,7 @@ set(KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/kokkos.cpp
 # ELECTRODE device-CG solver: concrete non-style class, like fix_rigid/nh/small
 if(PKG_ELECTRODE)
   list(APPEND KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/electrode_cg_kokkos.cpp)
+  list(APPEND KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/electrode_inv_kokkos.cpp)
 endif()
 
 

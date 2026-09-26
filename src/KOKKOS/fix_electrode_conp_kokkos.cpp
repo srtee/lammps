@@ -26,6 +26,7 @@
 #include "neighbor.h"
 #include "neigh_request.h"
 #include "electrode_cg_kokkos.h"
+#include "electrode_inv_kokkos.h"
 
 #include <algorithm>
 
@@ -87,6 +88,22 @@ template<class DeviceType>
 ElectrodeCG *FixElectrodeConpKokkos<DeviceType>::new_cg_solver()
 {
   return new ElectrodeCGKokkos<DeviceType>(lmp, this);
+}
+
+template<class DeviceType>
+ElectrodeInv *FixElectrodeConpKokkos<DeviceType>::new_inv_solver()
+{
+  // the device-resident solve needs the full newton-off device neighbor
+  // list, which only the device lane requests; the host lane keeps the
+  // portable host ElectrodeInv
+  if constexpr (std::is_same_v<DeviceType, LMPHostType>) return new ElectrodeInv(lmp);
+  else return new ElectrodeInvKokkos<DeviceType>(lmp, this);
+}
+
+template<class DeviceType>
+int FixElectrodeConpKokkos<DeviceType>::device_elyt_group() const
+{
+  return elyt_vector->get_groupbit();
 }
 template<class DeviceType>
 void FixElectrodeConpKokkos<DeviceType>::mark_kokkos_lists()

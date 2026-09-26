@@ -36,8 +36,6 @@
 #include "utils.h"
 
 #include <cstring>
-#include <cstdio>
-#include <cstdlib>
 
 
 namespace LAMMPS_NS {

@@ -36,6 +36,7 @@ namespace LAMMPS_NS {
 class ChargeSolver;
 class ElectrodeCG;
 class ElectrodeTaglist;
+class ElectrodeInv;
 class ElectrodeVector;
 class NeighList;
 class Pair;
@@ -65,6 +66,8 @@ class FixElectrodeConp : public Fix {
   // list; base CG keeps the default half list
   virtual bool cg_device_needs_full_list() const { return false; }
   virtual ElectrodeCG *new_cg_solver();
+  // KK variant builds an ElectrodeInvKokkos here; base builds the host solver
+  virtual ElectrodeInv *new_inv_solver();
 
   // atomvec-based tracking of electrode atoms
   int pack_exchange(int, double *) override;
@@ -73,6 +76,18 @@ class FixElectrodeConp : public Fix {
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
 
+  // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
+  // after the host q array changes so device copies can be refreshed
+  inline virtual void device_charge_sync() {}
+  // device mat_inv solve (KK variant): default off; the kk fix builds an
+  // ElectrodeInvKokkos and overrides these three. device_elyt_vector() gates
+  // the id-4 full newton-off neighbor list; device_elyt_group() gives the
+  // sensor-group bits the device b-assembly kernels need.
+  inline virtual bool device_mat_inv() const { return false; }
+  inline virtual ElectrodeVector *device_elyt_vector() const { return nullptr; }
+  inline virtual int device_elyt_group() const { return 0; }
+  // en_index accessor for the device b-assembly (host en correction)
+  int electronegativity_index() const { return en_index; }
  protected:
   enum class Algo { MATRIX_INV, MATRIX_CG, CG };
   enum class VarStyle { CONST, EQUAL, UNSET };
@@ -96,9 +111,6 @@ class FixElectrodeConp : public Fix {
   std::string fixname;                // used by electrode/ffield to set up internal efield
   bool intelflag;
   inline virtual void intel_pack_buffers() {}
-  // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
-  // after the host q array changes so device copies can be refreshed
-  inline virtual void device_charge_sync() {}
   double qtotal;
   std::string qtotal_var_name;
   int qtotal_var_id;

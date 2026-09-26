@@ -34,6 +34,7 @@
 #include <cmath>
 #include <exception>
 
+
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
