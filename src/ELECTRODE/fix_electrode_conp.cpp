@@ -734,9 +734,10 @@ void FixElectrodeConp::setup_post_neighbor()
   if (matrix_algo) {
     assert(taglist_constructed);
     // migrating electrode atoms carry their matrix row through the
-    // exchange buffers; declare the size (nele_world + iele slot)
+    // exchange buffers; declare the size (nele_world + iele slot). The
+    // device exchange packer adds one header double per outgoing atom.
     if (charge_solver == nullptr && algo == Algo::MATRIX_INV) {
-      maxexchange = ngroup + 1;
+      maxexchange = ngroup + 2;
       maxexchange_dynamic = 1;    // re-read each exchange (cheap, always right)
     }
     gather_list_iele();    // fragment_iele must exist before set_elastance

@@ -30,6 +30,7 @@ FixStyle(electrode/conp/kk/host,FixElectrodeConpKokkos<LMPHostType>);
 #define LMP_FIX_ELECTRODE_CONP_KOKKOS_H
 
 #include "fix_electrode_conp.h"
+#include "kokkos_base.h"
 #include "kokkos_type.h"
 
 namespace LAMMPS_NS {
@@ -42,7 +43,7 @@ template<class DeviceType>
 void electrode_kk_mark_lists(class LAMMPS *, class FixElectrodeConp *);
 
 template<class DeviceType>
-class FixElectrodeConpKokkos : public FixElectrodeConp {
+class FixElectrodeConpKokkos : public FixElectrodeConp, public KokkosBase {
  public:
   FixElectrodeConpKokkos(class LAMMPS *, int, char **);
   void init() override;
@@ -55,6 +56,14 @@ class FixElectrodeConpKokkos : public FixElectrodeConp {
   class NeighList *get_cg_neighlist() const { return cg_kk_neighlist; }
   void set_charges(std::vector<double>) override;
   void device_charge_sync() override;
+  // device exchange/border pipeline: ghost charges and matrix rows travel
+  // in the Kokkos comm machinery instead of forcing legacy host exchange
+  int pack_forward_comm_kokkos(int, DAT::tdual_int_1d, DAT::tdual_double_1d &, int, int *) override;
+  void unpack_forward_comm_kokkos(int, int, DAT::tdual_double_1d &) override;
+  int pack_exchange_kokkos(const int &, DAT::tdual_double_2d_lr &, DAT::tdual_int_1d,
+                           DAT::tdual_int_1d, ExecutionSpace) override;
+  void unpack_exchange_kokkos(DAT::tdual_double_2d_lr &, DAT::tdual_int_1d &, int, int, int,
+                              ExecutionSpace) override;
 
  protected:
   void mark_kokkos_lists();

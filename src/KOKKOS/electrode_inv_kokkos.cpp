@@ -19,6 +19,7 @@
 
 #include "atom.h"
 #include "atom_kokkos.h"
+#include "atom_masks.h"
 #include "electrode_vector.h"
 #include "error.h"
 #include "fix_electrode_conp.h"
@@ -138,7 +139,9 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
   // world-iele gather staging is normally allocated
   if (buf_gathered == nullptr)
     memory->create(buf_gathered, nele_world, "ElectrodeInv:buf_gathered");
-  // atom -> taglist position map (-1 for non-electrode atoms)
+  // atom -> taglist position map (-1 for non-electrode atoms); the tag
+  // read is host-side, so pull it current under the device exchange pipeline
+  static_cast<AtomKokkos *>(atom)->sync(Host, TAG_MASK);
   const int nlocal = atom->nlocal;
   if ((int) d_imap.extent(0) < nlocal)
     d_imap = typename ArrayTypes<DeviceType>::t_int_1d("electrode/inv/kk:d_imap", nlocal);

@@ -153,7 +153,9 @@ class FixElectrodeConp : public Fix {
   std::map<int, double> tf_types;
   int predictor_cols;
 
-  // fix-specific electrode ID storage system:
+ protected:
+  // fix-specific electrode ID storage (device /kk exchange packer mirrors
+  // the host bookkeeping on nlocalele/nlocalele_outdated)
   bool taglist_constructed;
   ElectrodeTaglist *electrode_taglist;
   int nlocalele_outdated;    // trigger rebuilding of following structures:
