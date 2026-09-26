@@ -368,7 +368,12 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
   for (int i = 1; i < nprocs; i++) displs[i] = displs[i - 1] + recvcounts[i - 1];
   iele_local.clear();
   iele_local.reserve(nlocalele);
-  for (tagint t : taglist_local) iele_local.push_back(tag_to_iele[t]);
+  for (tagint t : taglist_local) {
+    auto it = tag_to_iele.find(t);
+    if (it == tag_to_iele.end())
+      error->all(FLERR, "ELECTRODE tag {} is not in the tag-to-iele map", t);
+    iele_local.push_back(it->second);
+  }
   MPI_Allgatherv(iele_local.data(), nlocalele, MPI_INT, iele_gathered, recvcounts, displs, MPI_INT,
                  world);
   // S3.1: cap_frag rows belong to ATOMS (keyed by iele via
@@ -389,6 +394,12 @@ void ElectrodeInv::update_solver(std::vector<tagint> taglist_local,
     frag_row_of_iele.erase(it);
   }
   cap_frag = std::move(new_frag);
+  // rows now occupy slots 0..nlocalele-1 in iele_local order; keep the
+  // position map valid so repeated update_solver calls (re-setup, per-migration
+  // regather) and pack_row() both key on it
+  frag_row_of_iele.clear();
+  frag_row_of_iele.reserve(nlocalele);
+  for (int r = 0; r < nlocalele; r++) frag_row_of_iele.emplace(iele_local[r], r);
 }
 
 /* ---------------------------------------------------------------------- */

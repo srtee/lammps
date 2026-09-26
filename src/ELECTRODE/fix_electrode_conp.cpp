@@ -595,11 +595,21 @@ void FixElectrodeConp::init()
       if (intelflag) Req->enable_intel();
     }
     if ((need_elec_vector && cg_device_needs_full_list()) || device_mat_inv()) {
-      // device matvec (device-CG or device-resident mat_inv): separate
-      // perpetual full newton-off list. NOT a type-skipped copy: skip lists
-      // inherit a parent built later/elsewhere and their device views are
-      // empty at the setup solve; the kernel filters rows by group mask.
+      // device matvec (device-CG or device-resident mat_inv): perpetual
+      // type-skipped full newton-off list -- only electrode rows are kept,
+      // so the device kernels skip ~8x the pair iteration of a full list.
+      // NPairSkipKokkos builds it on device, filtering the pair style's
+      // own full list (matched by morph_skip on identical flags).
+      int *iskip_cg = new int[ntypes + 1];
+      int **ijskip_cg;
+      memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
+      for (int itype = 0; itype <= ntypes; ++itype) {
+        iskip_cg[itype] = iskip_mat[itype];
+        for (int jtype = 0; jtype <= ntypes; ++jtype)
+          ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
+      }
       auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
+      ReqKK->set_skip(iskip_cg, ijskip_cg);
       ReqKK->set_id(4);
     }
   }
@@ -748,6 +758,10 @@ void FixElectrodeConp::setup_post_neighbor()
     if (write_mat) electrode_taglist->write_to_file(output_file_mat, matrix);
   }
   // construct charge solver
+  // re-setup (second run, chained blocks in one process): discard the
+  // previous instance instead of leaking a full N x N matrix per setup
+  delete charge_solver;
+  charge_solver = nullptr;
   switch (algo) {
     case Algo::MATRIX_INV: {
       assert(taglist_constructed);
