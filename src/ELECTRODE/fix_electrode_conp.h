@@ -79,6 +79,12 @@ class FixElectrodeConp : public Fix {
   // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
   // after the host q array changes so device copies can be refreshed
   inline virtual void device_charge_sync() {}
+  // hook for accelerator variants (KOKKOS/INTEL): refresh host-side atom
+  // arrays (tag/mask/x/q/...) from the accelerator copies before any code
+  // indexes them host-side. No-op unless an accelerator variant overrides
+  // it; under the KK device exchange/sort pipeline the device views are
+  // authoritative between force computations
+  inline virtual void host_data_sync() {}
   // device mat_inv solve (KK variant): default off; the kk fix builds an
   // ElectrodeInvKokkos and overrides these three. device_elyt_vector() gates
   // the id-4 full newton-off neighbor list; device_elyt_group() gives the

@@ -36,6 +36,19 @@
 
 namespace LAMMPS_NS {
 
+namespace {
+
+// fold the corr staging into b; KOKKOS_LAMBDA needs a namespace-scope
+// enclosing function (nvcc rejects extended lambdas in private members)
+template<class V>
+void corr_fold_dev(V v_b, V v_c, int n)
+{
+  Kokkos::parallel_for("electrode/inv/kk:corr_fold", n,
+                       KOKKOS_LAMBDA(const int i) { v_b(i) += v_c(i); });
+}
+
+}    // namespace
+
 
 template<class DeviceType>
 ElectrodeInvKokkos<DeviceType>::ElectrodeInvKokkos(class LAMMPS *lmp_in, class FixElectrodeConp *fix_in) :
@@ -44,12 +57,15 @@ ElectrodeInvKokkos<DeviceType>::ElectrodeInvKokkos(class LAMMPS *lmp_in, class F
 }
 
 template<class DeviceType>
-ElectrodeInvKokkos<DeviceType>::~ElectrodeInvKokkos() noexcept = default;
-
+ElectrodeInvKokkos<DeviceType>::~ElectrodeInvKokkos() noexcept
+{
+  if (corr_scratch != nullptr) memory->destroy(corr_scratch);
+}
 
 /* ----------------------------------------------------------------------
-   setup: base builds iele_local / cap_frag bookkeeping, then bind the
-   device pair/kspace interfaces and mirror the fragment matrix
+   setup_device(): locate the device pair/kspace interfaces and mirror
+   the fragment matrix (nele_local x nele_world) at setup_solver() /
+   update_solver() time.
 ------------------------------------------------------------------------- */
 
 template<class DeviceType>
@@ -121,32 +137,50 @@ void ElectrodeInvKokkos<DeviceType>::refresh_device_matrix()
    b vector assembly + matvec on device.  b_nall is ignored (the host
    potential array is never built); the pipeline is:
 
-   1. pair+self+kspace kernels assemble d_b in taglist order
-   2. one D2H; electronegativity correction stays host (per-atom property)
-   3. gather to world-iele order (same convention as buffer_and_gather)
-   4. one H2D (potentials), device matvec, one D2H (charges); sb_charges
-      accumulate host-side, exactly as ElectrodeInv::set_elyt_pot does
+   1. pair+self+kspace kernels assemble d_b in taglist order (corr folded
+      on device via d_corr staging); the atom->taglist imap is cached on
+      device behind a tag-array fingerprint
+   2. gather to world-iele order (same convention as buffer_and_gather)
+   3. one H2D (potentials) and one D2H (charges) per solve, both through
+      persistent host mirrors (no per-solve mirror allocations);
+      sb_charges accumulate host-side, exactly as the base class does
 ------------------------------------------------------------------------- */
 
 template<class DeviceType>
 void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
 {
   const int nele_local = nlocalele;
-  if ((int) d_b.extent(0) < nele_local)
+  const int nlocal = atom->nlocal;
+  if ((int) d_b.extent(0) < nele_local) {
     d_b = typename ArrayTypes<DeviceType>::t_kkacc_1d("electrode/inv/kk:d_b", nele_local);
+    h_b = Kokkos::create_mirror_view(d_b);
+  }
   Kokkos::deep_copy(d_b, 0.0);
   // the device solve bypasses base buffer_and_gather, which is where the
   // world-iele gather staging is normally allocated
   if (buf_gathered == nullptr)
     memory->create(buf_gathered, nele_world, "ElectrodeInv:buf_gathered");
-  // atom -> taglist position map (-1 for non-electrode atoms); the tag
-  // read is host-side, so pull it current under the device exchange pipeline
-  static_cast<AtomKokkos *>(atom)->sync(Host, TAG_MASK);
-  const int nlocal = atom->nlocal;
-  if ((int) d_imap.extent(0) < nlocal)
+  // Under the device exchange/sort pipeline the device views are the
+  // authoritative copies: exchange_device() lands migrated atoms there and
+  // sort_device() permutes them in place, so the host arrays -- and the
+  // tag->local map, a host hash -- are stale until pulled.  Everything the
+  // host path reads below (tags for the imap fingerprint, kspace boundary
+  // corr via atom->x/q/mask, the electronegativity term) pulls current
+  // here; the flag-gated sync is a no-op while the device is quiet, and
+  // AtomKokkos::sort()'s legacy branch does exactly this pull.
+  static_cast<AtomKokkos *>(atom)->sync(Host, ALL_MASK & ~F_MASK);
+  if ((int) d_imap.extent(0) < nlocal) {
     d_imap = typename ArrayTypes<DeviceType>::t_int_1d("electrode/inv/kk:d_imap", nlocal);
-  {
-    auto h_imap = Kokkos::create_mirror_view(d_imap);
+    h_imap = Kokkos::create_mirror_view(d_imap);
+  }
+  uint64_t fp = 1469598103934665603ull;
+  for (int i = 0; i < nlocal; i++) fp = (fp ^ (uint64_t) atom->tag[i]) * 1099511628211ull;
+  for (int i = 0; i < nele_local; i++) fp = (fp ^ (uint64_t) taglist_local[i]) * 1099511628211ull;
+  fp = (fp ^ (uint64_t) nlocal) * 1099511628211ull;
+  if (fp != imap_fingerprint) {
+    // ordering changed (device sort or migration): rebuild the map so
+    // atom->map(tag) addresses the pulled layout
+    if (atom->map_style != Atom::MAP_NONE) atom->map_set();
     for (int i = 0; i < nlocal; i++) {
       int ipos = -1;
       for (int k = 0; k < nele_local; k++)
@@ -157,6 +191,7 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
       h_imap(i) = ipos;
     }
     Kokkos::deep_copy(d_imap, h_imap);
+    imap_fingerprint = fp;
   }
 
   // electrolyte charges (incl. ghosts) must be current on the device
@@ -173,15 +208,15 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
   if (dev_vec->get_kspaceflag()) {
     kspace_kk->compute_vector_nele(d_b, d_imap, sensor_grpbit, source_grpbit, invert_source);
     // boundary corrections stay host (O(N) sums), then fold into d_b
-    double *corr_scratch;
-    memory->create(corr_scratch, atom->nmax, "electrode/inv/kk:corr_scratch");
-    memset(corr_scratch, 0, atom->nmax * sizeof(double));
-    kspace_kk->compute_vector_corr(corr_scratch, sensor_grpbit, source_grpbit, invert_source);
+    double *corr;
+    memory->create(corr, atom->nmax, "electrode/inv/kk:corr_scratch");
+    memset(corr, 0, atom->nmax * sizeof(double));
+    kspace_kk->compute_vector_corr(corr, sensor_grpbit, source_grpbit, invert_source);
     auto h_b = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_b);
     for (int i = 0; i < nele_local; i++)
-      h_b(i) += static_cast<KK_ACC_FLOAT>(corr_scratch[atom->map(taglist_local[i])]);
+      h_b(i) += static_cast<KK_ACC_FLOAT>(corr[atom->map(taglist_local[i])]);
     Kokkos::deep_copy(d_b, h_b);
-    memory->destroy(corr_scratch);
+    memory->destroy(corr);
   }
 }
 
@@ -235,7 +270,6 @@ void ElectrodeInvKokkos<DeviceType>::set_elyt_pot(double *b_nall)
       v_q(r) = acc;
     });
   }
-
   // D2H charges; sb_charges accumulate host-side like the base class
   std::fill(sb_charges.begin(), sb_charges.end(), 0.);
   if (nele_local > 0) {
@@ -255,8 +289,9 @@ double ElectrodeInvKokkos<DeviceType>::memory_use()
 {
   double bytes = ElectrodeInv::memory_use();
   bytes += (double) d_capfrag.size() * sizeof(KK_ACC_FLOAT);
-  bytes += (double) (d_pot.size() + d_b.size() + d_qvec.size()) * sizeof(KK_ACC_FLOAT);
+  bytes += (double) (d_pot.size() + d_b.size() + d_corr.size() + d_qvec.size()) * sizeof(KK_ACC_FLOAT);
   bytes += (double) d_imap.size() * sizeof(int);
+  if (corr_scratch_nmax > 0) bytes += (double) corr_scratch_nmax * sizeof(double);
   return bytes;
 }
 

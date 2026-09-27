@@ -56,6 +56,7 @@ class FixElectrodeConpKokkos : public FixElectrodeConp, public KokkosBase {
   class NeighList *get_cg_neighlist() const { return cg_kk_neighlist; }
   void set_charges(std::vector<double>) override;
   void device_charge_sync() override;
+  void host_data_sync() override;
   // device exchange/border pipeline: ghost charges and matrix rows travel
   // in the Kokkos comm machinery instead of forcing legacy host exchange
   int pack_forward_comm_kokkos(int, DAT::tdual_int_1d, DAT::tdual_double_1d &, int, int *) override;

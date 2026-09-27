@@ -221,7 +221,22 @@ void ElectrodeInv::setup_solver(int groupbit, std::unordered_map<tagint, int> ta
     for (tagint t : local_tags) iele_local.push_back(iele_of_tag[t]);
     this->tag_to_iele = iele_of_tag;
   }
-
+  // the fragment rows are keyed by the ascending frag_iele order left by
+  // set_elastance/set_capacitance, while iele_local above follows local
+  // atom order; align the rows so row r belongs to iele_local[r] before
+  // any consumer (sd vectors, macro matrices) reads the pairing --
+  // compute_sd_vectors runs before the update_solver reorder in
+  // setup_post_neighbor would otherwise fix it
+  std::vector<std::vector<double>> frag_reordered(nlocalele);
+  for (int r = 0; r < nlocalele; r++) {
+    auto it = frag_row_of_iele.find(iele_local[r]);
+    frag_reordered[r] = std::move(cap_frag[it->second]);
+    frag_row_of_iele.erase(it);
+  }
+  cap_frag = std::move(frag_reordered);
+  frag_row_of_iele.clear();
+  frag_row_of_iele.reserve(nlocalele);
+  for (int r = 0; r < nlocalele; r++) frag_row_of_iele.emplace(iele_local[r], r);
   iele_to_group = std::vector<int>(nele_world, -1);
   for (int i = 0; i < nlocal; i++) {
     for (int g = 0; g < ngroups; g++) {

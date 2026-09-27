@@ -596,17 +596,20 @@ void FixElectrodeConp::init()
     }
     if ((need_elec_vector && cg_device_needs_full_list()) || device_mat_inv()) {
       // device matvec (device-CG or device-resident mat_inv): perpetual
-      // type-skipped full newton-off list -- only electrode rows are kept,
-      // so the device kernels skip ~8x the pair iteration of a full list.
-      // NPairSkipKokkos builds it on device, filtering the pair style's
-      // own full list (matched by morph_skip on identical flags).
+      // type-skipped full newton-off list. Rows are electrode types only
+      // (~8x fewer pair iterations than a full list); columns are ANY type
+      // -- the b-assembly kernel sums electrolyte neighbors of electrode
+      // atoms, so an electrode-electrode column filter (as the matrix list
+      // uses) would drop every electrode-electrolyte pair term. NPairSkipKokkos
+      // builds it on device from the pair style's own full list; the kernel
+      // still filters rows by group mask.
       int *iskip_cg = new int[ntypes + 1];
       int **ijskip_cg;
       memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
       for (int itype = 0; itype <= ntypes; ++itype) {
-        iskip_cg[itype] = iskip_mat[itype];
+        iskip_cg[itype] = !elec_type[itype];
         for (int jtype = 0; jtype <= ntypes; ++jtype)
-          ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
+          ijskip_cg[itype][jtype] = !elec_type[itype];
       }
       auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
       ReqKK->set_skip(iskip_cg, ijskip_cg);
@@ -676,6 +679,11 @@ void FixElectrodeConp::post_constructor()
 
 void FixElectrodeConp::setup_post_neighbor()
 {
+  // the accelerator variants may hold newer atom data device-side (device
+  // exchange/sort); everything below indexes host arrays (taglist gather,
+  // matrix mpos, corr x/q) and must see the current layout
+  host_data_sync();
+
   const int nlocal = atom->nlocal;
   int *mask = atom->mask;
 
@@ -1257,13 +1265,17 @@ void FixElectrodeConp::request_etypes_neighlists()
     memory->destroy(ijskip_mat);
   }
   if (need_elec_vector && cg_device_needs_full_list()) {
-    // device CG matvec: separate perpetual full newton-off list (etypes variant)
+    // device CG matvec: perpetual full newton-off list (etypes variant).
+    // Rows are electrode types only; columns are ANY type -- the b-assembly
+    // kernel sums electrolyte neighbors of electrode atoms, so copying the
+    // matrix list's electrode-electrode column filter would drop every
+    // electrode-electrolyte pair term. iskip_mat already encodes "etype rows".
     int *iskip_cg = new int[ntypes + 1];
     int **ijskip_cg;
     memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
     for (int itype = 0; itype <= ntypes; ++itype) {
       iskip_cg[itype] = iskip_mat[itype];
-      for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = ijskip_mat[itype][jtype];
+      for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = iskip_mat[itype];
     }
     auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
     ReqKK->set_skip(iskip_cg, ijskip_cg);
@@ -1312,6 +1324,10 @@ int FixElectrodeConp::unpack_exchange(int nlocal, double *buf)
 
 void FixElectrodeConp::gather_list_iele()
 {
+  // atom migration under the accelerator variants lands device-side first;
+  // the taglist below is built from host tag/mask
+  host_data_sync();
+
   MPI_Allreduce(MPI_IN_PLACE, &nlocalele_outdated, 1, MPI_INT, MPI_SUM, world);
   if (nlocalele_outdated == 0) return;
 

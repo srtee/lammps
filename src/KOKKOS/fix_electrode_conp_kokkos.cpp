@@ -75,6 +75,19 @@ void FixElectrodeConpKokkos<DeviceType>::device_charge_sync()
   atomKK->modified(Host, Q_MASK);
   atomKK->sync(this->execution_space, Q_MASK);
 }
+
+template<class DeviceType>
+void FixElectrodeConpKokkos<DeviceType>::host_data_sync()
+{
+  // under the device exchange/sort pipeline the device views are
+  // authoritative between force computations (exchange_device() and
+  // sort_device() mutate them in place without a hostward pull); refresh
+  // every host array except forces so host-indexed consumers (matrix
+  // mpos, taglist gathers, boundary corr, atom->map) see the current
+  // layout. Flag-gated in AtomKokkos: no-op when the host side is current
+  if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
+  atomKK->sync(Host, ALL_MASK & ~F_MASK);
+}
 /* ----------------------------------------------------------------------
    device ghost-charge exchange: q travels device-side through the Kokkos
    comm pipeline, removing the per-step host round trip of the legacy path

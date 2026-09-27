@@ -39,6 +39,7 @@
 #include "electrode_pair_kokkos.h"
 #include "pppm_electrode_kokkos.h"
 
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
 
@@ -76,6 +77,15 @@ class ElectrodeInvKokkos : public ElectrodeInv {
   typename ArrayTypes<DeviceType>::t_kkacc_1d d_b;          // nele_local b vector
   typename ArrayTypes<DeviceType>::t_kkacc_1d d_qvec;       // nele_local charges out
   typename ArrayTypes<DeviceType>::t_int_1d d_imap;         // atom -> taglist pos (-1 none)
+  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_pot;    // persistent host mirrors
+  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_b;
+  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_q;
+  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_corr;
+  typename ArrayTypes<DeviceType>::t_int_1d::host_mirror_type h_imap;
+  typename ArrayTypes<DeviceType>::t_kkacc_1d d_corr;       // nele_local corr staging
+  double *corr_scratch = nullptr;                            // persistent corr scratch (nmax)
+  int corr_scratch_nmax = 0;
+  uint64_t imap_fingerprint = 0;                             // tag/taglist stamp; 0 = invalid
 };
 
 }    // namespace LAMMPS_NS
