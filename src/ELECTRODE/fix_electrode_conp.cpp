@@ -811,6 +811,14 @@ void FixElectrodeConp::setup_post_neighbor()
   // solver existed; refresh its bookkeeping now that it is constructed
   if (charge_solver != nullptr)
     charge_solver->update_solver(taglist_local, iele_to_group_local);
+  if (matrix_algo) {
+    // the Kokkos exchange comm sizes its buffers from the STATIC maxexchange
+    // (maxexchange_dynamic is host-comm only), so declare the true per-atom
+    // bound: a full matrix row plus the packer's header double. Before the
+    // solver exists pack_row_size() is 0, so the setup-time placeholder in
+    // setup_post_neighbor() covers the pre-solver exchanges.
+    maxexchange = charge_solver->pack_row_size() + 1;
+  }
   if (qtotal_var_style == VarStyle::CONST) charge_solver->set_constraint(qtotal);
   // initial charges and b vector
   update_charges();
