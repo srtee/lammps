@@ -682,7 +682,7 @@ void FixElectrodeConp::setup_post_neighbor()
   // the accelerator variants may hold newer atom data device-side (device
   // exchange/sort); everything below indexes host arrays (taglist gather,
   // matrix mpos, corr x/q) and must see the current layout
-  host_data_sync();
+  host_data_sync(ALL_MASK & ~F_MASK);
 
   const int nlocal = atom->nlocal;
   int *mask = atom->mask;
@@ -941,15 +941,24 @@ void FixElectrodeConp::update_charges()
     nmax = atom->nmax;
     memory->create(potential_i, nmax, "FixElectrode:potential_i");
   }
+  double tg = MPI_Wtime();
   gather_list_iele();
+  t_gather += MPI_Wtime() - tg;
   if (!device_mat_inv()) {
     memset(potential_i, 0., atom->nmax * sizeof(double));
     elyt_vector->compute_pot(potential_i);
     if (enflag) add_electronegativity(potential_i);
   }
   charge_solver->set_elyt_pot(potential_i);
+  double tp = MPI_Wtime();
   update_psi_set_constraint();
-  set_charges(charge_solver->solve(group_psi));
+  t_psi += MPI_Wtime() - tp;
+  double ts = MPI_Wtime();
+  std::vector<double> q_local = charge_solver->solve(group_psi);
+  t_solve += MPI_Wtime() - ts;
+  double tq = MPI_Wtime();
+  set_charges(std::move(q_local));
+  t_setq += MPI_Wtime() - tq;
   if (n_equal) modify->addstep_compute(update->ntimestep + 1);
   // update_time is now per-rank unsynchronized host time (no per-step barrier:
   // the sync stalled GPU pipelining and hid latency rather than work).
@@ -1173,6 +1182,11 @@ FixElectrodeConp::~FixElectrodeConp()
         if (charge_solver != nullptr)
           utils::logmesg(lmp, "Multiplication time: {:.4g} s\n", charge_solver->get_mult_time());
         utils::logmesg(lmp, "Update time: {:.4g} s\n", update_time);
+        utils::logmesg(lmp,
+                       "Modify legs: gather={:.4g} psi={:.4g} solve={:.4g} setq={:.4g} "
+                       "setq_pre={:.4g} hsync={:.4g} push_asm={:.4g} push_setq={:.4g} s\n",
+                       t_gather, t_psi, t_solve, t_setq, t_setq_pre, t_hsync, t_push[0],
+                       t_push[1]);
       }
     } catch (std::exception &) {
     }
@@ -1334,7 +1348,7 @@ void FixElectrodeConp::gather_list_iele()
 {
   // atom migration under the accelerator variants lands device-side first;
   // the taglist below is built from host tag/mask
-  host_data_sync();
+  host_data_sync(TAG_MASK | MASK_MASK);
 
   MPI_Allreduce(MPI_IN_PLACE, &nlocalele_outdated, 1, MPI_INT, MPI_SUM, world);
   if (nlocalele_outdated == 0) return;

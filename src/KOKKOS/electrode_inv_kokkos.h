@@ -58,6 +58,12 @@ class ElectrodeInvKokkos : public ElectrodeInv {
   void set_elyt_pot(double *) override;
   double memory_use() override;
 
+  // fine-grained per-solve staging timers: accumulated unconditionally,
+  // printed from the destructor when the probe flag is set
+  double t_bar = 0., t_pull = 0., t_pair = 0., t_ks = 0., t_corr = 0., t_b2h = 0.,
+         t_gth = 0., t_p2d = 0., t_mv = 0., t_q2h = 0.;
+  int nsolve = 0;
+
  private:
   // locate device pair/kspace interfaces; called from setup_solver()
   void setup_device();
@@ -65,6 +71,8 @@ class ElectrodeInvKokkos : public ElectrodeInv {
   void refresh_device_matrix();
   // device b-assembly: pair + self + kspace into d_b, taglist order
   void assemble_b_device();
+  // destructor leg-timer print gating (mirrors the fix's timer_flag)
+  bool timer_print = false;
 
   class FixElectrodeConp *fix;
   class FixElectrodeConpKokkos<DeviceType> *fix_kk = nullptr;

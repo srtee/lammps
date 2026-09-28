@@ -84,7 +84,7 @@ class FixElectrodeConp : public Fix {
   // indexes them host-side. No-op unless an accelerator variant overrides
   // it; under the KK device exchange/sort pipeline the device views are
   // authoritative between force computations
-  inline virtual void host_data_sync() {}
+  inline virtual void host_data_sync(uint64_t) {}
   // device mat_inv solve (KK variant): default off; the kk fix builds an
   // ElectrodeInvKokkos and overrides these three. device_elyt_vector() gates
   // the id-4 full newton-off neighbor list; device_elyt_group() gives the
@@ -138,6 +138,15 @@ class FixElectrodeConp : public Fix {
   bool matrix_algo, need_array_compute;
   double cg_threshold;
   double update_time, mult_time;
+
+protected:
+  // fine-grained per-step leg timers: accumulated unconditionally, printed
+  // from the destructor when timer_flag is set (probe instrumentation)
+  double t_gather = 0., t_psi = 0., t_solve = 0., t_setq = 0., t_setq_pre = 0.,
+         t_hsync = 0., t_push[2] = {0., 0.};
+  int sync_site = 0;    // 0 = b assembly, 1 = set_charges
+
+private:
   double gausscorr(int, int, bool);
   void update_charges();
   double potential_energy();

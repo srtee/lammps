@@ -62,8 +62,12 @@ void FixElectrodeConpKokkos<DeviceType>::set_charges(std::vector<double> q_local
   // the host write so it cannot clobber arrived data. The base write ends
   // with the virtual device_charge_sync() republish.
   if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
+  double ts = MPI_Wtime();
   atomKK->sync(Host, Q_MASK);
+  t_setq_pre += MPI_Wtime() - ts;
+  sync_site = 1;
   FixElectrodeConp::set_charges(std::move(q_local));
+  sync_site = 0;
 }
 
 template<class DeviceType>
@@ -72,21 +76,24 @@ void FixElectrodeConpKokkos<DeviceType>::device_charge_sync()
   // the CG matvec changes electrode charges between device kspace calls;
   // mark the host q write so the device view is refreshed
   if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
+  double ts = MPI_Wtime();
   atomKK->modified(Host, Q_MASK);
   atomKK->sync(this->execution_space, Q_MASK);
+  t_push[sync_site] += MPI_Wtime() - ts;
 }
 
 template<class DeviceType>
-void FixElectrodeConpKokkos<DeviceType>::host_data_sync()
+void FixElectrodeConpKokkos<DeviceType>::host_data_sync(uint64_t mask)
 {
   // under the device exchange/sort pipeline the device views are
   // authoritative between force computations (exchange_device() and
-  // sort_device() mutate them in place without a hostward pull); refresh
-  // every host array except forces so host-indexed consumers (matrix
-  // mpos, taglist gathers, boundary corr, atom->map) see the current
-  // layout. Flag-gated in AtomKokkos: no-op when the host side is current
+  // sort_device() mutate them in place without a hostward pull); callers
+  // request only the arrays they read on the host, so steady-state runs
+  // hit the modified-flag check and skip untouched arrays entirely
   if (atomKK == nullptr) atomKK = static_cast<AtomKokkos *>(atom);
-  atomKK->sync(Host, ALL_MASK & ~F_MASK);
+  double ts = MPI_Wtime();
+  atomKK->sync(Host, mask);
+  t_hsync += MPI_Wtime() - ts;
 }
 /* ----------------------------------------------------------------------
    device ghost-charge exchange: q travels device-side through the Kokkos
