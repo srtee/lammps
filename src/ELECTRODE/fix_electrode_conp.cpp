@@ -104,6 +104,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   thermo_virial = 1;         // set vflags for v_tally
 
   bool default_algo = true;
+  bool device_set = false;
   algo = Algo::MATRIX_INV;
   matrix_algo = true;
   cg_threshold = 0.;
@@ -293,8 +294,8 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     } else if ((strncmp(arg[iarg], "symm", 4) == 0)) {
       symm = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if ((strcmp(arg[iarg], "device") == 0)) {
-      if (iarg + 2 > narg) error->all(FLERR, "Need one argument after device keyword");
       device_solve = utils::logical(FLERR, arg[++iarg], false, lmp);
+      device_set = true;
     } else if ((strcmp(arg[iarg], "ffield") == 0)) {
       ffield = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if (iarg == 4) {    // deprecated option to specify eta as fourth argument
@@ -317,6 +318,12 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     }
     iarg++;
   }
+  // device defaults on where the device lane is valid: the /kk fix style
+  // running the default mat_inv algo. Everything else (host styles, mat_cg,
+  // cg) keeps the host solve; an explicit device keyword always wins.
+  if (!device_set)
+    device_solve = utils::strmatch(style, "/kk$") && algo == Algo::MATRIX_INV;
+
 
   if (symm) {
     if (qtotal_var_style != VarStyle::UNSET) {
@@ -503,7 +510,8 @@ void FixElectrodeConp::init()
   if (utils::strmatch(update->integrate_style, "^respa"))
     error->all(FLERR, Error::NOLASTLINE, "Fix {} is not compatible with run_style respa", style);
 
-  // device solve is opt-in; only the Kokkos device-lane mat_inv implements it
+  // device solve only exists on the Kokkos device-lane mat_inv; the
+  // conditional default (set after arg parsing) already respected this
   if (device_solve) {
     if (algo != Algo::MATRIX_INV)
       error->all(FLERR, "Fix {} device on requires algo mat_inv", style);

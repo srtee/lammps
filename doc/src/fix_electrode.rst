@@ -287,9 +287,11 @@ The keyword-value *device on* runs the charge solve on the GPU for the
 vector, and the short-range and reciprocal potential calculations all
 execute as Kokkos kernels; only one small buffer transfer in and out per
 step). It requires *algo mat_inv* (the default) and the *pair* keyword
-with a KOKKOS ELECTRODE pair style; the default *device off* executes
-the solve on the host. The */kk/host* variant and the eta mode always
-use the host solver.
+with a KOKKOS ELECTRODE pair style. *device* defaults to *on* for the
+*electrode/conp/kk* style running the default *algo mat_inv*; every other
+combination (host fix styles, *mat_cg*, *cg*, the eta mode) defaults to
+*device off* and executes the solve on the host. The */kk/host* variant
+always uses the host solver.
 .. versionadded:: TBD
 
 The keywords *hardness* and *electronegativity* enable the charge
@@ -485,7 +487,8 @@ Default
 """""""
 
 The default keyword-option settings are *algo mat_inv*, *etypes off*,
-*device off*, *ffield off* and *predictor 1*.
+*device on* for the *electrode/conp/kk* style with *algo mat_inv*
+(*device off* otherwise), *ffield off* and *predictor 1*.
 
 ----------
 
