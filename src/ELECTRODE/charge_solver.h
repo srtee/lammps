@@ -42,6 +42,10 @@ class ChargeSolver {
   virtual int pack_row(int, double *) { return 0; }
   virtual int unpack_row(int, const double *) {}
   virtual int pack_row_size() { return 0; }
+  // device-resident mat_inv lane: scatter the solver's device qvec into the
+  // atom device array (taglist order via the solver's imap). Default no-op:
+  // host lanes write atom->q directly.
+  virtual void scatter_device() {}
   double get_mult_time();
 
   // for electrode/thermo

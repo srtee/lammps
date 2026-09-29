@@ -36,21 +36,6 @@
 #include <algorithm>
 
 namespace LAMMPS_NS {
-
-namespace {
-
-// fold the corr staging into b; KOKKOS_LAMBDA needs a namespace-scope
-// enclosing function (nvcc rejects extended lambdas in private members)
-template<class V>
-void corr_fold_dev(V v_b, V v_c, int n)
-{
-  Kokkos::parallel_for("electrode/inv/kk:corr_fold", n,
-                       KOKKOS_LAMBDA(const int i) { v_b(i) += v_c(i); });
-}
-
-}    // namespace
-
-
 template<class DeviceType>
 ElectrodeInvKokkos<DeviceType>::ElectrodeInvKokkos(class LAMMPS *lmp_in, class FixElectrodeConp *fix_in) :
     ElectrodeInv(lmp_in), fix(fix_in)
@@ -60,12 +45,11 @@ ElectrodeInvKokkos<DeviceType>::ElectrodeInvKokkos(class LAMMPS *lmp_in, class F
 template<class DeviceType>
 ElectrodeInvKokkos<DeviceType>::~ElectrodeInvKokkos() noexcept
 {
-  if (corr_scratch != nullptr) memory->destroy(corr_scratch);
   if (timer_print && comm->me == 0)
     utils::logmesg(lmp,
                    "InvKK legs: bar={:.4g} pull={:.4g} pair={:.4g} ks={:.4g} corr={:.4g} "
-                   "b2h={:.4g} gth={:.4g} p2d={:.4g} mv={:.4g} q2h={:.4g} nsolve={}\n",
-                   t_bar, t_pull, t_pair, t_ks, t_corr, t_b2h, t_gth, t_p2d, t_mv, t_q2h,
+                   "b2h={:.4g} gth={:.4g} p2d={:.4g} mv={:.4g} sb={:.4g} nsolve={}\n",
+                   t_bar, t_pull, t_pair, t_ks, t_corr, t_b2h, t_gth, t_p2d, t_mv, t_sb,
                    nsolve);
 }
 
@@ -138,19 +122,29 @@ void ElectrodeInvKokkos<DeviceType>::refresh_device_matrix()
     for (int j = 0; j < ncol; j++) h_cap(r, j) = static_cast<KK_ACC_FLOAT>(row[j]);
   }
   Kokkos::deep_copy(d_capfrag, h_cap);
+  // device sd table (ngroups x nele_local, sd_vectors[g][iele_local[r]])
+  // consumed by the rank-1 solve kernel
+  d_sd = decltype(d_sd)("electrode/inv/kk:d_sd", ngroups, nrow);
+  auto h_sd = Kokkos::create_mirror_view(d_sd);
+  for (int g = 0; g < ngroups; g++)
+    for (int r = 0; r < nrow; r++)
+      h_sd(g, r) = static_cast<KK_ACC_FLOAT>(sd_vectors[g][iele_local[r]]);
+  Kokkos::deep_copy(d_sd, h_sd);
 }
 
 /* ----------------------------------------------------------------------
    b vector assembly + matvec on device.  b_nall is ignored (the host
    potential array is never built); the pipeline is:
 
-   1. pair+self+kspace kernels assemble d_b in taglist order (corr folded
-      on device via d_corr staging); the atom->taglist imap is cached on
-      device behind a tag-array fingerprint
+   1. pair+self+kspace kernels assemble d_b in taglist order, including the
+      EW3DC boundary correction (host: ordered FP sum for bit-parity; the
+      legacy arrays it reads ride auto_sync at no extra copy); the
+      atom->taglist imap is cached on device behind a tag-array fingerprint
    2. gather to world-iele order (same convention as buffer_and_gather)
-   3. one H2D (potentials) and one D2H (charges) per solve, both through
-      persistent host mirrors (no per-solve mirror allocations);
-      sb_charges accumulate host-side, exactly as the base class does
+   3. one H2D (potentials) feeds the device matvec; charges stay on the
+      device end to end: solve() applies the constraint host-side and the
+      rank-1 sd update + charge scatter run as device kernels, so no
+      per-step D2H of q crosses the solve
 ------------------------------------------------------------------------- */
 
 template<class DeviceType>
@@ -160,23 +154,20 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
   const int nlocal = atom->nlocal;
   if ((int) d_b.extent(0) < nele_local) {
     d_b = typename ArrayTypes<DeviceType>::t_kkacc_1d("electrode/inv/kk:d_b", nele_local);
-    h_b = Kokkos::create_mirror_view(d_b);
   }
   Kokkos::deep_copy(d_b, 0.0);
   // the device solve bypasses base buffer_and_gather, which is where the
   // world-iele gather staging is normally allocated
   if (buf_gathered == nullptr)
     memory->create(buf_gathered, nele_world, "ElectrodeInv:buf_gathered");
-  // Under the device exchange/sort pipeline the device views are the
-  // authoritative copies: exchange_device() lands migrated atoms there and
-  // sort_device() permutes them in place, so the host arrays -- and the
-  // tag->local map, a host hash -- are stale until pulled.  Everything the
-  // host path reads below (tags for the imap fingerprint, kspace boundary
-  // corr via atom->x/q/mask, the electronegativity term) pulls current
-  // here; the flag-gated sync is a no-op while the device is quiet, and
-  // AtomKokkos::sort()'s legacy branch does exactly this pull.
+  // The device views are the authoritative atom arrays (exchange_device()
+  // lands migrated atoms device-side, sort_device() permutes them in
+  // place). Only the tag array is pulled, feeding the imap fingerprint and
+  // the atom->map refresh; x/q/mask stay device-resident: the kernels below
+  // read the device views, and the verlet pair sync's auto_sync keeps the
+  // legacy host arrays fresh for dumps/ave-chunk/restart.
   double t0 = MPI_Wtime();
-  static_cast<AtomKokkos *>(atom)->sync(Host, TAG_MASK | MASK_MASK | X_MASK | Q_MASK);
+  static_cast<AtomKokkos *>(atom)->sync(Host, TAG_MASK);
   t_pull += MPI_Wtime() - t0;
   if ((int) d_imap.extent(0) < nlocal) {
     d_imap = typename ArrayTypes<DeviceType>::t_int_1d("electrode/inv/kk:d_imap", nlocal);
@@ -203,8 +194,9 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
     imap_fingerprint = fp;
   }
 
-  // electrolyte charges (incl. ghosts) must be current on the device
-  fix_kk->device_charge_sync();
+  // electrolyte charges (incl. ghosts) are current on the device: exchange
+  // and forward comm run through the Kokkos pipeline, and electrode charges
+  // land via scatter_device() + modified(Device, Q) at the end of set_charges
 
   const int sensor_grpbit = dev_vec->get_groupbit();
   const int source_grpbit = dev_vec->get_source_grpbit();
@@ -221,15 +213,19 @@ void ElectrodeInvKokkos<DeviceType>::assemble_b_device()
     kspace_kk->compute_vector_nele(d_b, d_imap, sensor_grpbit, source_grpbit, invert_source);
     t_ks += MPI_Wtime() - t2;
     double t3 = MPI_Wtime();
-    // boundary corrections stay host (O(N) sums), then fold into d_b
+    // EW3DC boundary correction runs on the host: the dipole moment is an
+    // ordered FP sum that must match the production lineage bitwise (a
+    // serial device loop is latency-bound, ~4 ms vs 0.06 ms host). The
+    // legacy arrays it reads are kept fresh by auto_sync at no extra copy:
+    // the integrator mirrors X, set_charges mirrors Q, MASK is static.
     double *corr;
-    memory->create(corr, atom->nmax, "electrode/inv/kk:corr_scratch");
+    memory->create(corr, atom->nmax, "electrode/inv/kk:corr");
     memset(corr, 0, atom->nmax * sizeof(double));
     kspace_kk->compute_vector_corr(corr, sensor_grpbit, source_grpbit, invert_source);
-    auto h_b = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_b);
+    auto h_bw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_b);
     for (int i = 0; i < nele_local; i++)
-      h_b(i) += static_cast<KK_ACC_FLOAT>(corr[atom->map(taglist_local[i])]);
-    Kokkos::deep_copy(d_b, h_b);
+      h_bw(i) += static_cast<KK_ACC_FLOAT>(corr[atom->map(taglist_local[i])]);
+    Kokkos::deep_copy(d_b, h_bw);
     memory->destroy(corr);
     t_corr += MPI_Wtime() - t3;
   }
@@ -296,22 +292,86 @@ void ElectrodeInvKokkos<DeviceType>::set_elyt_pot(double *b_nall)
     });
   }
   t_mv += MPI_Wtime() - t4;
-  // D2H charges; sb_charges accumulate host-side like the base class
+  // group charges (pre-constraint) accumulate on the host from one mirror
+  // of the capacitance-part qvec: the grouped sum is an ordered FP
+  // reduction (bit-parity with the production lineage) and a single
+  // mirror+copy is cheaper than a device single-thread kernel plus fences
   std::fill(sb_charges.begin(), sb_charges.end(), 0.);
   double t5 = MPI_Wtime();
-  if (nele_local > 0) {
+  {
     auto h_q = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_qvec);
-    for (int i = 0; i < nele_local; i++) {
-      qvec[i] = h_q(i);
-      sb_charges[iele_to_group[iele_local[i]]] += qvec[i];
-    }
+    for (int i = 0; i < nele_local; i++) sb_charges[iele_to_group[iele_local[i]]] += h_q(i);
   }
-  t_q2h += MPI_Wtime() - t5;
+  t_sb += MPI_Wtime() - t5;
   double t6 = MPI_Wtime();
   MPI_Allreduce(MPI_IN_PLACE, sb_charges.data(), ngroups, MPI_DOUBLE, MPI_SUM, world);
   MPI_Barrier(world);
   t_bar += MPI_Wtime() - t6;
   mult_time += MPI_Wtime() - mult_start;
+}
+template<class DeviceType>
+std::vector<double> ElectrodeInvKokkos<DeviceType>::solve(std::vector<double> v)
+{
+  assert(setup);
+  assert(update->ntimestep == elyt_step);
+  MPI_Barrier(world);
+  double mult_start = MPI_Wtime();
+  group_pot = apply_constraint(v);
+  // rank-1 correction on the device: q(r) += SD . group_pot, per-atom terms
+  // accumulated in ascending-g order with mul and add kept uncontracted
+  // (volatile temp, no FMA) so the result is bit-identical to the base-class
+  // host loop; the solved charges stay on the device for scatter_device()
+  const int nele_local = nlocalele;
+  if (nele_local > 0 && ngroups > 0) {
+    if ((int) d_sd.extent(0) != ngroups || (int) d_sd.extent(1) != nele_local)
+      error->all(FLERR, "ElectrodeInvKokkos: stale device sd table");
+    if ((int) d_gpot.extent(0) != ngroups)
+      d_gpot = typename ArrayTypes<DeviceType>::t_kkacc_1d("electrode/inv/kk:d_gpot", ngroups);
+    {
+      auto h_gpot = Kokkos::create_mirror_view(d_gpot);
+      for (int g = 0; g < ngroups; g++) h_gpot(g) = static_cast<KK_ACC_FLOAT>(group_pot[g]);
+      Kokkos::deep_copy(d_gpot, h_gpot);
+    }
+    auto v_sd = d_sd;
+    auto v_gpot = d_gpot;
+    auto v_q = d_qvec;
+    const int ng = ngroups;
+    Kokkos::parallel_for("electrode/inv/kk:sd_update", nele_local,
+                         KOKKOS_LAMBDA(const int r) {
+                           for (int g = 0; g < ng; g++) {
+                             volatile KK_ACC_FLOAT term = v_sd(g, r) * v_gpot(g);
+                             v_q(r) += term;
+                           }
+                         });
+  }
+  Kokkos::fence();
+  if (nele_local > 0) {
+    auto h_q = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), d_qvec);
+    qvec.resize(nele_local);
+    for (int i = 0; i < nele_local; i++) qvec[i] = h_q(i);
+  }
+  MPI_Barrier(world);
+  mult_time += MPI_Wtime() - mult_start;
+  return qvec;
+}
+
+/* ----------------------------------------------------------------------
+   scatter the solved charges into the device atom array; called from the
+   fix's set_charges() on the device mat_inv lane, where the atom q stays
+   device-authoritative between solves
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void ElectrodeInvKokkos<DeviceType>::scatter_device()
+{
+  const int nlocal = atom->nlocal;
+  if (nlocal == 0 || nlocalele == 0) return;
+  auto d_q = static_cast<AtomKokkos *>(atom)->k_q.template view<DeviceType>();
+  auto v_qvec = d_qvec;
+  auto v_imap = d_imap;
+  Kokkos::parallel_for("electrode/inv/kk:scatter_q", nlocal, KOKKOS_LAMBDA(const int i) {
+    if (v_imap(i) >= 0) d_q(i) = v_qvec(v_imap(i));
+  });
 }
 
 template<class DeviceType>
@@ -319,9 +379,9 @@ double ElectrodeInvKokkos<DeviceType>::memory_use()
 {
   double bytes = ElectrodeInv::memory_use();
   bytes += (double) d_capfrag.size() * sizeof(KK_ACC_FLOAT);
-  bytes += (double) (d_pot.size() + d_b.size() + d_corr.size() + d_qvec.size()) * sizeof(KK_ACC_FLOAT);
+  bytes += (double) (d_pot.size() + d_b.size() + d_qvec.size() + d_gpot.size() +
+                     d_sd.size()) * sizeof(KK_ACC_FLOAT);
   bytes += (double) d_imap.size() * sizeof(int);
-  if (corr_scratch_nmax > 0) bytes += (double) corr_scratch_nmax * sizeof(double);
   return bytes;
 }
 

@@ -22,6 +22,7 @@
 
 #include "atom_kokkos.h"
 #include "atom_masks.h"
+#include "comm.h"
 #include "error.h"
 #include "neighbor.h"
 #include "neigh_request.h"
@@ -57,6 +58,16 @@ FixElectrodeConpKokkos<DeviceType>::FixElectrodeConpKokkos(class LAMMPS *lmp, in
 template<class DeviceType>
 void FixElectrodeConpKokkos<DeviceType>::set_charges(std::vector<double> q_local)
 {
+  if (device_mat_inv()) {
+    // device-resident charge update: the solver scatters its device qvec
+    // straight into the atom device array and ghost charges travel
+    // device-side through the Kokkos comm pipeline. The host q array is
+    // refreshed by modified()'s auto-mirror for thermo/dump/restart only.
+    charge_solver->scatter_device();
+    atomKK->modified(Device, Q_MASK);
+    comm->forward_comm(this);
+    return;
+  }
   // the device exchange pipeline may have left k_q device-authoritative
   // (migrating atoms arrive with their charges device-side); pull before
   // the host write so it cannot clobber arrived data. The base write ends

@@ -56,12 +56,14 @@ class ElectrodeInvKokkos : public ElectrodeInv {
   void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool) override;
   void update_solver(std::vector<tagint>, std::vector<int>) override;
   void set_elyt_pot(double *) override;
+  std::vector<double> solve(std::vector<double>) override;
+  void scatter_device() override;
   double memory_use() override;
 
   // fine-grained per-solve staging timers: accumulated unconditionally,
   // printed from the destructor when the probe flag is set
   double t_bar = 0., t_pull = 0., t_pair = 0., t_ks = 0., t_corr = 0., t_b2h = 0.,
-         t_gth = 0., t_p2d = 0., t_mv = 0., t_q2h = 0.;
+         t_gth = 0., t_p2d = 0., t_mv = 0., t_sb = 0.;
   int nsolve = 0;
 
  private:
@@ -85,14 +87,10 @@ class ElectrodeInvKokkos : public ElectrodeInv {
   typename ArrayTypes<DeviceType>::t_kkacc_1d d_b;          // nele_local b vector
   typename ArrayTypes<DeviceType>::t_kkacc_1d d_qvec;       // nele_local charges out
   typename ArrayTypes<DeviceType>::t_int_1d d_imap;         // atom -> taglist pos (-1 none)
-  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_pot;    // persistent host mirrors
-  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_b;
-  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_q;
-  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_corr;
+  typename ArrayTypes<DeviceType>::t_kkacc_1d::host_mirror_type h_pot;    // persistent host mirror
   typename ArrayTypes<DeviceType>::t_int_1d::host_mirror_type h_imap;
-  typename ArrayTypes<DeviceType>::t_kkacc_1d d_corr;       // nele_local corr staging
-  double *corr_scratch = nullptr;                            // persistent corr scratch (nmax)
-  int corr_scratch_nmax = 0;
+  typename ArrayTypes<DeviceType>::t_kkacc_1d d_gpot;       // ngroups group potentials
+  Kokkos::View<KK_ACC_FLOAT **, Kokkos::LayoutRight, DeviceType> d_sd;    // ngroups x nele_local
   uint64_t imap_fingerprint = 0;                             // tag/taglist stamp; 0 = invalid
 };
 

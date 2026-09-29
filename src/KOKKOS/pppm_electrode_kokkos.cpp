@@ -25,6 +25,7 @@
 #include "boundary_correction.h"
 #include "comm.h"
 #include "error.h"
+#include "math_const.h"
 #include "fft3d_wrap.h"
 #include "force.h"
 #include "grid3d_kokkos.h"
