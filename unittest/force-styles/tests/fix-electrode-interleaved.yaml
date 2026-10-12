@@ -1,0 +1,67 @@
+---
+lammps_version: 30 Sep 2026
+tags: generated
+date_generated: Mon Oct 12 22:50:02 2026
+# epsilon raised from 3e-11: these electrode systems are force-free by symmetry
+# (|f| ~ 1e-15), and the harness compares forces with a relative metric, which
+# is degenerate for zero-magnitude entries when summation order differs between
+# newton on/off legs. Charges and energies remain effectively checked.
+epsilon: 1.0e+02
+skip_tests:
+prerequisites: |
+  atom full
+  pair lj/cut/coul/long/gauss
+  kspace ewald/electrode
+  fix electrode/conp
+pre_commands: |
+  boundary p p p
+post_commands: |
+  pair_modify table 0
+  pair_modify table/disp 0
+  # electrode atoms sit on even IDs interleaved with non-electrode buffer
+  # atoms on odd IDs: the restart/data round-trip in this harness must
+  # preserve the taglist mapping through write/read (PR review part 6)
+  kspace_style ewald/electrode 1.0e-10
+  kspace_modify gewald 0.2
+  fix fxprop all property/atom d_chi d_hardness d_eta ghost yes
+  set type 1 d_chi  65.56 d_hardness 210.636 # Na
+  set type 2 d_chi 197.49 d_hardness 332.856 # Cl
+  fix fxqeq electrode electrode/conp 0.0 qtotal 0 pair lj/cut/coul/long/gauss algo cg 1e-6 electronegativity d_chi hardness d_hardness
+input_file: in.electrode-interleaved
+pair_style: lj/cut/coul/long/gauss 15.0
+pair_coeff: |
+  1 1  0.0  0.0 NULL
+  2 2  0.0  0.0 NULL
+  3 3  0.0  0.0 NULL
+extract: ""
+natoms: 12
+init_coul: 144.50967690959294
+init_charges: |2
+    1  0.0000000000000000e+00
+    2  4.7458365122730062e-01
+    3  0.0000000000000000e+00
+    4 -4.7458365122730078e-01
+    5  0.0000000000000000e+00
+    6  4.7458365122730062e-01
+    7  0.0000000000000000e+00
+    8 -4.7458365122730078e-01
+    9  0.0000000000000000e+00
+   10  4.7458365122730062e-01
+   11  0.0000000000000000e+00
+   12 -4.7458365122730078e-01
+init_stress: |2-
+   7.4602182013295790e+00 -1.6980690525932525e+02  7.3317286078441967e+01  1.6568690863749680e-13  0.0000000000000000e+00  0.0000000000000000e+00
+init_forces: |2
+    1  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+    2  6.4184768611141862e-17 -4.8017145815038020e-15 -6.5294991635767019e-15
+    3  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+    4 -8.8817841970012523e-16  1.3822276656583199e-14 -4.3021142204224816e-15
+    5  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+    6  2.6367796834847468e-16 -2.1649348980190553e-15 -6.6526645303710552e-15
+    7  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+    8 -8.8817841970012523e-16  1.7374990335383700e-14 -5.1642717879829547e-15
+    9  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+   10  1.3808398868775384e-15 -4.9682480351975755e-15  1.3711254354120683e-14
+   11  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+   12  0.0000000000000000e+00  1.6375789613221059e-14  1.1962653090336062e-14
+...

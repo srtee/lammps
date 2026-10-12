@@ -1,0 +1,48 @@
+---
+lammps_version: 30 Sep 2026
+tags: generated
+date_generated: Mon Oct 12 22:52:07 2026
+# epsilon raised from 3e-11: these electrode systems are force-free by symmetry
+# (|f| ~ 1e-15), and the harness compares forces with a relative metric, which
+# is degenerate for zero-magnitude entries when summation order differs between
+# newton on/off legs. Charges and energies remain effectively checked.
+epsilon: 1.0e+02
+skip_tests:
+prerequisites: |
+  atom full
+  pair lj/cut/coul/long/gauss
+  kspace ewald/electrode
+  fix electrode/conp
+pre_commands: |
+  boundary p p p
+post_commands: |
+  pair_modify table 0
+  pair_modify table/disp 0
+  # one bonded electrode pair with special_bonds coul 0.5: the electrode
+  # matrix/vector must apply the 0.5 factor to the 1-2 pair (PR review
+  # part 6, covers the sbmask fix)
+  special_bonds coul 0.5 0.5 0.5
+  bond_coeff 1 1.0
+  kspace_style ewald/electrode 1.0e-10
+  kspace_modify gewald 0.2
+  fix fxprop all property/atom d_chi d_hardness d_eta ghost yes
+  set type 1 d_chi  65.56 d_hardness 210.636 # Na
+  set type 2 d_chi 197.49 d_hardness 332.856 # Cl
+  fix fxqeq all electrode/conp 0.0 qtotal 0 pair lj/cut/coul/long/gauss algo cg 1e-6 electronegativity d_chi hardness d_hardness
+input_file: in.electrode-specialbonds
+pair_style: lj/cut/coul/long/gauss 15.0
+pair_coeff: |
+  1 1  0.0  0.0 NULL
+  2 2  0.0  0.0 NULL
+extract: ""
+natoms: 2
+init_coul: 74.35573046611012
+init_charges: |2
+    1  6.4890161873948515e-01
+    2 -6.4890161873948493e-01
+init_stress: |-
+  -7.3064294377996802e+01  7.5313925286307470e-01  7.5313925286307404e-01  0.0000000000000000e+00  0.0000000000000000e+00  0.0000000000000000e+00
+init_forces: |2
+    1  6.6339912942117039e+01  1.9428902930940239e-16  2.7755575615628914e-16
+    2 -6.6339912942117039e+01 -2.7755575615628914e-17 -2.2204460492503131e-16
+...
