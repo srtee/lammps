@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #include "slab_2d.h"
@@ -164,13 +164,12 @@ void Slab2d::matrix_corr(bigint *imat, double **matrix)
   for (int i = 0; i < nlocal; i++) {
     if (imat[i] < 0) continue;
     for (bigint j = 0; j < ngroup; j++) {
-      // matrix is symmetric
-      if (jmat[j] > imat[i]) continue;
+      // full-row scheme: this rank writes only its own rows; the (j,i)
+      // entry is written by j's owner
       double dij = nprd_all[j] - x[i][2];
       double aij =
           prefac * (exp(-dij * dij * g_ewald_sq) * g_ewald_inv + MY_PIS * dij * erf(dij * g_ewald));
       matrix[imat[i]][jmat[j]] -= aij;
-      if (imat[i] != jmat[j]) matrix[jmat[j]][imat[i]] -= aij;
     }
   }
 }

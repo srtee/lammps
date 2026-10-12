@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #ifndef LMP_ELECTRODE_INV_H
@@ -41,21 +41,33 @@ class ElectrodeInv : public Pointers, public ChargeSolver {
   void buffer_and_gather(double const *, double *) override;
   double vacuum_capacitance() override;    // for electrode/thermo
   double memory_use() override;
+  // fragment access for write_inv: fragment r is the row of iele_local[r]
+  const std::vector<std::vector<double>> &get_fragments() const { return cap_frag; }
+  std::vector<int> get_fragment_iele() const { return iele_local; }
+  // after setup, the full matrix is scattered into per-rank row fragments;
+  // fragment r holds the row of electrode index iele_local[r]
+  void fragmentize();
 
   // setup
-  void set_capacitance(int, double **);
-  void set_elastance(int, double **, bool);
-  void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
+  void set_capacitance(int, double **, const std::vector<int> &frag_iele);
+  int pack_row(int, double *) override;
+  int unpack_row(int, const double *) override;
+  int pack_row_size() override;
+  void set_elastance(int, double **, bool, const std::vector<int> &frag_iele);
+  virtual void setup_solver(int, std::unordered_map<tagint, int>, std::vector<int>, bool, bool);
 
- private:
+ protected:    // device variants (ElectrodeInvKokkos) build on these
   int groupbit;
   int nmax, nlocalele;
   int ngroups, nele_world;
   bigint elyt_step;
-  bool setup, cap_set, vac_cap_computed;
+  bool setup, cap_set, vac_cap_computed, fragmented;
   double evscale, macro_capacitance_sum, vac_cap;
   double *potential_i, *potential_iele, *buf_gathered;
-  double **capacitance;
+  double **capacitance;                      // full matrix during setup only
+  std::vector<std::vector<double>> cap_frag; // rows owned by this rank, nlocalele x nele_world
+  std::unordered_map<int, int> frag_row_of_iele; // iele -> cap_frag slot
+
   std::vector<double> qvec;
   std::vector<double> sb_charges;    // group charges w/o potential
   std::vector<double> group_pot;     // group potentials, set during last solve

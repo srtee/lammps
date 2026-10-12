@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #ifndef LMP_CHARGE_SOLVER_H
@@ -35,6 +35,17 @@ class ChargeSolver {
   virtual double get_macro_elastance(int, int) = 0;
   virtual void buffer_and_gather(double const *, double *) = 0;
   virtual double memory_use() = 0;
+  // matrix-row transport for atom migration: pack the row owned by local
+  // atom i; unpack a carried row for the arriving atom at index nlocal.
+  // Default no-op: only matrix algorithms hold rows. Return the number of
+  // doubles packed (0 for non-electrode atoms and non-matrix solvers).
+  virtual int pack_row(int, double *) { return 0; }
+  virtual int unpack_row(int, const double *) {}
+  virtual int pack_row_size() { return 0; }
+  // device-resident mat_inv lane: scatter the solver's device qvec into the
+  // atom device array (taglist order via the solver's imap). Default no-op:
+  // host lanes write atom->q directly.
+  virtual void scatter_device() {}
   double get_mult_time();
 
   // for electrode/thermo

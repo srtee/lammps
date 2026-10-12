@@ -12,7 +12,8 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Robert Meissner (Hereon, TUHH), Shern Tee (GU)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Robert Meissner (Hereon, TUHH),
+   Shern Tee (GU) with LLM (GLM-5.1)
 ------------------------------------------------------------------------- */
 
 #ifndef LMP_WIRE_INTEL_DIPOLE_H

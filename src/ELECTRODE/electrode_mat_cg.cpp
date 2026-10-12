@@ -12,13 +12,15 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #include "electrode_mat_cg.h"
+#include "atom.h"
 #include "comm.h"
+#include "electrode_math.h"
 #include "error.h"
-
+#include "fix_electrode_conp.h"
 #include <cassert>
 
 using namespace LAMMPS_NS;
@@ -59,7 +61,6 @@ void ElectrodeMatCG::set_elastance(int nele_world, double **elastance)
   this->elastance = elastance;
 }
 
-/* ---------------------------------------------------------------------- */
 
 void ElectrodeMatCG::setup_solver(double cg_threshold, std::unordered_map<tagint, int> tag_to_iele,
                                   int predictor_cols)
@@ -67,6 +68,15 @@ void ElectrodeMatCG::setup_solver(double cg_threshold, std::unordered_map<tagint
   assert(matrix_set);
   ElectrodeCG::setup_cg(cg_threshold, predictor_cols);
   this->tag_to_iele = tag_to_iele;
+  // NOTE: matrix fragmentation (as implemented for ElectrodeInv) is not yet
+  // enabled for the matrix-CG algorithm; the full replicated elastance is
+  // retained and ele_ele_interaction indexes it by electrode index.
+  iele_local.clear();
+  iele_local.reserve(tag_to_iele.size());
+  for (int i = 0; i < atom->nlocal; i++) {
+    auto it = tag_to_iele.find(atom->tag[i]);
+    if (it != tag_to_iele.end()) iele_local.push_back(it->second);
+  }
 }
 
 /* ---------------------------------------------------------------------- */

@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #ifdef KSPACE_CLASS
@@ -68,9 +68,17 @@ class PPPMElectrode : public PPPM, public ElectrodeKSpace {
   void start_compute();
   void make_rho_in_brick(int, FFT_SCALAR ***, bool);
   void project_psi(double *, int);
-  void one_step_multiplication(bigint *, double *, double **, double **, const int, bool);
+  void one_step_multiplication(bigint *, double *, double **, double **, const int,
+                               const FFT_SCALAR *, bool);
   void two_step_multiplication(bigint *, double *, double **, double **, const int, bool);
   void build_amesh(int, int, int, double *, double *);
+  template <int AXIS> void conv_axis(double *, const double *, int);
+  double *conv_scratch1 = nullptr;
+  double *conv_scratch2 = nullptr;
+  double *greens_real_cache = nullptr;
+  bigint greens_cache_nz = -1;    // grid dims at cache build time
+  double *gw_cache = nullptr;      // single transient gw row (brick frame)
+  int gw_cache_nxyz = -1;          // allocation size bookkeeping
   bool compute_vector_called;
 };
 

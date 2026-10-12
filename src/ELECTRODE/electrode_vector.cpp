@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #include "electrode_vector.h"
@@ -31,8 +31,11 @@
 #include "pair.h"
 
 #include <cassert>
+#include <algorithm>
 #include <cmath>
+#include <map>
 #include <exception>
+
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -51,7 +54,7 @@ ElectrodeVector::ElectrodeVector(LAMMPS *lmp, int narg, char **arg, int sensor_g
   tfflag = false;
   hardnessflag = false;
   etaflag = false;
-
+  kspace_version_ = 0;
   kspace_time_total = 0;
   pair_time_total = 0;
   boundary_time_total = 0;
@@ -82,6 +85,25 @@ int ElectrodeVector::setmask()
 }
 
 /* ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+   Re-bind the ELECTRODE kspace pointer after fix tune/kspace re-created the
+   kspace mid-run (probe styles / cutoff optimization). Bumps kspace_version_
+   so callers can drop caches derived from the old object.
+------------------------------------------------------------------------- */
+
+void ElectrodeVector::refresh_kspace()
+{
+  if (force->kspace == nullptr) return;
+  auto *new_kspace = dynamic_cast<ElectrodeKSpace *>(force->kspace);
+  if (new_kspace == nullptr)
+    error->all(FLERR, "KSpace {} does not implement ElectrodeKSpace", force->kspace_style);
+  if (new_kspace != electrode_kspace || force->kspace->g_ewald != g_ewald) {
+    electrode_kspace = new_kspace;
+    g_ewald = force->kspace->g_ewald;
+    buffers_stale = true;    // for ElVecIntel
+    kspace_version_++;
+  }
+}
 
 void ElectrodeVector::setup_general(Pair *fix_pair, class NeighList *fix_neighlist, bool pairflag,
                                     bool timer_flag)
@@ -139,6 +161,7 @@ void ElectrodeVector::setup_eta(int index)
 void ElectrodeVector::compute_pot(double *vector)
 {
   MPI_Barrier(world);
+  refresh_kspace();    // fix tune/kspace may have re-created the kspace since the last call
   double start_time = MPI_Wtime();
   // pair
   double pair_start_time = MPI_Wtime();
@@ -169,6 +192,17 @@ void ElectrodeVector::compute_pot(double *vector)
   pot = vector;
   if (force->newton_pair) comm->reverse_comm(this);
   vector = pot;
+}
+
+/* ----------------------------------------------------------------------
+   TF + hardness contributions only (pair/kspace handled elsewhere);
+   used by the KOKKOS device matvec which computes pair+kspace on device
+------------------------------------------------------------------------- */
+
+void ElectrodeVector::nonpair_contribution(double *vector)
+{
+  if (tfflag) tf_contribution(vector);
+  if (hardnessflag) hardness_contribution(vector);
 }
 
 /* ---------------------------------------------------------------------- */

@@ -571,28 +571,31 @@ void PPPMElectrodeIntel::one_step_multiplication(bigint *imat, double *greens_re
   MPI_Barrier(world);
   double step1_time = MPI_Wtime();
 
-  // precalculate rho_1d for local electrode
-  std::vector<int> j_list;
-  for (int j = 0; j < nlocal; j++) {
-    int jpos = imat[j];
-    if (jpos < 0) continue;
-    j_list.push_back(j);
+  // full-row scheme: this rank fills only the rows of its own electrode
+  // atoms (all j per row); no parity skip, no mirror writes
+  std::vector<int> i_list;
+  for (int i = 0; i < nlocal; i++) {
+    int const ipos = imat[i];
+    if (ipos >= 0) i_list.push_back(ipos);
   }
-  int const nj_local = j_list.size();
+  std::sort(i_list.begin(), i_list.end());
 
-  FFT_SCALAR ***rho1d_j;
-  memory->create(rho1d_j, nj_local, 3, order, "pppm/electrode:rho1d_j");
+  // rho_1d of ALL electrode atoms in iele order: each rank fills its local
+  // atoms' entries, an Allreduce reassembles the global table
+  int const order3 = 3 * order;
+  std::vector<FFT_SCALAR> rho1d_j(nmat * order3, ZEROF);
 
   _alignvar(FFT_SCALAR rho[3][INTEL_P3M_ALIGNED_MAXORDER], 64) = {0};
 
-  for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
-    int j = j_list[jlist_pos];
-    int njx = part2grid[j][0];
-    int njy = part2grid[j][1];
-    int njz = part2grid[j][2];
-    FFT_SCALAR const djx = njx + shiftone - (x[j][0] - boxlo[0]) * delxinv;
-    FFT_SCALAR const djy = njy + shiftone - (x[j][1] - boxlo[1]) * delyinv;
-    FFT_SCALAR const djz = njz + shiftone - (x[j][2] - boxlo[2]) * delzinv;
+  for (int i = 0; i < nlocal; i++) {
+    int const jpos = imat[i];
+    if (jpos < 0) continue;
+    int const njx = static_cast<int>((x[i][0] - boxlo[0]) * delxinv + shift) - OFFSET;
+    int const njy = static_cast<int>((x[i][1] - boxlo[1]) * delyinv + shift) - OFFSET;
+    int const njz = static_cast<int>((x[i][2] - boxlo[2]) * delzinv + shift) - OFFSET;
+    FFT_SCALAR const djx = njx + shiftone - (x[i][0] - boxlo[0]) * delxinv;
+    FFT_SCALAR const djy = njy + shiftone - (x[i][1] - boxlo[1]) * delyinv;
+    FFT_SCALAR const djz = njz + shiftone - (x[i][2] - boxlo[2]) * delzinv;
     if (_use_table) {
       int idx = (int) (djx * half_rho_scale + half_rho_scale_plus);
       int idy = (int) (djy * half_rho_scale + half_rho_scale_plus);
@@ -624,9 +627,10 @@ void PPPMElectrodeIntel::one_step_multiplication(bigint *imat, double *greens_re
       }
     }
     for (int dim = 0; dim < 3; dim++) {
-      for (int oi = 0; oi < order; oi++) { rho1d_j[jlist_pos][dim][oi] = rho[dim][oi]; }
+      for (int oi = 0; oi < order; oi++) { rho1d_j[jpos * order3 + dim * order + oi] = rho[dim][oi]; }
     }
   }
+  MPI_Allreduce(MPI_IN_PLACE, rho1d_j.data(), nmat * order3, MPI_FFT_SCALAR, MPI_SUM, world);
 
   // nested loops over weights of electrode atoms i and j
   // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
@@ -635,7 +639,7 @@ void PPPMElectrodeIntel::one_step_multiplication(bigint *imat, double *greens_re
   int const order2 = INTEL_P3M_ALIGNED_MAXORDER * INTEL_P3M_ALIGNED_MAXORDER;
   int const order6 = order2 * order2 * order2;
   _alignvar(double amesh[order6], 64) = {0};
-  for (int ipos = 0; ipos < nmat; ipos++) {
+  for (int ipos : i_list) {
     double *_noalias xi_ele = x_ele[ipos];
     // new calculation for nx, ny, nz because part2grid available for nlocal,
     // only
@@ -678,31 +682,35 @@ void PPPMElectrodeIntel::one_step_multiplication(bigint *imat, double *greens_re
     int njx = -1;
     int njy = -1;
     int njz = -1;    // force initial build_amesh
-    for (int jlist_pos = 0; jlist_pos < nj_local; jlist_pos++) {
-      int j = j_list[jlist_pos];
-      int jpos = imat[j];
-      if ((ipos < jpos) == !((ipos - jpos) % 2)) continue;
-      double aij = 0.;
-      if (njx != part2grid[j][0] || njy != part2grid[j][1] || njz != part2grid[j][2]) {
-        njx = part2grid[j][0];
-        njy = part2grid[j][1];
-        njz = part2grid[j][2];
+    for (int jpos = 0; jpos < nmat; jpos++) {
+      double *_noalias xj_ele = x_ele[jpos];
+      int const njx_new = static_cast<int>((xj_ele[0] - boxlo[0]) * delxinv + shift) - OFFSET;
+      int const njy_new = static_cast<int>((xj_ele[1] - boxlo[1]) * delyinv + shift) - OFFSET;
+      int const njz_new = static_cast<int>((xj_ele[2] - boxlo[2]) * delzinv + shift) - OFFSET;
+      if (njx != njx_new || njy != njy_new || njz != njz_new) {
+        njx = njx_new;
+        njy = njy_new;
+        njz = njz_new;
         build_amesh(njx - nix, njy - niy, njz - niz, amesh, greens_real);
       }
+      const FFT_SCALAR *rho_j[3] = {&rho1d_j[jpos * order3],
+                                    &rho1d_j[jpos * order3 + order],
+                                    &rho1d_j[jpos * order3 + 2 * order]};
+      double aij = 0.;
       int ind_amesh = 0;
       for (int ni = 0; ni < order; ni++) {
         FFT_SCALAR const iz0 = rho[2][ni];
         for (int nj = 0; nj < order; nj++) {
-          FFT_SCALAR const jz0 = rho1d_j[jlist_pos][2][nj];
+          FFT_SCALAR const jz0 = rho_j[2][nj];
           for (int mi = 0; mi < order; mi++) {
             FFT_SCALAR const iy0 = iz0 * rho[1][mi];
             for (int mj = 0; mj < order; mj++) {
-              FFT_SCALAR const jy0 = jz0 * rho1d_j[jlist_pos][1][mj];
+              FFT_SCALAR const jy0 = jz0 * rho_j[1][mj];
               for (int li = 0; li < order; li++) {
                 FFT_SCALAR const ix0 = iy0 * rho[0][li];
                 double aij_xscan = 0.;
                 for (int lj = 0; lj < order; lj++) {
-                  aij_xscan += amesh[ind_amesh] * rho1d_j[jlist_pos][0][lj];
+                  aij_xscan += amesh[ind_amesh] * rho_j[0][lj];
                   ind_amesh++;
                 }
                 aij += (double) ix0 * jy0 * aij_xscan;
@@ -711,12 +719,11 @@ void PPPMElectrodeIntel::one_step_multiplication(bigint *imat, double *greens_re
           }
         }
       }
+      // full-row scheme: the (j,i) entry is written by j's owner
       matrix[ipos][jpos] += aij / volume;
-      if (ipos != jpos) matrix[jpos][ipos] += aij / volume;
     }
   }
   MPI_Barrier(world);
-  memory->destroy(rho1d_j);
   if (timer_flag && (comm->me == 0))
     utils::logmesg(lmp, "Single step time: {:.4g} s\n", MPI_Wtime() - step1_time);
 }

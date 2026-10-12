@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #include "slab_dipole.h"
@@ -139,10 +139,10 @@ void SlabDipole::matrix_corr(bigint *imat, double **matrix)
   for (int i = 0; i < nlocal; i++) {
     if (imat[i] < 0) continue;
     for (bigint j = 0; j < ngroup; j++) {
-      if (jmat[j] > imat[i]) continue;    // matrix is symmetric
+      // full-row scheme: this rank writes only its own rows; the (j,i)
+      // entry is written by j's owner
       double aij = prefac * x[i][2] * nprd_all[j];
       matrix[imat[i]][jmat[j]] += aij;
-      if (imat[i] != jmat[j]) matrix[jmat[j]][imat[i]] += aij;
     }
   }
 }

@@ -12,13 +12,17 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #ifndef LMP_ELECTRODE_KSPACE_H
 #define LMP_ELECTRODE_KSPACE_H
 
-#include "boundary_correction.h"
+#ifdef LMP_KOKKOS
+#include "kokkos_type.h"
+#endif
+#include <stdexcept>
+
 #include "lmptype.h"
 
 namespace LAMMPS_NS {
@@ -28,11 +32,11 @@ class ElectrodeKSpace {
   // Cannot use =default here because of broken GCC 8 on RHEL 8
   virtual ~ElectrodeKSpace() noexcept(false) {} // NOLINT
   // clang-format on
-
   virtual void compute_vector(double *, int, int, bool) = 0;
   virtual void compute_vector_corr(double *, int, int, bool) = 0;
   virtual void compute_matrix(bigint *, double **, bool) = 0;
   virtual void compute_matrix_corr(bigint *, double **) = 0;
+
 };
 }    // namespace LAMMPS_NS
 
