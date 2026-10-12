@@ -60,9 +60,11 @@ class PairLJCutCoulLongGauss : public Pair, public ElectrodePair {
   double g_ewald;
 
   virtual void allocate();
- private:
-  bool already_warned;
+ protected:
+  // KK variants call this from their ElectrodePair entries (cached per groupbit)
   void point_in_sensor_warning(int);
+ private:
+  int warned_groupbit;    // sensor-group check: last groupbit examined
 };
 
 }    // namespace LAMMPS_NS

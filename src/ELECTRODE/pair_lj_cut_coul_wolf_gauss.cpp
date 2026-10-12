@@ -43,7 +43,7 @@ PairLJCutCoulWolfGauss::PairLJCutCoulWolfGauss(LAMMPS *lmp) : Pair(lmp)
   ncoultablebits = 0;
   single_enable = 0;
   writedata = 1;
-  already_warned = false;
+  warned_groupbit = -1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -171,7 +171,6 @@ void PairLJCutCoulWolfGauss::compute(int eflag, int vflag)
           }
           if (factor_coul < 1.0) {
             forcecoul -= (1.0 - factor_coul) * prefactor * (1.0 - forcecorr);
-            if (gausscorr) {}
           }
         } else
           forcecoul = 0.0;
@@ -235,7 +234,10 @@ void PairLJCutCoulWolfGauss::allocate()
   memory->create(epsilon, n + 1, n + 1, "pair:epsilon");
   memory->create(sigma, n + 1, n + 1, "pair:sigma");
   memory->create(ispoint, n + 1, "pair:ispoint");
+  for (int i = 1; i <= n; i++) ispoint[i] = 0;
   memory->create(eta, n + 1, n + 1, "pair:eta");
+  for (int i = 1; i <= n; i++)
+    for (int j = 1; j <= n; j++) eta[i][j] = 0.0;
   memory->create(eshift_eta, n + 1, n + 1, "pair:eshift_eta");
   memory->create(fshift_eta, n + 1, n + 1, "pair:fshift_eta");
   memory->create(lj1, n + 1, n + 1, "pair:lj1");
@@ -251,7 +253,7 @@ void PairLJCutCoulWolfGauss::allocate()
 
 void PairLJCutCoulWolfGauss::settings(int narg, char **arg)
 {
-  if (narg < 2 || narg > 3) error->all(FLERR, "Illegal pair_style command");
+  if (narg < 2 || narg > 3) error->all(FLERR, "Illegal pair_style lj/cut/coul/wolf/gauss command");
 
   alpha = utils::numeric(FLERR, arg[0], false, lmp);
   cut_lj_global = utils::numeric(FLERR, arg[1], false, lmp);
@@ -454,6 +456,7 @@ void PairLJCutCoulWolfGauss::compute_vector(double *vec, int groupbit, int sourc
     int *jlist = firstneigh[i];
     int jnum = numneigh[i];
     for (int jj = 0; jj < jnum; jj++) {
+      const double factor_coul = special_coul[sbmask(jlist[jj])];
       const int j = jlist[jj] & NEIGHMASK;
       bool const j_in_sensor = (mask[j] & groupbit);
       bool const j_in_source = !!(mask[j] & source_grpbit) != inv;
@@ -465,8 +468,7 @@ void PairLJCutCoulWolfGauss::compute_vector(double *vec, int groupbit, int sourc
       double const delz = ztmp - x[j][2];
       double const rsq = delx * delx + dely * dely + delz * delz;
       int jtype = type[j];
-      if (rsq >= cutsq[itype][jtype]) continue;
-      double const factor_coul = special_coul[sbmask(j)];
+      if (rsq >= cut_coulsq) continue;
       double const r = sqrt(rsq);
       double const rinv = 1.0 / r;
       double aij = rinv * ElectrodeMath::safe_erfc(alpha * r) - e_shift;
@@ -549,6 +551,7 @@ void PairLJCutCoulWolfGauss::compute_matrix(bigint *mpos, double **array, int gr
     // real-space part of matrix is symmetric
     for (int jj = 0; jj < jnum; jj++) {
       int j = jlist[jj];
+      const double factor_coul = special_coul[sbmask(j)];
       j &= NEIGHMASK;
       if (!(mask[j] & groupbit)) continue;
 
@@ -558,8 +561,7 @@ void PairLJCutCoulWolfGauss::compute_matrix(bigint *mpos, double **array, int gr
       double const rsq = delx * delx + dely * dely + delz * delz;
       const int jtype = type[j];
 
-      if (rsq < cutsq[itype][jtype]) {
-        double const factor_coul = special_coul[sbmask(j)];
+      if (rsq < cut_coulsq) {
         double const r = sqrt(rsq);
         double const rinv = 1.0 / r;
         double aij = rinv * ElectrodeMath::safe_erfc(alpha * r) - e_shift;
@@ -750,14 +752,17 @@ void *PairLJCutCoulWolfGauss::extract(const char *str, int &dim)
 
 void PairLJCutCoulWolfGauss::point_in_sensor_warning(int groupbit)
 {
-  if (already_warned) return;
+  if (warned_groupbit == groupbit) return;
+  warned_groupbit = groupbit;
   int point_in_sensor = 0;
   for (int i = 0; i < atom->nlocal; i++) {
     if (!!ispoint[atom->type[i]] && (atom->mask[i] & groupbit)) point_in_sensor++;
   }
   MPI_Allreduce(MPI_IN_PLACE, &point_in_sensor, 1, MPI_INT, MPI_SUM, world);
   if (point_in_sensor) {
-    if (comm->me == 0) error->warning(FLERR, "Point charges are used in sensor group");
-    already_warned = true;
+    if (comm->me == 0)
+      error->warning(FLERR,
+                     "Point charges are used in an electrode group; fix electrode QEq/CPM "
+                     "expects Gaussian charge distributions on electrode atoms");
   }
 }

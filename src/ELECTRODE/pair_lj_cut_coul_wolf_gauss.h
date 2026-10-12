@@ -60,9 +60,12 @@ class PairLJCutCoulWolfGauss : public Pair, public ElectrodePair {
 
   virtual void allocate();
 
- private:
-  bool already_warned;
+ protected:
+  // KK variants call this from their ElectrodePair entries (cached per groupbit)
   void point_in_sensor_warning(int);
+
+ private:
+  int warned_groupbit;    // sensor-group check: last groupbit examined
   double compl_error_func(double, double);
 };
 

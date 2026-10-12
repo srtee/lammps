@@ -45,7 +45,7 @@ double ElectrodeMatCG::memory_use()
 {
   double bytes = ElectrodeCG::memory_use();
   bytes += qele_world.capacity() * sizeof(double);
-  bytes += iele_local.capacity() * sizeof(double);
+  bytes += iele_local.capacity() * sizeof(int);
   bytes += tag_to_iele.bucket_count() * (sizeof(tagint) + sizeof(int));    // TODO check
   return bytes;
 }

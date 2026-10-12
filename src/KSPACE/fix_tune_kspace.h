@@ -60,6 +60,7 @@ class FixTuneKspace : public Fix {
   std::vector<double> test_times;         // time per step for each tested kspace style
   double pair_cut_coul;
   std::string acc_str;
+  double ewald_time = 0.0, pppm_time = 0.0, msm_time = 0.0;    // electrode probe timings
   std::string kspace_style;
   std::string pair_style;
   std::string base_pair_style;

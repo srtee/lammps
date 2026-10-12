@@ -40,11 +40,6 @@ void dgetrs_(const char *TRANS, const int *N, const int *NRHS, double *A, const 
              const int *IPIV, double *B, const int *LDB, int *INFO);
 }
 
-#if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
-extern "C" void MKL_Set_Num_Threads(int nth);
-extern "C" int MKL_Get_Max_Threads(void);
-#endif
-
 ElectrodeInv::ElectrodeInv(LAMMPS *lmp) : Pointers(lmp), ChargeSolver()
 {
   setup = cap_set = vac_cap_computed = fragmented = false;
@@ -107,14 +102,7 @@ void ElectrodeInv::set_elastance(int nele_world, double **elastance, bool timer_
   std::vector<int> ipiv(nele_world);
 
   int info_rf;
-#if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
-  int mkl_threads = MKL_Get_Max_Threads();
-  MKL_Set_Num_Threads(1);
-#endif
   dgetrf_(&m, &n, &capacitance[0][0], &lda, ipiv.data(), &info_rf);
-#if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
-  MKL_Set_Num_Threads(mkl_threads);
-#endif
   if (info_rf != 0) error->all(FLERR, "CONP matrix factorization failed!");
 
   // S3.1: each rank solves A^T x = e_i for its OWNED rows i (dgetrs,
@@ -774,15 +762,8 @@ void ElectrodeInv::compute_macro_matrices(bool symm)
         }
       }
       int info_rf, info_ri;
-#if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
-      int mkl_threads = MKL_Get_Max_Threads();
-      MKL_Set_Num_Threads(1);
-#endif
       dgetrf_(&m, &n, tmp.data(), &lda, ipiv.data(), &info_rf);
       dgetri_(&n, tmp.data(), &lda, ipiv.data(), work.data(), &lwork, &info_ri);
-#if defined(FFT_MKL) || defined(FFT_MKL_THREADS)
-      MKL_Set_Num_Threads(mkl_threads);
-#endif
       if (info_rf != 0 || info_ri != 0)
         error->all(FLERR, "ELECTRODE macro matrix inversion failed!");
       for (int i = 0; i < ngroups; i++) {

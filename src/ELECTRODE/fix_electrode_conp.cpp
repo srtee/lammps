@@ -323,7 +323,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   // running the default mat_inv algo. Everything else (host styles, mat_cg,
   // cg) keeps the host solve; an explicit device keyword always wins.
   if (!device_set)
-    device_solve = utils::strmatch(style, "/kk$") && algo == Algo::MATRIX_INV;
+    device_solve = utils::strmatch(style, "/kk$");
 
 
   if (symm) {
@@ -511,11 +511,10 @@ void FixElectrodeConp::init()
   if (utils::strmatch(update->integrate_style, "^respa"))
     error->all(FLERR, Error::NOLASTLINE, "Fix {} is not compatible with run_style respa", style);
 
-  // device solve only exists on the Kokkos device-lane mat_inv; the
-  // conditional default (set after arg parsing) already respected this
+  // device-resident solvers exist for mat_inv, cg, and mat_cg on the
+  // Kokkos device lane; the conditional default (set after arg parsing)
+  // already respected this
   if (device_solve) {
-    if (algo != Algo::MATRIX_INV)
-      error->all(FLERR, "Fix {} device on requires algo mat_inv", style);
     if (!utils::strmatch(style, "/kk$"))
       error->all(FLERR, "Fix {} device on requires the device-lane fix style electrode/conp/kk", style);
   }
@@ -586,7 +585,10 @@ void FixElectrodeConp::init()
   }
   // matrix path: occasional full newton-off list so the owner of
   // electrode row i sees every partner j within cutoff (enabler for
-  // row-sharded matrix builds)
+  // row-sharded matrix builds). This list serves the matrix build ONLY;
+  // the b vector and forces run on their own plain list below, since
+  // pair_contribution assumes one traversal per unordered pair and needs
+  // electrode-electrolyte pairs (the matrix list skips both).
   // cg path: the mat list doubles as elec_vector's pair list; it must be
   // perpetual (built each step) and half (pair_contribution assumes one
   // traversal per unordered pair)
@@ -596,16 +598,22 @@ void FixElectrodeConp::init()
     Req->set_skip(iskip_mat, ijskip_mat);
     Req->set_id(1);
     if (intelflag) Req->enable_intel();
+    // plain list for the b vector and electrode/electrolyte reaction forces
+    auto *vecReq = neighbor->add_request(this);
+    vecReq->set_id(2);
+    if (intelflag) vecReq->enable_intel();
   } else {
+    delete[] iskip_mat;
+    memory->destroy(ijskip_mat);
     auto *Req = neighbor->add_request(this);
-    Req->set_skip(iskip_mat, ijskip_mat);
     Req->set_id(1);
     if (intelflag) Req->enable_intel();
   }
-  if ((need_elec_vector && cg_device_needs_full_list()) || device_mat_inv()) {
-    // device matvec (device-CG or device-resident mat_inv): perpetual
-    // type-skipped full newton-off list. Rows are electrode types only
-    // (~8x fewer pair iterations than a full list); columns are ANY type
+  if ((need_elec_vector && cg_device_needs_full_list()) || device_resident()) {
+    // device matvec or device-resident solve (mat_inv / device-CG / device
+    // mat-CG): perpetual type-skipped full newton-off list. Rows are
+    // electrode types only (~8x fewer pair iterations than a full list);
+    // columns are ANY type
     // -- the b-assembly kernel sums electrolyte neighbors of electrode
     // atoms, so an electrode-electrode column filter (as the matrix list
     // uses) would drop every electrode-electrolyte pair term. NPairSkipKokkos
@@ -640,6 +648,13 @@ void FixElectrodeConp::init_list(int id, NeighList *ptr)
       vec_neighlist = ptr;
     else if (id == 3)
       force_neighlist = ptr;
+  } else if (matrix_algo) {
+    // matrix build on the occasional full list, b vector and forces on the
+    // plain half list
+    if (id == 1)
+      mat_neighlist = ptr;
+    else if (id == 2)
+      vec_neighlist = force_neighlist = ptr;
   } else
     mat_neighlist = vec_neighlist = force_neighlist = ptr;
 }
@@ -734,7 +749,7 @@ void FixElectrodeConp::setup_post_neighbor()
   // sensor/source bits for the device b-assembly and must pair with the
   // full newton-off device list, not the id-2 half list
   elyt_vector->setup_general(
-      pair, device_mat_inv() && algo == Algo::MATRIX_INV ? cg_kk_neighlist : vec_neighlist,
+      pair, device_resident() && algo != Algo::CG ? cg_kk_neighlist : vec_neighlist,
       pairflag, timer_flag);
   if (etapropflag) elyt_vector->setup_eta(eta_index);
   if (need_elec_vector) {
@@ -799,7 +814,8 @@ void FixElectrodeConp::setup_post_neighbor()
       break;
     }
     case Algo::MATRIX_CG: {
-      ElectrodeMatCG *mat_cg = new ElectrodeMatCG(lmp);
+      ElectrodeMatCG *mat_cg = new_mat_cg_solver();
+      if (mat_cg == nullptr) mat_cg = new ElectrodeMatCG(lmp);
       mat_cg->set_elastance(ngroup, matrix);
       mat_cg->setup_solver(cg_threshold, electrode_taglist->get_tag_to_iele(), predictor_cols);
       charge_solver = mat_cg;
@@ -854,7 +870,11 @@ void FixElectrodeConp::setup_post_neighbor()
       electrode_taglist->write_to_file(output_file_inv, matrix);
     }
   }
-  if (matrix != nullptr) {
+  // algo MATRIX_CG aliases the replicated matrix for the solver's lifetime
+  // (ElectrodeMatCG::set_elastance stores the pointer); destroying it here
+  // left the solver reading freed memory -- a latent crash that surfaced
+  // only after enough allocator churn (the fix dtor still frees it)
+  if (matrix != nullptr && algo != Algo::MATRIX_CG) {
     memory->destroy(matrix);
     matrix = nullptr;
   }
@@ -951,7 +971,7 @@ void FixElectrodeConp::update_charges()
   double tg = MPI_Wtime();
   gather_list_iele();
   t_gather += MPI_Wtime() - tg;
-  if (!device_mat_inv()) {
+  if (!device_resident()) {
     memset(potential_i, 0., atom->nmax * sizeof(double));
     elyt_vector->compute_pot(potential_i);
     if (enflag) add_electronegativity(potential_i);
@@ -1026,7 +1046,8 @@ void FixElectrodeConp::rebuild_matrix()
       break;
     }
     case Algo::MATRIX_CG: {
-      auto *mat_cg = new ElectrodeMatCG(lmp);
+      auto *mat_cg = new_mat_cg_solver();
+      if (mat_cg == nullptr) mat_cg = new ElectrodeMatCG(lmp);
       mat_cg->set_elastance(ngroup, matrix);
       mat_cg->setup_solver(cg_threshold, electrode_taglist->get_tag_to_iele(), predictor_cols);
       charge_solver = mat_cg;
@@ -1338,12 +1359,15 @@ void FixElectrodeConp::request_etypes_neighlists()
     for (int jtype : etypes) ijskip_mat[etype][jtype] = 0;
   }
   // now, iskip_mat[itype] == 0 iff etype
-  // set ijskip_vec[itype][jtype] == 0 if (i is etype XOR j is etype)
+  // vec list must also carry electrode-electrode pairs: ElectrodeVector's
+  // matvec has source == sensor == electrode group for CPM/QEq, so its
+  // mask filters drop nothing that matters while a missing electrode-
+  // electrode pair silently drops the dominant eta-pair term. Only the
+  // electrolyte-electrolyte rows/columns are dead weight for the vector.
   for (int itype = 1; itype <= ntypes; ++itype) {
     for (int jtype = 1; jtype <= ntypes; ++jtype) {
-      bool ele_and_sol = (iskip_mat[itype] != iskip_mat[jtype]);
-      ijskip_vec[itype][jtype] = ele_and_sol ? 0 : 1;
       bool ele = !iskip_mat[itype] || !iskip_mat[jtype];    // skip only electrolyte-electrolyte
+      ijskip_vec[itype][jtype] = (ele) ? 0 : 1;
       ijskip_force[itype][jtype] = (ele) ? 0 : 1;
     }
   }
@@ -1481,6 +1505,12 @@ double FixElectrodeConp::memory_usage()
   bytes += nmax * (sizeof(double));    // potential_i
   bytes += taglist_local.capacity() * sizeof(tagint);
   bytes += iele_to_group_local.capacity() * sizeof(int);
+  // N x N elastance/capacitance matrix: allocated (and destroyed) by this
+  // fix; ElectrodeInv drops its alias after fragmenting, ElectrodeMatCG
+  // only aliases, so count it here exactly once while it exists
+  if (matrix != nullptr)
+    bytes += static_cast<double>(ngroup) * ngroup * sizeof(double) +
+        ngroup * sizeof(double *);
   return bytes;
 }
 

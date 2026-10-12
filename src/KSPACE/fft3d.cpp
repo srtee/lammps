@@ -31,9 +31,6 @@
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
-#if defined(FFT_MKL)
-extern "C" void MKL_Set_Num_Threads(int nth);
-#endif
 
 #ifdef FFT_KISS
 /* include kissfft implementation */
@@ -497,7 +494,7 @@ struct fft_plan_3d *fft_3d_create_plan(
   DftiSetValue(plan->handle_fast, DFTI_INPUT_DISTANCE, (MKL_LONG)nfast);
   DftiSetValue(plan->handle_fast, DFTI_OUTPUT_DISTANCE, (MKL_LONG)nfast);
 #if defined(FFT_MKL_THREADS)
-  DftiSetValue(plan->handle_fast, DFTI_NUMBER_OF_USER_THREADS, 1);
+  DftiSetValue(plan->handle_fast, DFTI_NUMBER_OF_USER_THREADS, nthreads);
 #endif
   DftiCommitDescriptor(plan->handle_fast);
 
@@ -509,7 +506,7 @@ struct fft_plan_3d *fft_3d_create_plan(
   DftiSetValue(plan->handle_mid, DFTI_INPUT_DISTANCE, (MKL_LONG)nmid);
   DftiSetValue(plan->handle_mid, DFTI_OUTPUT_DISTANCE, (MKL_LONG)nmid);
 #if defined(FFT_MKL_THREADS)
-  DftiSetValue(plan->handle_mid, DFTI_NUMBER_OF_USER_THREADS, 1);
+  DftiSetValue(plan->handle_mid, DFTI_NUMBER_OF_USER_THREADS, nthreads);
 #endif
   DftiCommitDescriptor(plan->handle_mid);
 
@@ -521,13 +518,9 @@ struct fft_plan_3d *fft_3d_create_plan(
   DftiSetValue(plan->handle_slow, DFTI_INPUT_DISTANCE, (MKL_LONG)nslow);
   DftiSetValue(plan->handle_slow, DFTI_OUTPUT_DISTANCE, (MKL_LONG)nslow);
 #if defined(FFT_MKL_THREADS)
-  DftiSetValue(plan->handle_slow, DFTI_NUMBER_OF_USER_THREADS, 1);
+  DftiSetValue(plan->handle_slow, DFTI_NUMBER_OF_USER_THREADS, nthreads);
 #endif
   DftiCommitDescriptor(plan->handle_slow);
-
-#if defined(FFT_MKL)
-  MKL_Set_Num_Threads(1);
-#endif
 
 #elif defined(FFT_FFTW3) || defined(FFT_NVPL)
 #if defined(FFT_FFTW_THREADS)

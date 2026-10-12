@@ -34,6 +34,7 @@ namespace LAMMPS_NS {
 // forward decls
 
 class ChargeSolver;
+class ElectrodeMatCG;
 class ElectrodeCG;
 class ElectrodeTaglist;
 class ElectrodeInv;
@@ -62,10 +63,13 @@ class FixElectrodeConp : public Fix {
   double memory_usage() override;
   void post_constructor() override;    // used by ffield to set up fix efield
   virtual void set_charges(std::vector<double>); // used by ElectrodeCG
-  // accelerator variants (KOKKOS): device CG uses a full newton-off matvec
+
+  // device-lane matrix-CG solver; base (and host KK) return nullptr = host solver
   // list; base CG keeps the default half list
   virtual bool cg_device_needs_full_list() const { return false; }
   virtual ElectrodeCG *new_cg_solver();
+  // device-lane matrix-CG solver; base (and host KK) return nullptr = host solver
+  virtual ElectrodeMatCG *new_mat_cg_solver() { return nullptr; }
   // KK variant builds an ElectrodeInvKokkos here; base builds the host solver
   virtual ElectrodeInv *new_inv_solver();
   virtual void rebuild_matrix();    // rebuild kspace-derived matrix + solver (fix tune/kspace)
@@ -86,11 +90,11 @@ class FixElectrodeConp : public Fix {
   // it; under the KK device exchange/sort pipeline the device views are
   // authoritative between force computations
   inline virtual void host_data_sync(uint64_t) {}
-  // device mat_inv solve (KK variant): default off; the kk fix builds an
-  // ElectrodeInvKokkos and overrides these three. device_elyt_vector() gates
+  // device-resident solve (KK variant): mat_inv, device CG, or device mat-CG;
+  // default off. The KK fix overrides these three. device_elyt_vector() gates
   // the id-4 full newton-off neighbor list; device_elyt_group() gives the
   // sensor-group bits the device b-assembly kernels need.
-  inline virtual bool device_mat_inv() const { return false; }
+  inline virtual bool device_resident() const { return false; }
   inline virtual ElectrodeVector *device_elyt_vector() const { return nullptr; }
   inline virtual int device_elyt_group() const { return 0; }
   // en_index accessor for the device b-assembly (host en correction)

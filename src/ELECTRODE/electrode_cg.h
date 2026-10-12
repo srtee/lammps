@@ -68,10 +68,17 @@ class ElectrodeCG : public Pointers, public ChargeSolver {
   void predict_q();
 
 private:
+  bool setup;
+  int predictor_index;    // property/atom array of ASPC prior charges (host path)
+
+protected:
+  // device-resident subclasses (ElectrodeCGDeviceKokkos) drive these directly:
+  // the ASPC ramp, rhs vector, and cached matvec are solver state shared by
+  // the host and device recurrences
   long nstep, ncall;
   bigint elyt_step;
-  bool setup, a_cached_flag;
-  int predictor_index, predictor_cols, predictor_count;
+  bool a_cached_flag;
+  int predictor_cols, predictor_count;
   std::vector<std::vector<double>> predictor_weights;
   std::vector<double> bvec, a_cached;
 

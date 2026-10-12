@@ -121,9 +121,6 @@ double PairLJCutCoulLongGaussKokkos<DeviceType>::init_one(int i, int j)
 template<class DeviceType>
 void PairLJCutCoulLongGaussKokkos<DeviceType>::build_device_tables()
 {
-  static thread_local bool built = false;
-  if (built) return;
-  built = true;
   int n = atom->ntypes;
 
   d_cutsq = typename AT::t_kkfloat_2d("pair:cutsq", n + 1, n + 1);
@@ -213,6 +210,8 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
   if (!ipoint && EVFLAG && eflag) {
     const KK_FLOAT e = qqrd2e_kk * d_eta_ii(itype) / static_cast<KK_FLOAT>(MY_PIS) * qtmp * qtmp;
     ev.ecoul += static_cast<KK_ACC_FLOAT>(e) * half_factor;
+    // self energy belongs entirely to i (host ev_tally(i, i, ...) convention)
+    if (eflag_atom) Kokkos::atomic_add(&d_eatom(i), static_cast<KK_ACC_FLOAT>(e));
   }
 
   KK_ACC_FLOAT fxtmp = 0.0;
@@ -243,7 +242,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       KK_FLOAT ecoul = 0.0;
       KK_FLOAT erfc_eta = 0.0;
       KK_FLOAT forcecorr = 0.0;
-      if (rsq < cut_coulsq) {
+      if (rsq < cut_coulsq_kk) {
         const KK_FLOAT r = Kokkos::sqrt(rsq);
         const KK_FLOAT grij = g_ewald_kk * r;
         const KK_FLOAT expm2 = Kokkos::exp(-grij * grij);
@@ -306,8 +305,18 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
       }
 
       if (EVFLAG) {
-        if (eflag) ev.ecoul += ecoul * jhalf;
-        ev.evdwl += evdwl * factor_lj * jhalf;
+        if (eflag) {
+          ev.ecoul += ecoul * jhalf;
+          ev.evdwl += evdwl * factor_lj * jhalf;
+          // per-atom split: half to each end (NEIGHFLAG is HALFTHREAD here,
+          // never FULL, so no !FULL guard is needed on the j side)
+          if (eflag_atom) {
+            const KK_ACC_FLOAT epairhalf = static_cast<KK_ACC_FLOAT>(
+                static_cast<KK_FLOAT>(0.5) * (ecoul + evdwl * factor_lj));
+            Kokkos::atomic_add(&d_eatom(i), epairhalf);
+            if (NEWTON_PAIR || j < nlocal) Kokkos::atomic_add(&d_eatom(j), epairhalf);
+          }
+        }
         if (vflag_either) {
           const KK_FLOAT vfx = delx * fpair;
           const KK_FLOAT vfy = dely * fpair;
@@ -321,16 +330,18 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
             ev.v[5] += jhalf * vfy * delz;
           }
           if (vflag_atom) {
-            const int voff = EVFLAG == 0 ? 0 : 0;    // placeholder, per-atom via d_vatom below
-            (void) voff;
-            if (i < nlocal) {
-              d_vatom(i, 0) += static_cast<KK_ACC_FLOAT>(jhalf * vfx * delx);
-              d_vatom(i, 1) += static_cast<KK_ACC_FLOAT>(jhalf * vfy * dely);
-              d_vatom(i, 2) += static_cast<KK_ACC_FLOAT>(jhalf * vfz * delz);
-              d_vatom(i, 3) += static_cast<KK_ACC_FLOAT>(jhalf * vfx * dely);
-              d_vatom(i, 4) += static_cast<KK_ACC_FLOAT>(jhalf * vfx * delz);
-              d_vatom(i, 5) += static_cast<KK_ACC_FLOAT>(jhalf * vfy * delz);
-            }
+            // per-atom virial: half weight to each end (i is always a local
+            // row); mirrors PairKokkos::ev_tally's vflag_atom branch
+            const KK_ACC_FLOAT v6[6] = {
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * delx),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfy * dely),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfz * delz),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * dely),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * delz),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfy * delz)};
+            for (int n = 0; n < 6; n++) Kokkos::atomic_add(&d_vatom(i, n), v6[n]);
+            if (NEWTON_PAIR || j < nlocal)
+              for (int n = 0; n < 6; n++) Kokkos::atomic_add(&d_vatom(j, n), v6[n]);
           }
         }
       }
@@ -445,6 +456,15 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
 
   if (vflag_fdotr) pair_virial_fdotr_compute(this);
 
+  if (eflag_atom) {
+    k_eatom.modify<DeviceType>();
+    k_eatom.sync_host();
+  }
+  if (vflag_atom) {
+    k_vatom.modify<DeviceType>();
+    k_vatom.sync_host();
+  }
+
   copymode = 0;
 }
 
@@ -460,6 +480,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector(double *vec, int g
                                                               int source_grpbit, bool inv)
 {
   build_device_tables();
+  point_in_sensor_warning(groupbit);
   // the kernels read the nlocal/newton_pair members; keep them current
   // (neither compute() nor compute_matrix() may have run yet)
   nlocal = atom->nlocal;
@@ -544,8 +565,9 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
 
   KK_ACC_FLOAT vtmp = 0.0;
   const int jnum = d_numneigh[i];
-  for (int jj = 0; jj < jnum; jj++) {
+    for (int jj = 0; jj < jnum; jj++) {
     int j = d_neighbors(i, jj);
+    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
     j &= NEIGHMASK;
     const bool j_in_sensor = (mask(j) & vec_groupbit);
     const bool j_in_source = !!(mask(j) & vec_source_grpbit) != vec_inv;
@@ -558,9 +580,8 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
     const KK_FLOAT delz = ztmp - x(j, 2);
     const KK_FLOAT rsq = delx * delx + dely * dely + delz * delz;
     const int jtype = type[j];
-    if (rsq >= d_cutsq(itype, jtype)) continue;
+    if (rsq >= cut_coulsq_kk) continue;
 
-    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
     const KK_FLOAT r = Kokkos::sqrt(rsq);
     const KK_FLOAT rinv = static_cast<KK_FLOAT>(1.0) / r;
     KK_FLOAT aij = rinv * ElectrodeMath::safe_erfc(g_ewald_kk * r);
@@ -596,6 +617,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_vector_nele(NeighList *ne
                                                                    bool inv)
 {
   build_device_tables();
+  point_in_sensor_warning(groupbit);
   // the kernels read the nlocal member; keep it current (compute() may not
   // have run yet at CG setup time)
   nlocal = atom->nlocal;
@@ -663,6 +685,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
   const int jnum = d_numneigh[i];
   for (int jj = 0; jj < jnum; jj++) {
     int j = d_neighbors(i, jj);
+    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
     j &= NEIGHMASK;
     // write only the sensor side; the full list visits the transposed pair
     // from the partner's own row
@@ -673,9 +696,8 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
     const KK_FLOAT delz = ztmp - x(j, 2);
     const KK_FLOAT rsq = delx * delx + dely * dely + delz * delz;
     const int jtype = type[j];
-    if (rsq >= d_cutsq(itype, jtype)) continue;
+    if (rsq >= cut_coulsq_kk) continue;
 
-    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
     const KK_FLOAT r = Kokkos::sqrt(rsq);
     const KK_FLOAT rinv = static_cast<KK_FLOAT>(1.0) / r;
     KK_FLOAT aij = rinv * ElectrodeMath::safe_erfc(g_ewald_kk * r);
@@ -719,6 +741,7 @@ void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_matrix(bigint *mpos, doub
                                                               int groupbit)
 {
   build_device_tables();    // after all init_one calls; cheap enough at setup
+  point_in_sensor_warning(groupbit);
   newton_pair = force->newton_pair;
 
   int ngroup = -1;
@@ -770,6 +793,7 @@ template<class DeviceType>
 void PairLJCutCoulLongGaussKokkos<DeviceType>::compute_matrix_self(bigint *mpos, double **array,
                                                                    int groupbit)
 {
+  point_in_sensor_warning(groupbit);
   const int nlocal = atom->nlocal;
   atomKK->sync(Host, Q_MASK | TYPE_MASK | MASK_MASK);
 
@@ -812,6 +836,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
   const int jnum = d_numneigh[i];
   for (int jj = 0; jj < jnum; jj++) {
     int j = d_neighbors(i, jj);
+    const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
     j &= NEIGHMASK;
     if (!(mask(j) & vec_groupbit)) continue;
     const bigint jpos = d_mpos(j);
@@ -823,8 +848,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulLongGaussKokkos<DeviceType>::operator()
     const KK_FLOAT rsq = delx * delx + dely * dely + delz * delz;
     const int jtype = type[j];
 
-    if (rsq < d_cutsq(itype, jtype)) {
-      const KK_FLOAT factor_coul = special_coul_kk[j >> SBBITS & 3];
+    if (rsq < cut_coulsq_kk) {
       const KK_FLOAT r = Kokkos::sqrt(rsq);
       const KK_FLOAT rinv = static_cast<KK_FLOAT>(1.0) / r;
       KK_FLOAT aij = rinv * ElectrodeMath::safe_erfc(g_ewald_kk * r);

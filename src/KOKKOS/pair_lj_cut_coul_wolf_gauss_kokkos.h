@@ -87,6 +87,12 @@ class PairLJCutCoulWolfGaussKokkos : public PairLJCutCoulWolfGauss,
   typename AT::t_int_1d_randomread d_numneigh;
   typename AT::t_kkfloat_1d_3_lr_randomread x;
   typename AT::t_kkacc_1d_3 f;
+  // per-atom energy/virial mirrors (kept on the host array, staged on device
+  // during compute()); mirror the standard KK pair style wiring
+  DAT::ttransform_kkacc_1d k_eatom;
+  DAT::ttransform_kkacc_1d_6 k_vatom;
+  typename AT::t_kkacc_1d d_eatom;
+  typename AT::t_kkacc_1d_6 d_vatom;
   typename AT::t_kkfloat_1d_randomread q;
   typename AT::t_int_1d_randomread type;
   typename AT::t_int_1d_randomread mask;
@@ -96,7 +102,7 @@ class PairLJCutCoulWolfGaussKokkos : public PairLJCutCoulWolfGauss,
   int neighflag, newton_pair;
   int nlocal, nall, eflag, vflag;
 
-  KK_FLOAT qqrd2e_kk, alpha_kk, e_shift_kk;
+  KK_FLOAT qqrd2e_kk, alpha_kk, e_shift_kk, f_shift_kk;
   KK_FLOAT selfint_kk, pre_eta_kk, pre_wolf_kk;
 
   int vec_groupbit, vec_source_grpbit;

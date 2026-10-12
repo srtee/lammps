@@ -23,6 +23,7 @@
 namespace LAMMPS_NS {
 class ElectrodePair {
  public:
+  virtual ~ElectrodePair() noexcept(false) = default;
   virtual void compute_vector(double *, int, int, bool) = 0;
   virtual void compute_vector_self(double *, int, int, bool) = 0;
   virtual void compute_matrix(bigint *, double **, int) = 0;

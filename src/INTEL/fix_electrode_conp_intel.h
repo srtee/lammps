@@ -37,8 +37,14 @@ class FixElectrodeConpIntel : public FixElectrodeConp {
   FixElectrodeConpIntel(class LAMMPS *lmp, int narg, char **arg) :
     FixElectrodeConp(lmp, narg, arg), _intel_kspace(nullptr)
   {
+    // the base ctor has already built host ElectrodeVector objects (its
+    // intelflag gate keys off the unsuffixed style); replace them instead of
+    // leaking. intelflag stays false so the list requests and solve paths
+    // stay on the host lane, exactly as before this fix.
+    delete elyt_vector;
     elyt_vector = new ElectrodeVectorIntel(lmp, 0, arg, igroup, igroup, eta, true);
     if (need_elec_vector) {
+      delete elec_vector;
       elec_vector = new ElectrodeVectorIntel(lmp, 0, arg, igroup, igroup, eta, false);
     }
   }

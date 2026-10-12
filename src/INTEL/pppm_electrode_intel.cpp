@@ -40,7 +40,6 @@
 #include "remap_wrap.h"
 #include "slab_dipole_intel.h"
 #include "update.h"
-#include "wire_dipole_intel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -90,6 +89,8 @@ PPPMElectrodeIntel::PPPMElectrodeIntel(LAMMPS *lmp) :
 
 PPPMElectrodeIntel::~PPPMElectrodeIntel()
 {
+  delete boundcorr;
+  boundcorr = nullptr;
   memory->destroy3d_offset(electrolyte_density_brick, nzlo_out, nylo_out, nxlo_out);
   memory->destroy(electrolyte_density_fft);
   if ((differentiation_flag != 1) && !peratom_allocate_flag)
@@ -125,12 +126,13 @@ void PPPMElectrodeIntel::init()
   compute_step = -1;
 
   // must put here to get initialized intelFix
+  // (deallocate() deliberately leaves boundcorr alone: it also runs from
+  // reset_grid() on fix balance, and re-creating happens only here)
+  delete boundcorr;
+  boundcorr = nullptr;
   if (slabflag == 1) {
     // EW3Dc dipole correction
     boundcorr = new SlabDipoleIntel(lmp, fix);
-  } else if (wireflag == 1) {
-    // EW3Dc wire correction
-    boundcorr = new WireDipoleIntel(lmp, fix);
   } else {
     // dummy BoundaryCorrection for ffield
     boundcorr = new BoundaryCorrection(lmp);
@@ -1147,7 +1149,8 @@ void PPPMElectrodeIntel::allocate_peratom()
 
 void PPPMElectrodeIntel::deallocate()
 {
-  delete boundcorr;
+  // deallocate() also runs from reset_grid() on fix balance: boundcorr must
+  // survive it, so deletion happens only in init() and the destructor
   // duplicated to always deallocate u_brick
   memory->destroy3d_offset(density_brick, nzlo_out, nylo_out, nxlo_out);
   memory->destroy3d_offset(u_brick, nzlo_out, nylo_out, nxlo_out);

@@ -43,6 +43,8 @@ namespace LAMMPS_NS {
 using namespace MathConst;
 using namespace EwaldConst;
 
+
+
 template<class DeviceType>
 PairLJCutCoulWolfGaussKokkos<DeviceType>::PairLJCutCoulWolfGaussKokkos(class LAMMPS *lmp) :
     PairLJCutCoulWolfGauss(lmp)
@@ -59,7 +61,18 @@ PairLJCutCoulWolfGaussKokkos<DeviceType>::PairLJCutCoulWolfGaussKokkos(class LAM
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-PairLJCutCoulWolfGaussKokkos<DeviceType>::~PairLJCutCoulWolfGaussKokkos() {}
+PairLJCutCoulWolfGaussKokkos<DeviceType>::~PairLJCutCoulWolfGaussKokkos()
+{
+  if (copymode) return;
+
+  if (allocated) {
+    // compute() aliases the base eatom/vatom pointers to Kokkos-owned host
+    // memory; destroy the views (which nulls the raw pointers) so the base
+    // Pair destructor does not delete[] Kokkos allocations.
+    memoryKK->destroy_kokkos(k_eatom, eatom);
+    memoryKK->destroy_kokkos(k_vatom, vatom);
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -83,9 +96,6 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::init_style()
 template<class DeviceType>
 void PairLJCutCoulWolfGaussKokkos<DeviceType>::build_device_tables()
 {
-  static thread_local bool built = false;
-  if (built) return;
-  built = true;
   int n = atom->ntypes;
 
   d_cutsq = typename AT::t_kkfloat_2d("pair:wolf_gauss:cutsq", n + 1, n + 1);
@@ -150,6 +160,11 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::build_device_tables()
   const KK_FLOAT expm2_cut = Kokkos::exp(-alpha_cut * alpha_cut);
   e_shift_kk = ElectrodeMath::safe_erfc(alpha_kk * static_cast<KK_FLOAT>(cut_coul)) /
       static_cast<KK_FLOAT>(cut_coul);
+  // wolf force shift is a cutoff constant on the host (expm2_cut at rc); the
+  // per-pair exp(-alpha^2 r^2) here would corrupt every force
+  f_shift_kk = -(e_shift_kk + static_cast<KK_FLOAT>(2.0) * alpha_kk /
+                 static_cast<KK_FLOAT>(MY_PIS) * expm2_cut) /
+      static_cast<KK_FLOAT>(cut_coul);
   selfint_kk = static_cast<KK_FLOAT>(2.0) / static_cast<KK_FLOAT>(MY_PIS) * alpha_kk;
   pre_eta_kk = static_cast<KK_FLOAT>(2.0) / static_cast<KK_FLOAT>(MY_PIS);
   pre_wolf_kk = e_shift_kk;
@@ -167,6 +182,17 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
   vflag = vflag_in;
 
   ev_init(eflag, vflag, 0);
+
+  if (eflag_atom) {
+    memoryKK->destroy_kokkos(k_eatom, eatom);
+    memoryKK->create_kokkos(k_eatom, eatom, maxeatom, "pair:eatom");
+    d_eatom = k_eatom.view<DeviceType>();
+  }
+  if (vflag_atom) {
+    memoryKK->destroy_kokkos(k_vatom, vatom);
+    memoryKK->create_kokkos(k_vatom, vatom, maxvatom, "pair:vatom");
+    d_vatom = k_vatom.view<DeviceType>();
+  }
 
   atomKK->sync(execution_space, datamask_read);
   if (eflag || vflag) atomKK->modified(execution_space, datamask_modify);
@@ -224,6 +250,15 @@ void PairLJCutCoulWolfGaussKokkos<DeviceType>::compute(int eflag_in, int vflag_i
     for (int n = 0; n < 6; n++) virial[n] += static_cast<double>(ev.v[n]);
   }
   if (vflag_fdotr) pair_virial_fdotr_compute(this);
+
+  if (eflag_atom) {
+    k_eatom.modify<DeviceType>();
+    k_eatom.sync_host();
+  }
+  if (vflag_atom) {
+    k_vatom.modify<DeviceType>();
+    k_vatom.sync_host();
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -645,6 +680,8 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulWolfGaussKokkos<DeviceType>::operator()
       e += (d_eshift_eta(itype, itype) / static_cast<KK_FLOAT>(2.0) +
             d_eta_ij(itype, itype) / static_cast<KK_FLOAT>(MY_PIS)) * qqrd2e_kk * q2;
     ev.ecoul += static_cast<KK_ACC_FLOAT>(e) * half_factor;
+    // self energy belongs entirely to i (host ev_tally(i, i, ...) convention)
+    if (eflag_atom) Kokkos::atomic_add(&d_eatom(i), static_cast<KK_ACC_FLOAT>(e));
   }
 
   KK_ACC_FLOAT fxtmp = 0.0;
@@ -686,9 +723,7 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulWolfGaussKokkos<DeviceType>::operator()
                               t * (static_cast<KK_FLOAT>(A4) +
                               t * static_cast<KK_FLOAT>(A5))))) * expm2;
         const KK_FLOAT prefactor = qqrd2e_kk * qtmp * q(j) / r;
-        const KK_FLOAT f_shift = -(e_shift_kk + static_cast<KK_FLOAT>(2.0) * alpha_kk /
-                                   static_cast<KK_FLOAT>(MY_PIS) * expm2) /
-            Kokkos::sqrt(cut_coulsq_kk);
+        const KK_FLOAT f_shift = f_shift_kk;
         forcecoul = prefactor * (erfc + static_cast<KK_FLOAT>(EWALD_F) * grij * expm2 +
                                  f_shift * rsq);
         KK_FLOAT forcecorr = 0.0;
@@ -745,17 +780,41 @@ KOKKOS_INLINE_FUNCTION void PairLJCutCoulWolfGaussKokkos<DeviceType>::operator()
         if (eflag) {
           ev.ecoul += ecoul * jhalf;
           ev.evdwl += evdwl * factor_lj * jhalf;
+          // per-atom split: half to each end (NEIGHFLAG is HALFTHREAD here,
+          // never FULL, so no !FULL guard is needed on the j side)
+          if (eflag_atom) {
+            const KK_ACC_FLOAT epairhalf = static_cast<KK_ACC_FLOAT>(
+                static_cast<KK_FLOAT>(0.5) * (ecoul + evdwl * factor_lj));
+            if (NEWTON_PAIR || i < nlocal) Kokkos::atomic_add(&d_eatom(i), epairhalf);
+            if (NEWTON_PAIR || j < nlocal) Kokkos::atomic_add(&d_eatom(j), epairhalf);
+          }
         }
-        if (vflag_global) {
+        if (vflag_either) {
           const KK_FLOAT vfx = delx * fpair;
           const KK_FLOAT vfy = dely * fpair;
           const KK_FLOAT vfz = delz * fpair;
-          ev.v[0] += jhalf * vfx * delx;
-          ev.v[1] += jhalf * vfy * dely;
-          ev.v[2] += jhalf * vfz * delz;
-          ev.v[3] += jhalf * vfx * dely;
-          ev.v[4] += jhalf * vfx * delz;
-          ev.v[5] += jhalf * vfy * delz;
+          if (vflag_global) {
+            ev.v[0] += jhalf * vfx * delx;
+            ev.v[1] += jhalf * vfy * dely;
+            ev.v[2] += jhalf * vfz * delz;
+            ev.v[3] += jhalf * vfx * dely;
+            ev.v[4] += jhalf * vfx * delz;
+            ev.v[5] += jhalf * vfy * delz;
+          }
+          if (vflag_atom) {
+            // per-atom virial: half weight to each end (i is always a local
+            // row); mirrors PairKokkos::ev_tally's vflag_atom branch
+            const KK_ACC_FLOAT v6[6] = {
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * delx),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfy * dely),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfz * delz),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * dely),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfx * delz),
+                static_cast<KK_ACC_FLOAT>(static_cast<KK_FLOAT>(0.5) * vfy * delz)};
+            for (int n = 0; n < 6; n++) Kokkos::atomic_add(&d_vatom(i, n), v6[n]);
+            if (NEWTON_PAIR || j < nlocal)
+              for (int n = 0; n < 6; n++) Kokkos::atomic_add(&d_vatom(j, n), v6[n]);
+          }
         }
       }
     }

@@ -37,8 +37,14 @@ class FixElectrodeConqIntel : public FixElectrodeConq {
   FixElectrodeConqIntel(class LAMMPS *lmp, int narg, char **arg) :
     FixElectrodeConq(lmp, narg, arg), _intel_kspace(nullptr)
   {
+    // the base ctor has already built host ElectrodeVector objects (its
+    // intelflag gate keys off the unsuffixed style); replace them instead of
+    // leaking. intelflag stays false so the list requests and solve paths
+    // stay on the host lane, exactly as before this fix.
+    delete elyt_vector;
     elyt_vector = new ElectrodeVectorIntel(lmp, 0, arg, igroup, igroup, eta, true);
     if (need_elec_vector) {
+      delete elec_vector;
       elec_vector = new ElectrodeVectorIntel(lmp, 0, arg, igroup, igroup, eta, false);
     }
   }
@@ -49,7 +55,6 @@ class FixElectrodeConqIntel : public FixElectrodeConq {
     if (_intel_kspace == nullptr)
       error->all(FLERR, "pppm/electrode/intel is required by fix electrode/conq/intel");
 
-    intelflag = true;
     FixElectrodeConq::init();
   }
   inline void intel_pack_buffers() final override { _intel_kspace->pack_buffers_q(); }
