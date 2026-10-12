@@ -28,6 +28,11 @@ ElectrodeMatCG::ElectrodeMatCG(LAMMPS *lmp) : ElectrodeCG(lmp)
   matrix_set = false;
 }
 
+ElectrodeMatCG::ElectrodeMatCG(LAMMPS *lmp, FixElectrodeConp *fix) : ElectrodeCG(lmp, fix)
+{
+  matrix_set = false;
+}
+
 /* ---------------------------------------------------------------------- */
 
 ElectrodeMatCG::~ElectrodeMatCG() noexcept {}

@@ -28,3 +28,7 @@ variable p3 equal c_press[3]
 fix fxprint all print 1 "${vpe}, ${charge}, ${p3}" file "out.csv"
 
 dump dump_forces all custom 1 forces.lammpstrj id fx fy fz
+
+# the electrode matrix neighbor list is full (stores both i->j and j->i),
+# doubling the per-atom entry count vs the pair's half list
+neigh_modify one 10000

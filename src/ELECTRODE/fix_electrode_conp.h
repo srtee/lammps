@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors: Ludwig Ahrens-Iwers (MPSD, TUHH), Shern Tee (GU), Kamila Savvidi (TUHH), Robert Meissner (Hereon, TUHH)
+   Contributing authors: Ludwig Ahrens-Iwers (TUHH), Shern Tee (GU), Kamila Savvidi (TUHH), Robert Meissner (Hereon, TUHH)
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
@@ -34,7 +34,9 @@ namespace LAMMPS_NS {
 // forward decls
 
 class ChargeSolver;
+class ElectrodeCG;
 class ElectrodeTaglist;
+class ElectrodeInv;
 class ElectrodeVector;
 class NeighList;
 class Pair;
@@ -57,9 +59,16 @@ class FixElectrodeConp : public Fix {
   int modify_param(const std::string &);
   void init() override;
   void init_list(int, NeighList *) override;
-  void post_constructor() override;    // used by ffield to set up fix efield
   double memory_usage() override;
+  void post_constructor() override;    // used by ffield to set up fix efield
   virtual void set_charges(std::vector<double>); // used by ElectrodeCG
+  // accelerator variants (KOKKOS): device CG uses a full newton-off matvec
+  // list; base CG keeps the default half list
+  virtual bool cg_device_needs_full_list() const { return false; }
+  virtual ElectrodeCG *new_cg_solver();
+  // KK variant builds an ElectrodeInvKokkos here; base builds the host solver
+  virtual ElectrodeInv *new_inv_solver();
+  virtual void rebuild_matrix();    // rebuild kspace-derived matrix + solver (fix tune/kspace)
 
   // atomvec-based tracking of electrode atoms
   int pack_exchange(int, double *) override;
@@ -68,6 +77,24 @@ class FixElectrodeConp : public Fix {
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
 
+  // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
+  // after the host q array changes so device copies can be refreshed
+  inline virtual void device_charge_sync() {}
+  // hook for accelerator variants (KOKKOS/INTEL): refresh host-side atom
+  // arrays (tag/mask/x/q/...) from the accelerator copies before any code
+  // indexes them host-side. No-op unless an accelerator variant overrides
+  // it; under the KK device exchange/sort pipeline the device views are
+  // authoritative between force computations
+  inline virtual void host_data_sync(uint64_t) {}
+  // device mat_inv solve (KK variant): default off; the kk fix builds an
+  // ElectrodeInvKokkos and overrides these three. device_elyt_vector() gates
+  // the id-4 full newton-off neighbor list; device_elyt_group() gives the
+  // sensor-group bits the device b-assembly kernels need.
+  inline virtual bool device_mat_inv() const { return false; }
+  inline virtual ElectrodeVector *device_elyt_vector() const { return nullptr; }
+  inline virtual int device_elyt_group() const { return 0; }
+  // en_index accessor for the device b-assembly (host en correction)
+  int electronegativity_index() const { return en_index; }
  protected:
   enum class Algo { MATRIX_INV, MATRIX_CG, CG };
   enum class VarStyle { CONST, EQUAL, UNSET };
@@ -100,6 +127,10 @@ class FixElectrodeConp : public Fix {
   bool need_elec_vector;			// can build their own custom
   double eta;					// ElectrodeVectorIntel
 
+  bool pairflag;                              // whether a pair style is specified (KK subclass)
+  std::string pair_str;
+  bool device_solve;                          // device on: mat_inv solve runs on the GPU (/kk only)
+
  private:
   std::string output_file_inv, output_file_mat, output_file_vec;
   std::string input_file_inv, input_file_mat;
@@ -108,6 +139,15 @@ class FixElectrodeConp : public Fix {
   bool matrix_algo, need_array_compute;
   double cg_threshold;
   double update_time, mult_time;
+
+protected:
+  // fine-grained per-step leg timers: accumulated unconditionally, printed
+  // from the destructor when timer_flag is set (probe instrumentation)
+  double t_gather = 0., t_psi = 0., t_solve = 0., t_setq = 0., t_setq_pre = 0.,
+         t_hsync = 0., t_push[2] = {0., 0.};
+  int sync_site = 0;    // 0 = b assembly, 1 = set_charges
+
+private:
   double gausscorr(int, int, bool);
   void update_charges();
   double potential_energy();
@@ -125,22 +165,27 @@ class FixElectrodeConp : public Fix {
   bool enflag, hardnessflag;                  // qeq parameters set
   bool etapropflag;                           // eta specified as atom property
   int eta_index, hardness_index, en_index;    // index of atom properties
-  bool pairflag;                              // whether a pair style is specified
-  std::string pair_str;
   bool timer_flag;
   std::map<int, double> tf_types;
   int predictor_cols;
 
-  // fix-specific electrode ID storage system:
-  bool taglist_constructed, solver_constructed;
+ protected:
+  // fix-specific electrode ID storage (device /kk exchange packer mirrors
+  // the host bookkeeping on nlocalele/nlocalele_outdated)
+  bool taglist_constructed;
   ElectrodeTaglist *electrode_taglist;
   int nlocalele_outdated;    // trigger rebuilding of following structures:
   std::vector<tagint> taglist_local;
   std::vector<int> iele_to_group_local;
-
   int nlocalele;              // current no. of local electrode atoms
   void gather_list_iele();    // build iele_gathered
+  std::vector<int> fragment_iele;    // ascending iele of local electrode atoms
+  void build_fragment_iele();        // fragment_iele from taglist_local
 
+protected:
+  NeighList *cg_kk_neighlist = nullptr;    // full newton-off device-CG list (id 4)
+
+private:
   int nmax;
 };
 

@@ -27,15 +27,16 @@ class ElectrodeMatCG : public ElectrodeCG {
  public:
   // ChargeSolver methods
   ElectrodeMatCG(class LAMMPS *);
+  ElectrodeMatCG(class LAMMPS *, class FixElectrodeConp *);
   ~ElectrodeMatCG() noexcept;
   void update_solver(std::vector<tagint>, std::vector<int>) override;
+  void set_elastance(int nele_world, double **elastance);
   double memory_use() override;
 
-  //setup
-  void setup_solver(double, std::unordered_map<tagint, int>, int);
-  void set_elastance(int, double **);
+  // setup -- virtual so the Kokkos device variant can bind after the base
+  virtual void setup_solver(double, std::unordered_map<tagint, int>, int);
 
- private:
+ protected:
   int n_mat;
   bool matrix_set;
   double **elastance;

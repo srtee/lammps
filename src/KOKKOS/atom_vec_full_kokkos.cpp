@@ -61,8 +61,13 @@ void AtomVecFullKokkos::grow(int n)
   if (nmax < 0 || nmax > MAXSMALLINT)
     error->one(FLERR,"Per-processor system is too big");
 
-  atomKK->sync(Device,ALL_MASK);
-  atomKK->modified(Device,ALL_MASK);
+  // forces are not round-tripped here: the grow_kokkos() calls below reset
+  // both copies, and the verlet run loop treats device f as the only
+  // authoritative side between force computations (see sort_kokkos() and
+  // VerletKokkos::force_clear()).  claiming/syncing F from the stale host
+  // copy would push pre-grow garbage into the force pipeline.
+  atomKK->sync(Device,ALL_MASK & ~F_MASK);
+  atomKK->modified(Device,ALL_MASK & ~F_MASK);
 
   memoryKK->grow_kokkos(atomKK->k_tag,atomKK->tag,nmax,"atom:tag");
   memoryKK->grow_kokkos(atomKK->k_type,atomKK->type,nmax,"atom:type");
@@ -120,7 +125,10 @@ void AtomVecFullKokkos::grow(int n)
                       atomKK->improper_per_atom,"atom:improper_atom4");
 
   grow_pointers();
-  atomKK->sync(Host,ALL_MASK);
+  // no F: see the comment on the sync(Device) round trip above; the
+  // auto_sync preamble of sync(Host) would claim host f dirty from stale
+  // zeros, which the next sync(Device,F) consumer (shake, comm) copies back
+  atomKK->sync(Host,ALL_MASK & ~F_MASK);
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)

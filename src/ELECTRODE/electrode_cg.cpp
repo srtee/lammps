@@ -237,7 +237,6 @@ void ElectrodeCG::predict_q()
 
 std::vector<double> ElectrodeCG::ele_ele_interaction(const std::vector<double> &q_vec)
 {
-  MPI_Barrier(world);
   double mult_start = MPI_Wtime();
   fix->set_charges(q_vec);
   if (atom->nmax > nmax) {
@@ -248,7 +247,6 @@ std::vector<double> ElectrodeCG::ele_ele_interaction(const std::vector<double> &
   memset(potential_i, 0, atom->nmax * sizeof(double));
   elec_vec->compute_pot(potential_i);
   auto a = pot_to_vector(potential_i);
-  MPI_Barrier(world);
   mult_time += MPI_Wtime() - mult_start;
   return a;
 }
