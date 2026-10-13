@@ -21,8 +21,6 @@
 #include "comm.h"
 #include "compute.h"
 #include "error.h"
-#include "fix_electrode_conp.h"
-#include "kokkos.h"
 #include "force.h"
 #include "info.h"
 #include "kspace.h"
@@ -113,33 +111,6 @@ void FixTuneKspace::init()
   if (force->kspace->dipoleflag)
     error->all(FLERR,"Cannot use fix tune/kspace with dipole long-range solver");
 
-  electrode_mode = electrode_device = false;
-  if (utils::strmatch(force->kspace_style, "/electrode")) {
-    electrode_mode = true;
-    electrode_device = force->kspace->kokkosable;
-    // fix electrode/conp/kk runs its matvec on the device and requires the
-    // device electrode kspace; host solvers require host electrode kspace.
-    bool device_matvec = !modify->get_fix_by_style("^electrode/conp/kk").empty();
-    bool kk_binary = lmp->kokkos && lmp->kokkos->kokkos_exists;
-    if ((electrode_device != device_matvec) || (kk_binary && !device_matvec))
-      error->all(FLERR, Error::NOLASTLINE,
-                 "fix tune/kspace with an ELECTRODE kspace style requires either "
-                 "the device vector path (pppm/electrode/kk + fix electrode/conp/kk) "
-                 "or host electrode styles without KOKKOS suffixes");
-    // matrix-algo electrode solvers cache the matrix built from the kspace
-    // geometry; remember the fix so the matrix can be rebuilt once the
-    // tuning has settled (CG solvers re-bind the kspace every matvec)
-    auto conp_fixes = modify->get_fix_by_style("^electrode/conp");
-    elec_conp = conp_fixes.empty() ? nullptr : dynamic_cast<FixElectrodeConp *>(conp_fixes[0]);
-    // defaults for adjust_rcut(): re-create the current styles, only the
-    // real-space cutoff changes
-    kspace_style = force->kspace_style;
-    pair_style = force->pair_style;
-    if (comm->me == 0)
-      utils::logmesg(lmp, "fix tune/kspace: ELECTRODE mode, kspace {}\n",
-                     force->kspace_style);
-  }
-
   // the MSM and ESP styles are not (yet) supported in combination with the OPENMP package
 
   if (msmflag || espflag) {
@@ -176,87 +147,38 @@ void FixTuneKspace::pre_exchange()
   next_reneighbor = update->ntimestep + nevery;
 
   double time = get_timing_info();
-
-  if (utils::strmatch(force->kspace_style,"^ewald")) ewald_time = time;
-  if (utils::strmatch(force->kspace_style,"^pppm")) pppm_time = time;
-  if (utils::strmatch(force->kspace_style,"^msm")) msm_time = time;
-
   niter++;
 
-  if (electrode_mode) {
-    // ELECTRODE kspace styles serve the fix electrode solvers directly; the
-    // electrode pair styles are already the /long variant, so no pair-style
-    // surgery is needed (or possible) here.
-    if (!converged) elec_rebuilt = false;    // settings not final yet
-    if (electrode_device) {
-      // device matvec requires the device kspace: keep the style and let
-      // adjust_rcut() optimize the real-space cutoff only
-      if (niter == 1 && comm->me == 0)
-        utils::logmesg(lmp, "fix tune/kspace: device matvec in use, keeping kspace "
-                             "{}, optimizing real-space cutoff only\n",
-                       force->kspace_style);
-      adjust_rcut(time);
-    } else {
-      // host solvers re-bind the kspace per step: probe the two variants
-      if (niter == 1) {
-        store_old_kspace_settings();
-        update_kspace_style("ewald/electrode",acc_str);
-      } else if (niter == 2) {
-        store_old_kspace_settings();
-        update_kspace_style("pppm/electrode",acc_str);
-      } else if (niter == 3) {
-        store_old_kspace_settings();
-        if (comm->me == 0)
-          utils::logmesg(lmp,"ewald/electrode_time = {}\npppm/electrode_time = {}\n",
-                         ewald_time, pppm_time);
-        kspace_style = (pppm_time < ewald_time) ? "pppm/electrode" : "ewald/electrode";
-        update_kspace_style(kspace_style,acc_str);
-      } else {
-        adjust_rcut(time);
-      }
-    }
-  } else {
-    // determine the kspace styles to test.  Ewald and PPPM use the same pair style,
-    // MSM and ESP are only tested if requested and if a matching pair style exists.
+  // determine the kspace styles to test.  Ewald and PPPM use the same pair style,
+  // MSM and ESP are only tested if requested and if a matching pair style exists.
 
-    if (niter == 1) {
-      store_old_kspace_settings();
-      test_styles = {"ewald", "pppm"};
-      Info info(lmp);
-      if (msmflag && info.has_style("pair", base_pair_style + "/msm")) test_styles.emplace_back("msm");
-      if (espflag && info.has_style("pair", base_pair_style + "/esp")) test_styles.emplace_back("esp");
-      test_times.assign(test_styles.size(), 0.0);
-    }
-
-    // the timing is for the style that was tested since the previous invocation
-
-    const int ntest = test_styles.size();
-    if ((niter > 1) && (niter <= ntest + 1)) test_times[niter - 2] = time;
-
-    if (niter <= ntest) {
-      // test the next kspace style
-      switch_kspace_style(test_styles[niter - 1]);
-    } else if (niter == ntest + 1) {
-      // switch to the fastest kspace style
-      int best = 0;
-      for (int i = 0; i < ntest; ++i) {
-        if (comm->me == 0) utils::logmesg(lmp, "{}_time = {}\n", test_styles[i], test_times[i]);
-        if (test_times[i] < test_times[best]) best = i;
-      }
-      switch_kspace_style(test_styles[best]);
-    } else {
-      adjust_rcut(time);
-    }
+  if (niter == 1) {
+    store_old_kspace_settings();
+    test_styles = {"ewald", "pppm"};
+    Info info(lmp);
+    if (msmflag && info.has_style("pair", base_pair_style + "/msm")) test_styles.emplace_back("msm");
+    if (espflag && info.has_style("pair", base_pair_style + "/esp")) test_styles.emplace_back("esp");
+    test_times.assign(test_styles.size(), 0.0);
   }
-  // matrix-algo electrode solvers cache the matrix built from the kspace
-  // geometry at setup; once tuning has settled (cutoff optimization
-  // converged), rebuild once so the rest of the trajectory stays
-  // consistent with the final kspace settings
-  if (electrode_mode && (elec_conp != nullptr) && !elec_rebuilt && converged) {
-    if (comm->me == 0)
-      utils::logmesg(lmp, "fix tune/kspace: settings final, rebuilding electrode matrix\n");
-    elec_conp->rebuild_matrix();
-    elec_rebuilt = true;
+
+  // the timing is for the style that was tested since the previous invocation
+
+  const int ntest = test_styles.size();
+  if ((niter > 1) && (niter <= ntest + 1)) test_times[niter - 2] = time;
+
+  if (niter <= ntest) {
+    // test the next kspace style
+    switch_kspace_style(test_styles[niter - 1]);
+  } else if (niter == ntest + 1) {
+    // switch to the fastest kspace style
+    int best = 0;
+    for (int i = 0; i < ntest; ++i) {
+      if (comm->me == 0) utils::logmesg(lmp, "{}_time = {}\n", test_styles[i], test_times[i]);
+      if (test_times[i] < test_times[best]) best = i;
+    }
+    switch_kspace_style(test_styles[best]);
+  } else {
+    adjust_rcut(time);
   }
 
   last_spcpu = timer->elapsed(Timer::TOTAL);
@@ -393,11 +315,6 @@ void FixTuneKspace::update_kspace_style(const std::string &new_kspace_style,
   // initialize new kspace style, pair style, molecular styles
 
   force->init();
-  // re-init fixes as well: Fix::init() re-adds every fix's neighbor list
-  // requests, which the neighbor->init() below consumes.  Without this,
-  // fixes (e.g. fix electrode) keep pointers to neighbor lists that were
-  // deleted by the re-init.
-  modify->init();
 
   // set up grid
 
