@@ -18,7 +18,7 @@
 #ifndef LMP_ELECTRODE_MATH_H
 #define LMP_ELECTRODE_MATH_H
 
-#include "accelerator_kokkos.h"    // LAMMPS_INLINE = KOKKOS_INLINE_FUNCTION with KOKKOS
+#include "accelerator_kokkos.h"    // LAMMPS_INLINE (no-op without KOKKOS)
 #include "ewald_const.h"
 #include "math_const.h"
 

@@ -33,7 +33,7 @@ class ElectrodeMatCG : public ElectrodeCG {
   void set_elastance(int nele_world, double **elastance);
   double memory_use() override;
 
-  // setup -- virtual so the Kokkos device variant can bind after the base
+  // setup
   virtual void setup_solver(double, std::unordered_map<tagint, int>, int);
 
  protected:

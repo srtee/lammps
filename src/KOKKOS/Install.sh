@@ -267,14 +267,6 @@ action fix_nvt_sllod_kokkos.h
 action fix_nvk_kokkos.cpp fix_nvk.cpp
 action fix_nvk_kokkos.h fix_nvk.h
 action fix_oneway_kokkos.cpp fix_oneway.cpp
-action fix_electrode_conp_kokkos.cpp fix_electrode_conp.cpp
-action fix_electrode_conp_kokkos.h fix_electrode_conp.h
-action fix_electrode_conq_kokkos.h fix_electrode_conq.h
-action fix_electrode_thermo_kokkos.h fix_electrode_thermo.h
-action electrode_cg_kokkos.cpp electrode_cg.cpp
-action electrode_cg_kokkos.h electrode_cg.h
-action electrode_inv_kokkos.cpp electrode_inv.cpp
-action electrode_inv_kokkos.h electrode_inv.h
 action fix_oneway_kokkos.h fix_oneway.h
 action fix_planeforce_kokkos.cpp
 action fix_planeforce_kokkos.h
@@ -559,10 +551,6 @@ action pair_lj_cut_coul_wolf_kokkos.cpp pair_lj_cut_coul_wolf.cpp
 action pair_lj_cut_coul_wolf_kokkos.h pair_lj_cut_coul_wolf.h
 action pair_lj_cut_coul_long_kokkos.cpp pair_lj_cut_coul_long.cpp
 action pair_lj_cut_coul_long_kokkos.h pair_lj_cut_coul_long.h
-action pair_lj_cut_coul_long_gauss_kokkos.cpp pair_lj_cut_coul_long_gauss.cpp
-action pair_lj_cut_coul_long_gauss_kokkos.h pair_lj_cut_coul_long_gauss.h
-action pair_lj_cut_coul_wolf_gauss_kokkos.cpp pair_lj_cut_coul_wolf_gauss.cpp
-action pair_lj_cut_coul_wolf_gauss_kokkos.h pair_lj_cut_coul_wolf_gauss.h
 action pair_lj_charmmfsw_coul_charmmfsh_kokkos.cpp pair_lj_charmmfsw_coul_charmmfsh.cpp
 action pair_lj_charmmfsw_coul_charmmfsh_kokkos.h pair_lj_charmmfsw_coul_charmmfsh.h
 action pair_lj_expand_sphere_kokkos.cpp pair_lj_expand_sphere.cpp
@@ -725,8 +713,6 @@ action pppm_kokkos.cpp pppm.cpp
 action pppm_kokkos.h pppm.h
 action pppm_tip4p_kokkos.cpp pppm_tip4p.cpp
 action pppm_tip4p_kokkos.h pppm_tip4p.h
-action pppm_electrode_kokkos.cpp pppm_electrode.cpp
-action pppm_electrode_kokkos.h pppm_electrode.h
 action rand_pool_wrap_kokkos.cpp
 action rand_pool_wrap_kokkos.h
 action region_block_kokkos.cpp

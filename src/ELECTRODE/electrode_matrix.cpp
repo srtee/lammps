@@ -117,8 +117,7 @@ void ElectrodeMatrix::compute_array(double **array, bool timer_flag)
     // pairflag kernels write only [ipos][jpos] per row). The pair's own
     // perpetual list is a HALF list: over it each unordered pair is seen
     // once, so only one triangle gets filled and the symmetrize below
-    // halves every pair term; kokkos newton-off half lists additionally
-    // store periodic-image pairs as two ordered entries, doubling them.
+    // halves every pair term.
     // Swap the list in for the matrix call and restore afterward.
     NeighList *pair_own_list = pair->list;
     pair->init_list(1, list);

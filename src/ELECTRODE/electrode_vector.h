@@ -36,18 +36,6 @@ class ElectrodeVector : public Fix {
   void setup_hardness(int index);
   void setup_eta(int);
   void compute_pot(double *);
-  // host TF/hardness contributions (used by the KOKKOS device matvec, which
-  // computes pair+kspace on device and these terms on host)
-  void nonpair_contribution(double *);
-  // accessors for the KOKKOS device matvec (ElectrodeCGKokkos)
-  class NeighList *get_list() const { return list; }
-  int get_groupbit() const { return groupbit; }
-  int get_source_grpbit() const { return source_grpbit; }
-  bool get_invert_source() const { return invert_source; }
-  bool get_tfflag() const { return tfflag; }
-  bool get_hardnessflag() const { return hardnessflag; }
-  bool get_kspaceflag() const { return kspaceflag; }
-  class ElectrodeKSpace *get_electrode_kspace() const { return electrode_kspace; }
   void refresh_kspace();    // re-bind kspace/g_ewald after fix tune/kspace swaps the style
   int kspace_version() const { return kspace_version_; }
   int igroup, source_group;
@@ -64,8 +52,7 @@ class ElectrodeVector : public Fix {
   class NeighList *list;
   int eta_index;
 
- protected:    // device-matvec staging (ElectrodeCGKokkos): same flags,
-               // pair/kspace on device, tf/hardness on host
+ protected:
   bool tfflag;
   bool pairflag;
   bool hardnessflag;

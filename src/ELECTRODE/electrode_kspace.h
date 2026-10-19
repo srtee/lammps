@@ -18,9 +18,6 @@
 #ifndef LMP_ELECTRODE_KSPACE_H
 #define LMP_ELECTRODE_KSPACE_H
 
-#ifdef LMP_KOKKOS
-#include "kokkos_type.h"
-#endif
 #include <stdexcept>
 
 #include "lmptype.h"

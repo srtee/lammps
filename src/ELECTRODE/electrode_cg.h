@@ -72,9 +72,8 @@ private:
   int predictor_index;    // property/atom array of ASPC prior charges (host path)
 
 protected:
-  // device-resident subclasses (ElectrodeCGDeviceKokkos) drive these directly:
-  // the ASPC ramp, rhs vector, and cached matvec are solver state shared by
-  // the host and device recurrences
+  // ASPC ramp, rhs vector, and cached matvec: solver state shared by the
+  // host and device recurrences
   long nstep, ncall;
   bigint elyt_step;
   bool a_cached_flag;

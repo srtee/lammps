@@ -64,13 +64,9 @@ class FixElectrodeConp : public Fix {
   void post_constructor() override;    // used by ffield to set up fix efield
   virtual void set_charges(std::vector<double>); // used by ElectrodeCG
 
-  // device-lane matrix-CG solver; base (and host KK) return nullptr = host solver
-  // list; base CG keeps the default half list
-  virtual bool cg_device_needs_full_list() const { return false; }
   virtual ElectrodeCG *new_cg_solver();
-  // device-lane matrix-CG solver; base (and host KK) return nullptr = host solver
+  // matrix-CG solver factory; base returns nullptr = host matrix-CG solver
   virtual ElectrodeMatCG *new_mat_cg_solver() { return nullptr; }
-  // KK variant builds an ElectrodeInvKokkos here; base builds the host solver
   virtual ElectrodeInv *new_inv_solver();
   virtual void rebuild_matrix();    // rebuild kspace-derived matrix + solver (fix tune/kspace)
 
@@ -80,25 +76,6 @@ class FixElectrodeConp : public Fix {
 
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
-
-  // hook for accelerator variants (KOKKOS/INTEL): called by set_charges
-  // after the host q array changes so device copies can be refreshed
-  inline virtual void device_charge_sync() {}
-  // hook for accelerator variants (KOKKOS/INTEL): refresh host-side atom
-  // arrays (tag/mask/x/q/...) from the accelerator copies before any code
-  // indexes them host-side. No-op unless an accelerator variant overrides
-  // it; under the KK device exchange/sort pipeline the device views are
-  // authoritative between force computations
-  inline virtual void host_data_sync(uint64_t) {}
-  // device-resident solve (KK variant): mat_inv, device CG, or device mat-CG;
-  // default off. The KK fix overrides these three. device_elyt_vector() gates
-  // the id-4 full newton-off neighbor list; device_elyt_group() gives the
-  // sensor-group bits the device b-assembly kernels need.
-  inline virtual bool device_resident() const { return false; }
-  inline virtual ElectrodeVector *device_elyt_vector() const { return nullptr; }
-  inline virtual int device_elyt_group() const { return 0; }
-  // en_index accessor for the device b-assembly (host en correction)
-  int electronegativity_index() const { return en_index; }
  protected:
   enum class Algo { MATRIX_INV, MATRIX_CG, CG };
   enum class VarStyle { CONST, EQUAL, UNSET };
@@ -131,9 +108,8 @@ class FixElectrodeConp : public Fix {
   bool need_elec_vector;			// can build their own custom
   double eta;					// ElectrodeVectorIntel
 
-  bool pairflag;                              // whether a pair style is specified (KK subclass)
+  bool pairflag;                              // whether a pair style is specified
   std::string pair_str;
-  bool device_solve;                          // device on: mat_inv solve runs on the GPU (/kk only)
 
  private:
   std::string output_file_inv, output_file_mat, output_file_vec;
@@ -174,8 +150,6 @@ private:
   int predictor_cols;
 
  protected:
-  // fix-specific electrode ID storage (device /kk exchange packer mirrors
-  // the host bookkeeping on nlocalele/nlocalele_outdated)
   bool taglist_constructed;
   ElectrodeTaglist *electrode_taglist;
   int nlocalele_outdated;    // trigger rebuilding of following structures:
@@ -185,9 +159,6 @@ private:
   void gather_list_iele();    // build iele_gathered
   std::vector<int> fragment_iele;    // ascending iele of local electrode atoms
   void build_fragment_iele();        // fragment_iele from taglist_local
-
-protected:
-  NeighList *cg_kk_neighlist = nullptr;    // full newton-off device-CG list (id 4)
 
 private:
   int nmax;

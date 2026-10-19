@@ -76,8 +76,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), charge_solver(nullptr), potential_i(nullptr), elyt_vector(nullptr),
     elec_vector(nullptr), matrix(nullptr), pair(nullptr), mat_neighlist(nullptr),
     vec_neighlist(nullptr), force_neighlist(nullptr), electrode_taglist(nullptr),
-    eta_index(-1), hardness_index(-1), en_index(-1),    // property indices: -1 until the keyword sets them
-    device_solve(false)
+    eta_index(-1), hardness_index(-1), en_index(-1)    // property indices: -1 until the keyword sets them
 
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_electrode);
@@ -92,12 +91,7 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   extarray = 0;
 
   // the only per-atom data this fix reads or writes is the charge array
-  // (host side, via update_charges()/set_charges()).  the Fix base class
-  // defaults both masks to ALL_MASK, and ModifyKokkos syncs+claims them on
-  // the fix's execution space around every pre_force/pre_reverse hook --
-  // an ALL_MASK claim there marks host f dirty from stale data, which the
-  // next sync(Device,F) consumer (shake, comm) pushes over live device
-  // forces on the GPU
+  // (host side, via update_charges()/set_charges())
   datamask_read = Q_MASK;
   datamask_modify = Q_MASK;
 
@@ -105,7 +99,6 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
   thermo_virial = 1;         // set vflags for v_tally
 
   bool default_algo = true;
-  bool device_set = false;
   algo = Algo::MATRIX_INV;
   matrix_algo = true;
   cg_threshold = 0.;
@@ -294,9 +287,6 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
       etypes_neighlists = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if ((strncmp(arg[iarg], "symm", 4) == 0)) {
       symm = utils::logical(FLERR, arg[++iarg], false, lmp);
-    } else if ((strcmp(arg[iarg], "device") == 0)) {
-      device_solve = utils::logical(FLERR, arg[++iarg], false, lmp);
-      device_set = true;
     } else if ((strcmp(arg[iarg], "ffield") == 0)) {
       ffield = utils::logical(FLERR, arg[++iarg], false, lmp);
     } else if (iarg == 4) {    // deprecated option to specify eta as fourth argument
@@ -319,12 +309,6 @@ FixElectrodeConp::FixElectrodeConp(LAMMPS *lmp, int narg, char **arg) :
     }
     iarg++;
   }
-  // device defaults on where the device lane is valid: the /kk fix style
-  // running the default mat_inv algo. Everything else (host styles, mat_cg,
-  // cg) keeps the host solve; an explicit device keyword always wins.
-  if (!device_set)
-    device_solve = utils::strmatch(style, "/kk$");
-
 
   if (symm) {
     if (qtotal_var_style != VarStyle::UNSET) {
@@ -511,14 +495,6 @@ void FixElectrodeConp::init()
   if (utils::strmatch(update->integrate_style, "^respa"))
     error->all(FLERR, Error::NOLASTLINE, "Fix {} is not compatible with run_style respa", style);
 
-  // device-resident solvers exist for mat_inv, cg, and mat_cg on the
-  // Kokkos device lane; the conditional default (set after arg parsing)
-  // already respected this
-  if (device_solve) {
-    if (!utils::strmatch(style, "/kk$"))
-      error->all(FLERR, "Fix {} device on requires the device-lane fix style electrode/conp/kk", style);
-  }
-
   pair = nullptr;    // not sure if needed -- remove if unnecessary
   if (pairflag) {
     pair = force->pair_match(pair_str, 1);
@@ -609,38 +585,12 @@ void FixElectrodeConp::init()
     Req->set_id(1);
     if (intelflag) Req->enable_intel();
   }
-  if ((need_elec_vector && cg_device_needs_full_list()) || device_resident()) {
-    // device matvec or device-resident solve (mat_inv / device-CG / device
-    // mat-CG): perpetual type-skipped full newton-off list. Rows are
-    // electrode types only (~8x fewer pair iterations than a full list);
-    // columns are ANY type
-    // -- the b-assembly kernel sums electrolyte neighbors of electrode
-    // atoms, so an electrode-electrode column filter (as the matrix list
-    // uses) would drop every electrode-electrolyte pair term. NPairSkipKokkos
-    // builds it on device from the pair style's own full list; the kernel
-    // still filters rows by group mask.
-    int *iskip_cg = new int[ntypes + 1];
-    int **ijskip_cg;
-    memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
-    for (int itype = 0; itype <= ntypes; ++itype) {
-      iskip_cg[itype] = !elec_type[itype];
-      for (int jtype = 0; jtype <= ntypes; ++jtype)
-        ijskip_cg[itype][jtype] = !elec_type[itype];
-    }
-    auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
-    ReqKK->set_skip(iskip_cg, ijskip_cg);
-    ReqKK->set_id(4);
-  }
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixElectrodeConp::init_list(int id, NeighList *ptr)
 {
-  if (id == 4) {
-    cg_kk_neighlist = ptr;
-    return;
-  }
   if (etypes_neighlists) {
     if (id == 1)
       mat_neighlist = ptr;
@@ -701,11 +651,6 @@ void FixElectrodeConp::post_constructor()
 
 void FixElectrodeConp::setup_post_neighbor()
 {
-  // the accelerator variants may hold newer atom data device-side (device
-  // exchange/sort); everything below indexes host arrays (taglist gather,
-  // matrix mpos, corr x/q) and must see the current layout
-  host_data_sync(ALL_MASK & ~F_MASK);
-
   const int nlocal = atom->nlocal;
   int *mask = atom->mask;
 
@@ -745,17 +690,10 @@ void FixElectrodeConp::setup_post_neighbor()
   // pair and list setups:
 
   evscale = force->qe2f / force->qqrd2e;
-  // device mat_inv (/kk): the electrolyte-potential vector carries the
-  // sensor/source bits for the device b-assembly and must pair with the
-  // full newton-off device list, not the id-2 half list
-  elyt_vector->setup_general(
-      pair, device_resident() && algo != Algo::CG ? cg_kk_neighlist : vec_neighlist,
-      pairflag, timer_flag);
+  elyt_vector->setup_general(pair, vec_neighlist, pairflag, timer_flag);
   if (etapropflag) elyt_vector->setup_eta(eta_index);
   if (need_elec_vector) {
-    elec_vector->setup_general(pair,
-                               cg_device_needs_full_list() ? cg_kk_neighlist : mat_neighlist,
-                               pairflag, timer_flag);
+    elec_vector->setup_general(pair, mat_neighlist, pairflag, timer_flag);
     if (etapropflag) elec_vector->setup_eta(eta_index);
     if (tfflag) elec_vector->setup_tf(tf_types);
     if (hardnessflag) elec_vector->setup_hardness(hardness_index);
@@ -764,8 +702,7 @@ void FixElectrodeConp::setup_post_neighbor()
   if (matrix_algo) {
     assert(taglist_constructed);
     // migrating electrode atoms carry their matrix row through the
-    // exchange buffers; declare the size (nele_world + iele slot). The
-    // device exchange packer adds one header double per outgoing atom.
+    // exchange buffers; declare the size (nele_world + iele slot).
     if (charge_solver == nullptr && algo == Algo::MATRIX_INV) {
       maxexchange = ngroup + 2;
       maxexchange_dynamic = 1;    // re-read each exchange (cheap, always right)
@@ -835,10 +772,10 @@ void FixElectrodeConp::setup_post_neighbor()
   if (charge_solver != nullptr)
     charge_solver->update_solver(taglist_local, iele_to_group_local);
   if (matrix_algo) {
-    // the Kokkos exchange comm sizes its buffers from the STATIC maxexchange
-    // (maxexchange_dynamic is host-comm only), so declare the true per-atom
-    // bound: a full matrix row plus the packer's header double. Before the
-    // solver exists pack_row_size() is 0, so the setup-time placeholder in
+    // pack_row_size() can exceed the default exchange bound (a full matrix
+    // row per electrode atom); declare the true per-atom bound (a full
+    // matrix row plus a safety double). Before the solver exists
+    // pack_row_size() is 0, so the setup-time placeholder in
     // setup_post_neighbor() covers the pre-solver exchanges.
     maxexchange = charge_solver->pack_row_size() + 1;
   }
@@ -971,11 +908,9 @@ void FixElectrodeConp::update_charges()
   double tg = MPI_Wtime();
   gather_list_iele();
   t_gather += MPI_Wtime() - tg;
-  if (!device_resident()) {
-    memset(potential_i, 0., atom->nmax * sizeof(double));
-    elyt_vector->compute_pot(potential_i);
-    if (enflag) add_electronegativity(potential_i);
-  }
+  memset(potential_i, 0., atom->nmax * sizeof(double));
+  elyt_vector->compute_pot(potential_i);
+  if (enflag) add_electronegativity(potential_i);
   charge_solver->set_elyt_pot(potential_i);
   double tp = MPI_Wtime();
   update_psi_set_constraint();
@@ -1032,8 +967,8 @@ void FixElectrodeConp::rebuild_matrix()
   array_compute->compute_array(matrix, timer_flag);
 
   // construct the replacement solver, mirroring setup(): discard the old
-  // instance first, build the accelerator-matched solver via the factory
-  // (KK variant -> ElectrodeInvKokkos), and refresh the exchange bound
+  // instance first, build the replacement via the factory, and refresh the
+  // exchange bound
   delete charge_solver;
   charge_solver = nullptr;
   switch (algo) {
@@ -1073,7 +1008,6 @@ void FixElectrodeConp::set_charges(std::vector<double> q_local)
   for (int i = 0; i < nlocalele; i++) q[atom->map(taglist_local[i])] = q_local[i];
   comm->forward_comm(this);
   intel_pack_buffers();
-  device_charge_sync();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1388,23 +1322,6 @@ void FixElectrodeConp::request_etypes_neighlists()
     delete[] iskip_mat;
     memory->destroy(ijskip_mat);
   }
-  if (need_elec_vector && cg_device_needs_full_list()) {
-    // device CG matvec: perpetual full newton-off list (etypes variant).
-    // Rows are electrode types only; columns are ANY type -- the b-assembly
-    // kernel sums electrolyte neighbors of electrode atoms, so copying the
-    // matrix list's electrode-electrode column filter would drop every
-    // electrode-electrolyte pair term. iskip_mat already encodes "etype rows".
-    int *iskip_cg = new int[ntypes + 1];
-    int **ijskip_cg;
-    memory->create(ijskip_cg, ntypes + 1, ntypes + 1, "fixelectrode:ijskip_cg");
-    for (int itype = 0; itype <= ntypes; ++itype) {
-      iskip_cg[itype] = iskip_mat[itype];
-      for (int jtype = 0; jtype <= ntypes; ++jtype) ijskip_cg[itype][jtype] = iskip_mat[itype];
-    }
-    auto *ReqKK = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF);
-    ReqKK->set_skip(iskip_cg, ijskip_cg);
-    ReqKK->set_id(4);
-  }
 
   auto *vecReq = neighbor->add_request(this);
   vecReq->set_skip(iskip_vec, ijskip_vec);
@@ -1448,10 +1365,6 @@ int FixElectrodeConp::unpack_exchange(int nlocal, double *buf)
 
 void FixElectrodeConp::gather_list_iele()
 {
-  // atom migration under the accelerator variants lands device-side first;
-  // the taglist below is built from host tag/mask
-  host_data_sync(TAG_MASK | MASK_MASK);
-
   MPI_Allreduce(MPI_IN_PLACE, &nlocalele_outdated, 1, MPI_INT, MPI_SUM, world);
   if (nlocalele_outdated == 0) return;
 

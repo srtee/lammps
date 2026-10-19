@@ -65,7 +65,6 @@ class FixTuneKspace : public Fix {
   std::string pair_style;
   std::string base_pair_style;
   bool electrode_mode;         // kspace style is an ELECTRODE variant
-  bool electrode_device;       // ... and is kokkosable (device matvec requires it)
   FixElectrodeConp *elec_conp = nullptr;    // electrode/conp fix (matrix rebuild at convergence)
   bool elec_rebuilt = true;                 // matrix consistent with current kspace settings
 
